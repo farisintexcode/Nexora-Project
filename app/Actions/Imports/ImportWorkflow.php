@@ -4,7 +4,6 @@ namespace App\Actions\Imports;
 
 use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
-use App\Models\ColumnAlias;
 use App\Models\Document;
 use App\Models\ImportBatch;
 use App\Models\ImportColumnMapping;
@@ -13,6 +12,7 @@ use App\Models\ImportMappingProfile;
 use App\Models\ImportRow;
 use App\Models\ImportTemplate;
 use App\Models\OutboxEvent;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\AuditWriter;
 use App\Services\Imports\ImportTargets;
@@ -20,6 +20,7 @@ use App\Services\Imports\MalwareScanner;
 use App\Services\Imports\WorkbookReader;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -37,26 +38,27 @@ class ImportWorkflow
 
     public function upload(User $actor, array $input, UploadedFile $file): ImportBatch
     {
-        Validator::make($input, ['kind' => ['required', Rule::in(['customer', 'assignment_batch'])], 'template_id' => ['required', 'integer'], 'assignment_batch_id' => ['nullable', 'integer']])->validate();
+        Validator::make($input, ['kind' => ['required', Rule::in(['assignment_batch', 'task'])], 'template_id' => ['required', 'integer'], 'assignment_batch_id' => ['required_if:kind,task', 'nullable', 'integer']])->validate();
         Validator::make(['file' => $file], ['file' => ['required', 'file', 'extensions:xlsx,xls', 'max:'.config('imports.max_kilobytes')]])->validate();
         Gate::forUser($actor)->authorize('create', ImportBatch::class);
         $template = ImportTemplate::query()->where('is_active', true)->where('kind', $input['kind'])->findOrFail($input['template_id']);
         $hash = hash_file('sha256', $file->getRealPath());
         $key = hash('sha256', implode('|', [$input['kind'], $template->id, $input['assignment_batch_id'] ?? '', $hash]));
-        $bucket = config('filesystems.disks.s3.bucket');
+        $disk = config('imports.disk');
+        $bucket = $this->storageBucket($disk);
         if (! is_string($bucket) || $bucket === '') {
-            throw ValidationException::withMessages(['file' => 'Configure private S3 storage before uploading workbooks.']);
+            throw ValidationException::withMessages(['file' => 'Configure private file storage before uploading workbooks.']);
         }
         $object = 'imports/quarantine/'.Str::uuid7().'.encrypted';
         $stored = false;
         try {
-            return DB::transaction(function () use ($actor, $input, $file, $template, $hash, $key, $bucket, $object, &$stored): ImportBatch {
+            return DB::transaction(function () use ($actor, $input, $file, $template, $hash, $key, $disk, $bucket, $object, &$stored): ImportBatch {
                 Gate::forUser($actor->fresh())->authorize('create', ImportBatch::class);
                 while ($existing = ImportBatch::query()->where('idempotency_key', $key)->first()) {
-                    if ($existing->status !== 'failed' || ! $existing->confirmed_at) {
+                    if (! in_array($existing->status, ['failed', 'cancelled'], true)) {
                         return $existing;
                     }
-                    // A failed frozen preview gets a separate review on re-upload; previous attempts stay immutable.
+                    // A failed or cancelled attempt gets a separate review on re-upload; previous attempts stay immutable.
                     $key = hash('sha256', $key.'|review-after|'.$existing->public_id);
                 }
                 if ($input['assignment_batch_id'] ?? null) {
@@ -65,12 +67,12 @@ class ImportWorkflow
                 }
                 $batch = new ImportBatch;
                 $batch->forceFill(['kind' => $input['kind'], 'template_id' => $template->id, 'assignment_batch_id' => $input['assignment_batch_id'] ?? null, 'uploaded_by' => $actor->id, 'content_sha256' => $hash, 'idempotency_key' => $key, 'status' => 'uploaded'])->save();
-                if (! Storage::disk('s3')->put($object, Crypt::encryptString(file_get_contents($file->getRealPath())), ['visibility' => 'private'])) {
+                if (! Storage::disk($disk)->put($object, Crypt::encryptString(file_get_contents($file->getRealPath())), ['visibility' => 'private'])) {
                     throw new RuntimeException('private_storage_failed');
                 }
                 $stored = true;
                 $document = new Document;
-                $document->forceFill(['owner_type' => 'import', 'owner_id' => $batch->id, 'uploaded_by' => $actor->id, 'disk' => 's3', 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => Str::limit(preg_replace('/[^\pL\pN._ -]/u', '_', basename(str_replace('\\', '/', $file->getClientOriginalName()))), 255, ''), 'mime_type' => 'application/octet-stream', 'size_bytes' => $file->getSize(), 'sha256' => $hash, 'document_type_code' => 'workbook', 'scan_status' => 'pending'])->save();
+                $document->forceFill(['owner_type' => 'import', 'owner_id' => $batch->id, 'uploaded_by' => $actor->id, 'disk' => $disk, 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => Str::limit(preg_replace('/[^\pL\pN._ -]/u', '_', basename(str_replace('\\', '/', $file->getClientOriginalName()))), 255, ''), 'mime_type' => 'application/octet-stream', 'size_bytes' => $file->getSize(), 'sha256' => $hash, 'document_type_code' => 'workbook', 'scan_status' => 'pending'])->save();
                 $batch->source_document_id = $document->id;
                 $batch->save();
                 $this->event($batch, 'scan');
@@ -80,7 +82,7 @@ class ImportWorkflow
             }, 3);
         } catch (\Throwable $error) {
             if ($stored) {
-                Storage::disk('s3')->delete($object);
+                Storage::disk($disk)->delete($object);
             }
             throw $error;
         }
@@ -89,13 +91,13 @@ class ImportWorkflow
     public function source(ImportBatch $batch, callable $callback, bool $clean = true): mixed
     {
         $document = Document::query()->findOrFail($batch->source_document_id);
-        if ($clean && $document->scan_status !== 'clean') {
+        if ($clean && ! $this->scanCleared($document->scan_status)) {
             throw new RuntimeException('source_not_clean');
         }
-        if ($document->owner_type !== 'import' || $document->owner_id !== $batch->id || $document->disk !== 's3' || $document->bucket !== config('filesystems.disks.s3.bucket')) {
+        if ($document->owner_type !== 'import' || $document->owner_id !== $batch->id || $document->bucket !== $this->storageBucket($document->disk)) {
             throw new RuntimeException('source_scope_invalid');
         }
-        $encrypted = Storage::disk('s3')->get($document->object_key);
+        $encrypted = Storage::disk($document->disk)->get($document->object_key);
         if (! is_string($encrypted) || strlen($encrypted) > config('imports.max_kilobytes') * 2048 + 4096) {
             throw new RuntimeException('source_unavailable');
         }
@@ -128,11 +130,13 @@ class ImportWorkflow
             $batch->save();
             try {
                 $info = $this->source($batch, function (string $path): array {
-                    app(MalwareScanner::class)->scan($path);
+                    if ($this->scanRequired()) {
+                        app(MalwareScanner::class)->scan($path);
+                    }
 
                     return $this->reader->inspect($path);
                 }, false);
-                $batch->source()->update(['scan_status' => 'clean']);
+                $batch->source()->update(['scan_status' => $this->scanRequired() ? 'clean' : 'skipped']);
                 $batch->status = 'mapping';
                 $batch->selected_sheet = $info[0]['worksheetName'];
                 $batch->header_row_number = 1;
@@ -145,6 +149,55 @@ class ImportWorkflow
             }
             $batch->save();
             $this->audit->record($actor, 'import_scan_finished', $batch->public_id, ['status' => $batch->status], module: 'M04', entityType: 'import');
+        });
+        $this->proposeMapping($id);
+    }
+
+    /** Detects mappings for the first sheet straight after the scan; a workbook that cannot be mapped yet stays on the sheet and header form. */
+    private function proposeMapping(int $id): void
+    {
+        $batch = ImportBatch::query()->findOrFail($id);
+        if ($batch->status !== 'mapping' || $batch->mappings()->exists()) {
+            return;
+        }
+        try {
+            $this->map(User::query()->findOrFail($batch->uploaded_by), $batch, $batch->selected_sheet, $batch->header_row_number);
+        } catch (ValidationException|RuntimeException) {
+            return;
+        }
+    }
+
+    /**
+     * Fails an upload whose first sheet cannot supply every required column, so the uploader hears straight away.
+     *
+     * @return string|null why the upload was refused, or null when it can go on to review
+     */
+    public function rejectionReason(int $id): ?string
+    {
+        return $this->locked($id, function (ImportBatch $batch): ?string {
+            if ($batch->status === 'failed') {
+                return $batch->error_summary ?? 'This workbook could not be read.';
+            }
+            if ($batch->status !== 'mapping') {
+                return null;
+            }
+            $mappings = $batch->mappings()->get();
+            $required = $batch->template->schema_definition['required'];
+            $mapped = ImportField::query()->whereIn('id', $mappings->where('is_ignored', false)->pluck('field_id')->filter())->pluck('canonical_field');
+            $missing = array_values(array_diff($required, $mapped->all()));
+            if ($missing === []) {
+                return null;
+            }
+            $reason = $mappings->isEmpty()
+                ? 'This workbook could not be read. Put the column headers in row 1 of the first sheet, and remove any formulas.'
+                : 'Missing required columns: '.implode(', ', $missing).'.';
+            $batch->status = 'failed';
+            $batch->error_summary = $reason;
+            $batch->completed_at = now();
+            $batch->save();
+            $this->audit->record(User::query()->findOrFail($batch->uploaded_by), 'import_columns_rejected', $batch->public_id, ['missing' => $missing], module: 'M04', entityType: 'import');
+
+            return $reason;
         });
     }
 
@@ -171,34 +224,43 @@ class ImportWorkflow
             $batch->mappings()->delete();
             $batch->rows()->delete();
             $batch->forceFill(['status' => 'mapping', 'selected_sheet' => $sheet, 'header_row_number' => $header, 'mapping_profile_id' => $profile?->id, 'mapping_digest' => null, 'mapping_confirmed_by' => null, 'mapping_confirmed_at' => null, 'input_count' => 0, 'accepted_count' => 0, 'rejected_count' => 0, 'duplicate_count' => 0, 'processed_count' => 0, 'failed_count' => 0])->save();
-            $proposed = [];
-            foreach ($rows[$header] as $ordinal => $label) {
+            $aliases = $this->aliasFields($batch->kind, $fields);
+            $suggestions = collect($rows[$header])->map(function (string $label) use ($fields, $aliases): array {
                 if (mb_strlen($label) > 255) {
                     throw ValidationException::withMessages(['mapping' => 'A header exceeds 255 characters. Correct the workbook.']);
                 }
                 $normalized = self::normalize($label);
-                $canonical = $fields->filter(fn ($field) => self::normalize($field->canonical_field) === $normalized);
-                $aliases = ColumnAlias::query()->where('module', $batch->kind)->where('is_active', true)->where('normalized_alias', $normalized)->whereIn('field_id', $fields->pluck('id'))->get();
-                $ids = $canonical->pluck('id')->merge($aliases->pluck('field_id'))->unique();
+                $canonical = $fields->filter(fn ($field) => self::normalize($field->canonical_field) === $normalized)->pluck('id');
+                $ids = $canonical->merge($aliases[$normalized] ?? [])->unique();
                 $match = $ids->count() === 1 ? $ids->first() : null;
-                $method = $match ? ($canonical->contains('id', $match) ? 'canonical' : 'alias') : 'unmatched';
-                $alias = $method === 'alias' ? $aliases->firstWhere('field_id', $match) : null;
+
+                return ['normalized' => $normalized, 'ids' => $ids, 'match' => $match, 'method' => $match ? ($canonical->contains($match) ? 'canonical' : 'alias') : 'unmatched'];
+            });
+            $exactFields = $suggestions->where('method', 'canonical')->pluck('match');
+            $aliasClaims = $suggestions->where('method', 'alias')->countBy('match');
+            $proposed = [];
+            foreach ($rows[$header] as $ordinal => $label) {
+                ['normalized' => $normalized, 'ids' => $ids, 'match' => $match, 'method' => $method] = $suggestions[$ordinal];
+                // An exact header outranks an alias; aliases competing for one field are left for the reviewer.
+                $contested = $method === 'alias' && ($exactFields->contains($match) || $aliasClaims[$match] > 1);
+                if ($contested) {
+                    $match = null;
+                    $method = 'unmatched';
+                }
                 $profileRule = $profile?->mapping_definition[$ordinal] ?? null;
                 if ($profileRule && ($profileRule['header'] ?? null) === $normalized && ($profileRule['ignore'] || $fields->contains('id', $profileRule['field_id']))) {
                     $match = $profileRule['field_id'];
                     $method = 'profile';
-                    $alias = null;
                 }
                 if ($match && in_array($match, $proposed, true)) {
                     $match = null;
                     $method = 'unmatched';
-                    $alias = null;
                 }
                 if ($match) {
                     $proposed[] = $match;
                 }
                 $mapping = new ImportColumnMapping;
-                $mapping->forceFill(['import_batch_id' => $batch->id, 'source_sheet' => $sheet, 'source_column_index' => $ordinal, 'original_header' => $label, 'normalized_header' => $normalized, 'field_id' => $match, 'alias_id' => $alias?->id, 'match_method' => $method, 'confidence' => $match ? 1 : null, 'transform_code' => $profileRule && $method === 'profile' ? $profileRule['transform'] : 'exact', 'is_ignored' => $method === 'profile' && $profileRule['ignore'], 'matched_rule_snapshot' => ['ambiguous' => $ids->count() > 1, 'alias' => $alias?->only(['id', 'field_id', 'normalized_alias'])]])->save();
+                $mapping->forceFill(['import_batch_id' => $batch->id, 'source_sheet' => $sheet, 'source_column_index' => $ordinal, 'original_header' => $label, 'normalized_header' => $normalized, 'field_id' => $match, 'match_method' => $method, 'confidence' => $match ? ($method === 'alias' ? 0.9 : 1) : null, 'transform_code' => $profileRule && $method === 'profile' ? $profileRule['transform'] : 'exact', 'is_ignored' => $method === 'profile' && $profileRule['ignore'], 'matched_rule_snapshot' => ['ambiguous' => $ids->count() > 1 || $contested]])->save();
             }
             unset($rows[$header]);
             foreach ($rows as $number => $values) {
@@ -245,7 +307,7 @@ class ImportWorkflow
                 throw ValidationException::withMessages(['mapping' => 'Map every required target before previewing.']);
             }
             // Clear targets first so swapping two mapped columns respects the unique constraint.
-            $batch->mappings()->update(['field_id' => null, 'alias_id' => null]);
+            $batch->mappings()->update(['field_id' => null]);
             $digest = [];
             foreach ($mappings as $mapping) {
                 $choice = $selections[$mapping->id];
@@ -253,11 +315,12 @@ class ImportWorkflow
                 $newId = $ignore ? null : (int) $choice['field_id'];
                 $method = $mapping->field_id === $newId && $mapping->transform_code === ($choice['transform'] ?? 'exact') ? $mapping->match_method : 'manual';
                 $mapping->refresh();
-                $mapping->forceFill(['field_id' => $newId, 'alias_id' => null, 'is_ignored' => $ignore, 'transform_code' => $choice['transform'] ?? 'exact', 'match_method' => $method, 'confidence' => null, 'confirmed_by' => $actor->id, 'confirmed_at' => now()])->save();
+                $mapping->forceFill(['field_id' => $newId, 'is_ignored' => $ignore, 'transform_code' => $choice['transform'] ?? 'exact', 'match_method' => $method, 'confidence' => null, 'confirmed_by' => $actor->id, 'confirmed_at' => now()])->save();
                 $digest[] = $mapping->only(['source_sheet', 'source_column_index', 'original_header', 'field_id', 'transform_code', 'is_ignored', 'match_method', 'matched_rule_snapshot']);
             }
             $batch->forceFill(['status' => 'validating', 'mapping_confirmed_by' => $actor->id, 'mapping_confirmed_at' => now(), 'mapping_digest' => hash('sha256', json_encode([$batch->template_id, $batch->mapping_profile_id, $digest], JSON_THROW_ON_ERROR)), 'processed_count' => 0, 'failed_count' => 0])->save();
             $seen = [];
+            $customerNames = [];
             foreach ($batch->rows()->orderBy('row_number')->get() as $row) {
                 $values = [];
                 foreach ($mappings as $mapping) {
@@ -266,22 +329,37 @@ class ImportWorkflow
                         $values[$fields[$mapping->field_id]->canonical_field] = $mapping->transform_code === 'trim' ? trim($value) : $value;
                     }
                 }
+                // Preview rolls each row back, so a later row repeating a new customer borrows the name its earlier row will have saved.
+                $customerReference = trim($values['customer_reference'] ?? '');
+                if ($batch->kind === 'task' && $customerReference !== '') {
+                    if (trim($values['customer_name'] ?? '') !== '') {
+                        $customerNames[$customerReference] = $values['customer_name'];
+                    } elseif (isset($customerNames[$customerReference])) {
+                        $values['customer_name'] = $customerNames[$customerReference];
+                    }
+                }
                 $identity = trim($values[$batch->template->schema_definition['identity']] ?? '');
                 $row->normalized_payload_ciphertext = null;
                 $row->validation_errors = [];
-                if ($identity !== '' && isset($seen[$identity])) {
+                $taskNumber = $batch->kind === 'task' ? Task::numberFromId(trim($values['task_id'] ?? '')) : null;
+                if (($identity !== '' && isset($seen[$identity])) || ($taskNumber !== null && isset($seen['task:'.$taskNumber]))) {
                     $row->state = 'duplicate';
                     $row->validation_errors = [['field' => 'reference', 'code' => 'duplicate_in_workbook']];
                 } else {
                     if ($identity !== '') {
                         $seen[$identity] = true;
                     }
+                    if ($taskNumber !== null) {
+                        $seen['task:'.$taskNumber] = true;
+                    }
                     try {
+                        $this->validateValues($fields, $values);
                         $row->normalized_payload_ciphertext = $this->targets->prepare($actor, $batch, $values);
                         $row->state = 'accepted';
                     } catch (ValidationException $error) {
                         $row->state = 'rejected';
-                        $row->validation_errors = collect(array_keys($error->errors()))->map(fn ($field) => ['field' => preg_replace('/[^a-z0-9_.]/i', '', $field), 'code' => 'invalid_value'])->all();
+                        // Only fixed snake_case codes are stored, so a writer's message can never carry workbook values into the error report.
+                        $row->validation_errors = collect($error->errors())->map(fn (array $messages, string $field): array => ['field' => preg_replace('/[^a-z0-9_.]/i', '', $field), 'code' => preg_match('/^[a-z_]+$/', $messages[0]) ? $messages[0] : 'invalid_value'])->values()->all();
                     } catch (AuthorizationException) {
                         $row->state = 'rejected';
                         $row->validation_errors = [['field' => 'permission', 'code' => 'target_permission_required']];
@@ -330,7 +408,7 @@ class ImportWorkflow
             if ($batch->status !== 'ready' || ! $batch->mapping_digest || ! hash_equals($batch->mapping_digest, $digest) || $batch->accepted_count === 0) {
                 throw ValidationException::withMessages(['confirmation' => 'Reload and review the current preview before committing accepted rows.']);
             }
-            if ($batch->source?->scan_status !== 'clean') {
+            if (! $this->scanCleared($batch->source?->scan_status)) {
                 throw ValidationException::withMessages(['confirmation' => 'The source must have a clean scan before confirmation.']);
             }
             $batch->forceFill(['confirmed_by' => $actor->id, 'confirmed_at' => now(), 'status' => 'processing', 'started_at' => now()])->save();
@@ -411,14 +489,14 @@ class ImportWorkflow
                 try {
                     DB::transaction(function () use ($batch, $row, $actor): void {
                         Gate::forUser($actor)->authorize('confirm', $batch);
-                        if ($batch->source?->scan_status !== 'clean') {
+                        if (! $this->scanCleared($batch->source?->scan_status)) {
                             throw new RuntimeException('source_not_clean');
                         }
-                        $target = $this->targets->write($actor, $batch, $row->normalized_payload_ciphertext);
+                        $target = $this->targets->write($actor, $batch, $row->normalized_payload_ciphertext, $row);
                         $row->state = 'processed';
                         $row->processed_at = now();
                         $row->validation_errors = [];
-                        $row->{$batch->kind === 'customer' ? 'target_customer_id' : 'target_assignment_batch_id'} = $target->id;
+                        $row->{$batch->kind === 'task' ? 'target_task_id' : 'target_assignment_batch_id'} = $target->id;
                         $row->save();
                     });
                     $batch->processed_count++;
@@ -474,6 +552,74 @@ class ImportWorkflow
             $batch->save();
             $this->audit->record(null, 'import_worker_interrupted', $batch->public_id, ['status' => 'failed'], module: 'M04', entityType: 'import');
         }, allowArchived: true);
+    }
+
+    /**
+     * Maps each normalized alias from config/imports.php to the fields it can suggest.
+     *
+     * @param  Collection<int, ImportField>  $fields
+     * @return array<string, array<int, int>>
+     */
+    private function aliasFields(string $kind, Collection $fields): array
+    {
+        $aliases = [];
+        foreach ($fields as $field) {
+            foreach (config("imports.aliases.{$kind}.{$field->canonical_field}", []) as $alias) {
+                $aliases[self::normalize($alias)][] = $field->id;
+            }
+        }
+
+        return $aliases;
+    }
+
+    /**
+     * Checks required values and data types for the mapped fields before the target writer runs.
+     *
+     * @param  Collection<int, ImportField>  $fields
+     * @param  array<string, string>  $values
+     */
+    private function validateValues(Collection $fields, array $values): void
+    {
+        $errors = [];
+        foreach ($fields as $field) {
+            $name = $field->canonical_field;
+            if (! array_key_exists($name, $values)) {
+                continue;
+            }
+            $value = trim((string) $values[$name]);
+            if ($value === '') {
+                if ($field->validation_schema['required'] ?? false) {
+                    $errors[$name] = 'required';
+                }
+            } elseif ($field->data_type === 'date' && \DateTimeImmutable::createFromFormat('!Y-m-d', $value)?->format('Y-m-d') !== $value) {
+                $errors[$name] = 'invalid_date';
+            } elseif (mb_strlen($value) > 5000) {
+                $errors[$name] = 'too_long';
+            }
+        }
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    private function storageBucket(string $disk): ?string
+    {
+        return match ($disk) {
+            's3' => config('filesystems.disks.s3.bucket'),
+            'local' => 'local',
+            default => null,
+        };
+    }
+
+    /** Production always scans, whatever the environment configuration says. */
+    private function scanRequired(): bool
+    {
+        return config('imports.scan_required') || app()->isProduction();
+    }
+
+    private function scanCleared(?string $status): bool
+    {
+        return $status === 'clean' || ($status === 'skipped' && ! $this->scanRequired());
     }
 
     private function locked(int $id, callable $callback, bool $allowArchived = false): mixed

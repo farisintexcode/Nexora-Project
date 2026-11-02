@@ -20,7 +20,7 @@ class CollectionActivity extends Model
 
     protected function casts(): array
     {
-        return ['call_details_ciphertext' => 'encrypted:array', 'occurred_at' => 'immutable_datetime', 'ended_at' => 'immutable_datetime', 'notes_ciphertext' => 'encrypted', 'tps_contact_ciphertext' => 'encrypted', 'person_contacted_ciphertext' => 'encrypted', 'site_address_ciphertext' => 'encrypted', 'visit_remarks_ciphertext' => 'encrypted', 'collection_remarks_ciphertext' => 'encrypted', 'customer_remarks_ciphertext' => 'encrypted', 'backdating_reason_ciphertext' => 'encrypted', 'business_applicable' => 'boolean', 'signboard_available' => 'boolean'];
+        return ['paid_amount_ciphertext' => 'encrypted', 'call_details_ciphertext' => 'encrypted:array', 'occurred_at' => 'immutable_datetime', 'ended_at' => 'immutable_datetime', 'notes_ciphertext' => 'encrypted', 'tps_contact_ciphertext' => 'encrypted', 'person_contacted_ciphertext' => 'encrypted', 'site_address_ciphertext' => 'encrypted', 'visit_remarks_ciphertext' => 'encrypted', 'collection_remarks_ciphertext' => 'encrypted', 'customer_remarks_ciphertext' => 'encrypted', 'backdating_reason_ciphertext' => 'encrypted', 'business_applicable' => 'boolean', 'signboard_available' => 'boolean'];
     }
 
     public function task(): BelongsTo

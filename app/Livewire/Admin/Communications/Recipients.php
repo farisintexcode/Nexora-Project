@@ -5,7 +5,6 @@ namespace App\Livewire\Admin\Communications;
 use App\Actions\Communications\PreviewRecipients;
 use App\Models\AccountParty;
 use App\Models\CommunicationTemplate;
-use App\Models\CustomerCategory;
 use App\Models\Task;
 use App\Services\Communications\RecipientAccess;
 use App\Services\Communications\TemplateContext;
@@ -37,8 +36,6 @@ class Recipients extends Component
 
     public string $searchBy = 'reference';
 
-    public string $category = '';
-
     public string $from = '';
 
     public string $until = '';
@@ -54,7 +51,7 @@ class Recipients extends Component
 
     public function updated(string $property): void
     {
-        if (in_array($property, ['query', 'searchBy', 'category', 'from', 'until'], true)) {
+        if (in_array($property, ['query', 'searchBy', 'from', 'until'], true)) {
             $this->resetPage();
         }
         if (preg_match('/^contexts\.([a-zA-Z0-9-]+)\.(account|task)$/', $property, $m)) {
@@ -82,9 +79,6 @@ class Recipients extends Component
     {
         $access->compose(auth()->user());
         $query = $access->contacts(auth()->user())->whereNull('valid_to')->where('valid_from', '<=', now());
-        if ($this->category !== '') {
-            $query->whereHas('debtor.categoryAssignments', fn ($q) => $q->whereNull('revoked_at')->whereHas('category', fn ($q) => $q->where('public_id', Str::isUuid($this->category) ? $this->category : (string) Str::uuid())));
-        }
         if ($this->query !== '') {
             if (in_array($this->searchBy, ['reference', 'name', 'contact'], true) && mb_strlen($this->query) <= 200) {
                 $query->whereHas('debtor', fn ($q) => $search->apply($q, $this->searchBy, $this->query));
@@ -112,6 +106,6 @@ class Recipients extends Component
             $options[$contact->public_id] = ['accounts' => $context->accounts($contact->debtor)->limit(100)->get(), 'tasks' => Gate::allows('viewAny', Task::class) ? Task::query()->where('customer_id', $contact->debtor_id)->with('account')->latest('id')->limit(100)->get() : collect()];
         }
 
-        return view('livewire.admin.communications.recipients', ['templates' => CommunicationTemplate::query()->where('channel', 'email')->where('status', 'approved')->orderBy('email_slot')->get(), 'contacts' => $query->with('debtor')->orderBy('debtor_id')->orderBy('id')->paginate(25), 'selectedContacts' => $selected, 'contextOptions' => $options, 'categories' => CustomerCategory::query()->where('is_active', true)->orderBy('name')->get(), 'batches' => $access->batches(auth()->user())->with('template')->latest('id')->limit(10)->get()]);
+        return view('livewire.admin.communications.recipients', ['templates' => CommunicationTemplate::query()->where('channel', 'email')->where('status', 'approved')->orderBy('email_slot')->get(), 'contacts' => $query->with('debtor')->orderBy('debtor_id')->orderBy('id')->paginate(25), 'selectedContacts' => $selected, 'contextOptions' => $options, 'batches' => $access->batches(auth()->user())->with('template')->latest('id')->limit(10)->get()]);
     }
 }

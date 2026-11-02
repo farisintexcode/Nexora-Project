@@ -63,7 +63,7 @@ class Show extends Component
         $this->visitKey = (string) Str::uuid7();
         $this->submissionKey = (string) Str::uuid7();
         $visit = $task->activities()->where('activity_type_code', 'visit')->where('performed_by', Auth::id())->latest('id')->first();
-        $this->data = ['purpose' => $visit?->visit_purpose_code ?? 'site_visit', 'business_applicable' => $visit?->business_applicable ?? false, 'signboard_available' => $visit?->signboard_available === null ? '' : ($visit->signboard_available ? '1' : '0'), 'backdating_reason' => '', 'occurred_at' => '', 'ended_at' => '', 'site_address' => $visit?->site_address_ciphertext ?? $task->account->property?->address_lines_ciphertext ?? '',
+        $this->data = ['paid_amount' => $visit?->paid_amount_ciphertext ?? '', 'purpose' => $visit?->visit_purpose_code ?? 'site_visit', 'business_applicable' => $visit?->business_applicable ?? false, 'signboard_available' => $visit?->signboard_available === null ? '' : ($visit->signboard_available ? '1' : '0'), 'backdating_reason' => '', 'occurred_at' => '', 'ended_at' => '', 'site_address' => $visit?->site_address_ciphertext ?? $task->account->property?->address_lines_ciphertext ?? '',
             'dr_code' => $visit?->inspection?->dr_code ?? '', 'usage' => $visit?->inspection?->usage_code ?? '', 'property_type' => $visit?->inspection?->property_type_code ?? '', 'usage_other' => $visit?->inspection?->usage_other ?? '',
             'availability' => $visit?->availability_code ?? '', 'visit_status' => $visit?->visit_status_code ?? '', 'contact_result' => $visit?->contact_result_code ?? '', 'outcome' => $visit?->outcome_code ?? '',
             'person_contacted' => $visit?->person_contacted_ciphertext ?? '', 'visit_remarks' => $visit?->visit_remarks_ciphertext ?? '', 'collection_remarks' => $visit?->collection_remarks_ciphertext ?? '', 'customer_remarks' => $visit?->customer_remarks_ciphertext ?? '',
@@ -121,7 +121,7 @@ class Show extends Component
         }
         $this->photos = [];
         $this->digest = '';
-        $this->notice = 'Images saved privately. Scans are pending; only clean images can be submitted.';
+        $this->notice = TaskProof::scanRequired() ? 'Images saved privately. Scans are pending; only clean images can be submitted.' : 'Images saved privately.';
     }
 
     public function discardPhoto(int $index): void
@@ -175,7 +175,7 @@ class Show extends Component
     public function render(CompletionChecklist $checklist): View
     {
         Gate::authorize('use-rider-interface');
-        $task = $this->task()->load(['batch', 'customer.contacts', 'account.property', 'currentAllocation']);
+        $task = $this->task()->load(['batch', 'customer.contacts', 'account.property', 'currentAllocation', 'latestBalance']);
         if (! in_array($this->section, ['overview', 'customer', 'visit', 'business', 'proof', 'completion', 'history'], true)) {
             $this->section = 'overview';
         }

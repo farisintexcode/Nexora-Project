@@ -73,6 +73,7 @@
     .btn:hover:not(:disabled):not([aria-disabled='true']) { transform: translateY(-1px); }
     .btn:active:not(:disabled) { transform: translateY(0); }
     .btn-primary { @apply border-brand-accent bg-brand-accent text-brand-dark hover:border-brand-accent-hover hover:bg-brand-accent-hover active:border-brand-accent-active active:bg-brand-accent-active; }
+    .btn-success { @apply border-green-700 bg-green-700 text-white hover:border-green-800 hover:bg-green-800 active:bg-green-900; }
     .btn-secondary { @apply border-ink-200 bg-white text-brand-dark hover:border-ink-300 hover:bg-brand-soft active:bg-ink-100; }
     .btn-danger { @apply border-red-700 bg-red-700 text-white hover:border-red-800 hover:bg-red-800 active:bg-red-900; }
     .btn:disabled, .btn[aria-disabled='true'] { @apply cursor-not-allowed border-ink-200 bg-ink-100 text-ink-500 shadow-none; }
@@ -560,6 +561,15 @@
 
 /* Admin assignment register: compact table and filter controls, scoped to this page only. */
 @layer components {
+    .task-metric { @apply min-w-0 rounded-2xl border p-5; }
+    .task-metric-blue { background-color: #e8f2fd; border-color: #b5d5f5; color: #0b4a8a; }
+    .task-metric-orange { background-color: #fff0e0; border-color: #ffcf9e; color: #8f4300; }
+    .task-metric-green { background-color: #e7f6ec; border-color: #aee0c1; color: #14603a; }
+    .task-metric-yellow { background-color: #fff9d6; border-color: #f0dc7c; color: #665000; }
+    .dark .task-metric-blue { background-color: #12344f; border-color: #2a5f8a; color: #b9dcff; }
+    .dark .task-metric-orange { background-color: #4a2d12; border-color: #a0601f; color: #ffd3a1; }
+    .dark .task-metric-green { background-color: #123f30; border-color: #2c7a5a; color: #b5ebcf; }
+    .dark .task-metric-yellow { background-color: #453b10; border-color: #a38b22; color: #ffe98a; }
     .assignment-filter-count { @apply grid min-w-5 place-items-center rounded-full bg-brand-accent px-1.5 text-[11px] leading-5 font-bold text-brand-primary; }
     .assignment-apply { @apply border-brand-primary bg-brand-primary text-white hover:border-brand-hover hover:bg-brand-hover active:border-brand-active active:bg-brand-active; }
     .assignment-table th { @apply px-4 py-3 text-xs font-semibold tracking-normal normal-case; color: var(--color-brand-dark); }

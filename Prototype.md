@@ -6,6 +6,23 @@ Terminology: **Customer** is the UI/business term for the existing party record 
 
 InteXcode (IXC) · 16 October 2026 · Structural specification, not a visual copy of DRMS.
 
+## Current implementation — November 2026
+
+**This section overrides anything older in this document.** Text marked O or U, and IWK labels in particular, remain evidence about the reference system only.
+
+| Area | What is built now |
+|---|---|
+| Clients | Removed. There is one tenant, so there are no client scopes or client_id columns. |
+| Customer Management (M13) | Removed: customer pages, categories, the customer import type, and account editing pages. `debtors` stays as the internal record behind tasks, calls and communications, created automatically from Create Task or Upload Task. |
+| Task ID | Replaces the IWK ID. Comes from the workbook or Create Task, must end in a number, and is read by its trailing digits within its assignment: FG001 is 1 and DT2304 is 2304. Numbers are unique per assignment. |
+| Upload Task (M04) | Fixed contract with automatic column detection. Missing required columns fail immediately with a message. History lists successful uploads, searched by file name and uploaded date. A blank Excel template can be downloaded. |
+| Assign Task (M05) | Choose the assignment, then Single (12), Selected (12, 15, 18), Range (From 10 - To 20) or Range and Selected (10-20 plus 25). Tasks ticked on Manage Task still go straight to Assign Task. |
+| Delete task (M05) | Admins with `tasks.delete` can delete tasks that have no Rider and no recorded work. The record is hidden, not erased, because task history is immutable, and its task ID can be reused. Started work uses Cancel. |
+| Amounts owed (M08) | Each task has append-only encrypted balance records: outstanding balance, monthly charge and balance date, from upload or Create Task. Customers pay the client directly. |
+| Payment claims (M06, M07) | The Rider sees the balance, enters the amount paid and adds a Payment Evidence photo. A reviewer must confirm the photo matches the amount. An equal amount clears the balance, a lower amount needs a second confirmation as a part payment, and a higher amount cannot be approved. Claims are reviewed one at a time, never in bulk. |
+| Reports (M09) | Show total outstanding and verified collected, per task and per Rider. Only approved claims count as collected. Task ID accepts one ID, several, a range or a mix. |
+| Proof storage | `PROOF_DISK` and `PROOF_SCAN_REQUIRED` allow local storage without scanning for development. Production always scans. |
+
 ## Scope and traceability
 
 Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module.md](Module.md) for field dictionaries and business flows, and [Database.md](Database.md) for persistence. O = observed; P = proposed; U = unverified. The inventory includes observed pages, page states and contextual variants, followed by proposed screens needed to implement improvements. Proposed rows must not be counted as discovered DRMS pages. All requested interface attributes are resolved through the common contract below plus the per-screen overrides. A route link alone is not an exercised page; such limits are stated.
@@ -480,6 +497,9 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 <a id="ui24"></a>
 
 ## UI24 — Customer Details and Account History
+
+> **Removed (November 2026).** This screen no longer exists. Customer Management was removed. Customer details now appear on Task Details and in the Call Centre workspace. The text below is kept as history only.
+
 
 | Attribute / override | Specification |
 |---|---|
@@ -1048,6 +1068,9 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 
 ## UI61 — Customer Categories and Membership
 
+> **Removed (November 2026).** This screen no longer exists. Customer Management was removed. Customer details now appear on Task Details and in the Call Centre workspace. The text below is kept as history only.
+
+
 | Attribute | Specification |
 |---|---|
 | Module / scope / role | M13; C; Admin customers.categorize/manage_categories. |
@@ -1062,6 +1085,9 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 
 ## UI62 — Customer List
 
+> **Removed (November 2026).** This screen no longer exists. Customer Management was removed. Customer details now appear on Task Details and in the Call Centre workspace. The text below is kept as history only.
+
+
 | Attribute | Specification |
 |---|---|
 | Module / scope / role | M13; C; Admin scoped customers.view. |
@@ -1075,6 +1101,9 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 <a id="ui63"></a>
 
 ## UI63 — Customer Create / Edit
+
+> **Removed (November 2026).** This screen no longer exists. Customer Management was removed. Customer details now appear on Task Details and in the Call Centre workspace. The text below is kept as history only.
+
 
 | Attribute | Specification |
 |---|---|

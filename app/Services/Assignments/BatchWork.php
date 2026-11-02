@@ -14,7 +14,7 @@ class BatchWork
     {
         $result = ['tasks' => null, 'unfinished_tasks' => 0, 'imports' => null, 'unfinished_imports' => 0];
         if (Schema::hasTable('tasks')) {
-            $tasks = DB::table('tasks')->where('assignment_batch_id', $batch->id);
+            $tasks = DB::table('tasks')->where('assignment_batch_id', $batch->id)->whereNull('deleted_at');
             $result['tasks'] = (clone $tasks)->count();
             $result['unfinished_tasks'] = $tasks->where(fn ($q) => $q->whereNotIn('work_status', ['completed', 'cancelled'])->orWhere(fn ($q) => $q->where('work_status', 'completed')->where('review_status', '!=', 'approved')))->count();
         }

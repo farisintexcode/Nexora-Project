@@ -31,11 +31,6 @@ class Debtor extends Model
         return $this->hasMany(Address::class);
     }
 
-    public function categoryAssignments(): HasMany
-    {
-        return $this->hasMany(CustomerCategoryAssignment::class, 'customer_id');
-    }
-
     public function revision(): string
     {
         return hash('sha256', json_encode([
@@ -45,7 +40,6 @@ class Debtor extends Model
                 $this->search_tokens, $this->updated_at?->format('Y-m-d H:i:s.uP')],
             $this->contacts()->selectRaw('count(*) as total, max(id) as latest, max(updated_at) as changed_at')->toBase()->first(),
             $this->addresses()->selectRaw('count(*) as total, max(id) as latest, max(updated_at) as changed_at')->toBase()->first(),
-            $this->categoryAssignments()->selectRaw('count(*) as total, max(id) as latest, max(updated_at) as changed_at')->toBase()->first(),
         ], JSON_THROW_ON_ERROR));
     }
 }

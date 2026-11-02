@@ -23,7 +23,7 @@ class TaskAllocation extends Model
 
     public function task(): BelongsTo
     {
-        return $this->belongsTo(Task::class);
+        return $this->belongsTo(Task::class)->withTrashed();
     }
 
     public function collector(): BelongsTo

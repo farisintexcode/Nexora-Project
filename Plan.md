@@ -8,6 +8,23 @@ Product: DebtOps — Debt Collection Management System · Developer: InteXcode (
 
 Reference: [DRMS — Senja Bina](https://drms.senjabina.my/) · Review date: 16 October 2026 (Asia/Kuala_Lumpur)
 
+## Current implementation — November 2026
+
+**This section overrides anything older in this document.** Text marked O or U, and IWK labels in particular, remain evidence about the reference system only.
+
+| Area | What is built now |
+|---|---|
+| Clients | Removed. There is one tenant, so there are no client scopes or client_id columns. |
+| Customer Management (M13) | Removed: customer pages, categories, the customer import type, and account editing pages. `debtors` stays as the internal record behind tasks, calls and communications, created automatically from Create Task or Upload Task. |
+| Task ID | Replaces the IWK ID. Comes from the workbook or Create Task, must end in a number, and is read by its trailing digits within its assignment: FG001 is 1 and DT2304 is 2304. Numbers are unique per assignment. |
+| Upload Task (M04) | Fixed contract with automatic column detection. Missing required columns fail immediately with a message. History lists successful uploads, searched by file name and uploaded date. A blank Excel template can be downloaded. |
+| Assign Task (M05) | Choose the assignment, then Single (12), Selected (12, 15, 18), Range (From 10 - To 20) or Range and Selected (10-20 plus 25). Tasks ticked on Manage Task still go straight to Assign Task. |
+| Delete task (M05) | Admins with `tasks.delete` can delete tasks that have no Rider and no recorded work. The record is hidden, not erased, because task history is immutable, and its task ID can be reused. Started work uses Cancel. |
+| Amounts owed (M08) | Each task has append-only encrypted balance records: outstanding balance, monthly charge and balance date, from upload or Create Task. Customers pay the client directly. |
+| Payment claims (M06, M07) | The Rider sees the balance, enters the amount paid and adds a Payment Evidence photo. A reviewer must confirm the photo matches the amount. An equal amount clears the balance, a lower amount needs a second confirmation as a part payment, and a higher amount cannot be approved. Claims are reviewed one at a time, never in bulk. |
+| Reports (M09) | Show total outstanding and verified collected, per task and per Rider. Only approved claims count as collected. Task ID accepts one ID, several, a range or a mix. |
+| Proof storage | `PROOF_DISK` and `PROOF_SCAN_REQUIRED` allow local storage without scanning for development. Production always scans. |
+
 ## 1. Document status and evidence boundary
 
 This is an implementation planning baseline derived from an authenticated, non-destructive browser review. It is **not a claim that every DRMS role, write operation, or business rule has been verified**. All top-level navigation visible to the supplied account was visited. Representative task details were reviewed for COM LOD, Domestic DR, Domestic CTOS, Domestic LOD, Domestic LOD CTOS, and Vacant. COM DR was selectable but no active assignment matched a table search for that type. No source code, database, import templates, API contract, or other-role credentials were supplied.
@@ -104,7 +121,7 @@ The baseline uses time-bound user_client_scopes plus action permissions; Riders 
 | M10 Rider management and attendance | Staff profile and performance, activate/deactivate, own clock-in/out/history, Admin attendance corrections/reports | E17–19; C |
 | M11 Call Centre and databank | Customer/account/task search, outgoing call/outcome/remarks, contact updates, follow-ups and communication timeline; legacy databank retained | E20; C |
 | M12 Administration and audit | Shared global search/customization; notification centre, roles/reference settings/audit proposed | E21, E23–24; remainder P |
-| M13 Customer Management | Customer list/detail/create/edit, categories, scoped search and task/visit/collection/communication history | C |
+| M13 Customer Management | Removed November 2026. `debtors` stays as the internal record behind tasks | Removed |
 | M14 Communication Management | Three email/letter template options, single/bulk email, WhatsApp messaging/history and separate provider-qualified voice integration | C |
 
 The confirmed scope includes recording Promise to Pay as a call outcome and follow-up, not a financial receipt or a separate payment-plan engine. Payment gateway, receipts/ledger, legal-case approval, automated dialler, commission/payroll and external CTOS integration remain outside the confirmed additions. DRMS absence does not exclude confirmed email, WhatsApp or attendance.
@@ -113,7 +130,7 @@ The confirmed scope includes recording Promise to Pay as a call outcome and foll
 
 ### Customer, Rider and task contracts (C)
 
-Customer categories are active/inactive configurable records with time-bound assignments. Customer detail consolidates relevant accounts, tasks, visits, collection remarks, contact changes and communications. Search covers client-scoped customer reference, approved name tokens, identifier/contact exact matches and category/status. Creating a customer need not create a debt. Manual/imported tasks explicitly select a customer and account, batch/type, priority, planned visit and due time; unknown/ambiguous import matches are exceptions. Reuse existing debtors/contacts/addresses and staff identities. Admin Rider detail combines assigned/completed tasks, attendance, activity and performance without duplicating personnel profiles.
+Customer categories and the customer pages were removed in November 2026. Customers are created automatically from tasks.
 
 <a id="plan-tasks"></a>
 
@@ -290,7 +307,7 @@ Indicative total: 18–24 weeks sequentially, subject to staffing and external p
 
 Main risks: incomplete other-role discovery, unknown template rules, conflating snapshots with cash, ambiguous IWK ID uniqueness, duplicate party matching, migration quality, cross-platform CI complexity, sensitive exports, and large image bundles. Mitigate with Phase 0 evidence, namespaced identifiers, deterministic matching, reconciliation totals and controlled export jobs.
 
-Future candidates outside these confirmed additions: documented cash ledger/receipts, full promise-to-pay repayment schedules, offline synchronization, client portal, route optimization, external credit integrations, commissions/payroll and SaaS tenancy. Email, WhatsApp (including provider-qualified voice), customer categories, automated mapping and attendance are confirmed scope, not future candidates.
+Future candidates outside these confirmed additions: a cash ledger and receipts (customers pay the client directly, so this is not needed now), full promise-to-pay repayment schedules, offline synchronization, client portal, route optimization, external credit integrations, commissions/payroll and SaaS tenancy. Email, WhatsApp (including provider-qualified voice), customer categories, automated mapping and attendance are confirmed scope, not future candidates.
 
 ## 14. Feature Coverage Matrix
 
@@ -303,8 +320,8 @@ Future candidates outside these confirmed additions: documented cash ledger/rece
 | Admin Login / Logout / RBAC | [✓](#plan-access) | [✓](Module.md#m01) | [✓ UI01/UI38](Prototype.md#ui01) | [✓ users, roles, permissions, user_client_scopes](Database.md#table-users) | Complete |
 | Rider Login / Logout / RBAC | [✓](#plan-access) | [✓](Module.md#m01) | [✓ UI46](Prototype.md#ui46) | [✓ users, staff, permission pivots](Database.md#table-users) | Complete |
 | Admin Dashboard / operational KPIs | [✓](#plan-tasks) | [✓](Module.md#m02) | [✓ UI07](Prototype.md#ui07) | [✓ tasks, task_reviews, staff, attendance_schedules, debtors](Database.md#table-tasks) | Complete |
-| Customer Management / history | [✓](#plan-customer) | [✓](Module.md#m13) | [✓ UI62/UI24/UI63](Prototype.md#ui62) | [✓ debtors, contacts, addresses, tasks, collection_activities, communications](Database.md#table-debtors) | Complete |
-| Customer Categories | [✓](#plan-customer) | [✓](Module.md#m13) | [✓ UI61](Prototype.md#ui61) | [✓ customer_categories, customer_category_assignments](Database.md#table-customer_categories) | Complete |
+| Customer Management / history | Removed November 2026 | Removed | Removed | debtors, contacts and addresses remain |
+| Customer Categories | Removed November 2026 | Removed | Removed | Tables dropped |
 | Rider Management / performance | [✓](#plan-customer) | [✓](Module.md#m10) | [✓ UI30/UI31/UI32/UI54](Prototype.md#ui30) | [✓ staff, users, task_allocations, attendances](Database.md#table-staff) | Complete |
 | Excel upload / validation / preview / confirmation | [✓](#plan-import) | [✓](Module.md#m04) | [✓ UI14/UI57/UI15](Prototype.md#ui14) | [✓ import_batches, import_rows, documents](Database.md#table-import_batches) | Complete |
 | Automated Excel Column Mapping / aliases / review / profiles | [✓](#plan-import) | [✓](Module.md#m04) | [✓ UI57/UI39](Prototype.md#ui57) | [✓ import_fields, column_aliases, import_mapping_profiles, import_column_mappings](Database.md#table-import_fields) | Complete |

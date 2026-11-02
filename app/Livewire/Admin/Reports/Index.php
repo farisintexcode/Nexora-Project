@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Reports;
 use App\Actions\Reports\ManageReports;
 use App\Models\AssignmentBatch;
 use App\Models\ExportJob;
+use App\Models\Staff;
 use App\Services\Reports\TaskReports;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\URL;
@@ -19,7 +20,7 @@ class Index extends Component
 {
     use WithPagination;
 
-    public array $filters = ['family' => 'task', 'from' => '', 'until' => '', 'batch' => '', 'rider' => '', 'status' => '', 'iwk' => '', 'columns' => TaskReports::DEFAULT_COLUMNS];
+    public array $filters = ['family' => 'task', 'from' => '', 'until' => '', 'batch' => '', 'rider' => '', 'status' => '', 'task_id' => '', 'columns' => TaskReports::DEFAULT_COLUMNS];
 
     public bool $previewed = false;
 
@@ -43,7 +44,7 @@ class Index extends Component
 
     public function clearFilters(): void
     {
-        $this->filters = ['family' => 'task', 'from' => '', 'until' => '', 'batch' => '', 'rider' => '', 'status' => '', 'iwk' => '', 'columns' => TaskReports::DEFAULT_COLUMNS];
+        $this->filters = ['family' => 'task', 'from' => '', 'until' => '', 'batch' => '', 'rider' => '', 'status' => '', 'task_id' => '', 'columns' => TaskReports::DEFAULT_COLUMNS];
         $this->previewed = false;
         $this->resetPage();
     }
@@ -72,9 +73,10 @@ class Index extends Component
         $reports->authorize(auth()->user());
         $snapshot = $this->previewed ? $reports->snapshot(auth()->user(), $this->filters) : null;
         $rows = $snapshot ? new LengthAwarePaginator(array_slice($snapshot['rows'], ($this->getPage() - 1) * 20, 20), count($snapshot['rows']), 20, $this->getPage(), ['path' => request()->url()]) : null;
-        $batches = AssignmentBatch::query()->orderBy('name')->get(['public_id', 'name']);
+        $batches = AssignmentBatch::query()->latest('id')->limit(200)->get();
+        $riders = Staff::query()->where('is_rider', true)->orderBy('first_name')->limit(200)->get();
         $exports = ExportJob::query()->where('requested_by', auth()->id())->latest('id')->paginate(10, ['*'], 'exportsPage');
 
-        return view('livewire.admin.reports.index', compact('snapshot', 'rows', 'batches', 'exports'));
+        return view('livewire.admin.reports.index', compact('snapshot', 'rows', 'batches', 'riders', 'exports'));
     }
 }

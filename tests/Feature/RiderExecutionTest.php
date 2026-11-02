@@ -203,7 +203,7 @@ test('clean proof completion freezes exact snapshot manifest and returns same su
 test('payment claims and available signboards require their conditional proof categories', function (): void {
     Storage::fake('s3');
     [$rider,$task] = executionFixture();
-    executionVisit($rider, $task, ['purpose' => 'address_verification', 'signboard_available' => '1', 'outcome' => 'payment_claimed']);
+    executionVisit($rider, $task, ['purpose' => 'address_verification', 'signboard_available' => '1', 'outcome' => 'payment_claimed', 'paid_amount' => '100.00']);
     $premise = executionProof($rider, $task);
     cleanExecutionProof($premise);
     expect(app(CompletionChecklist::class)->review($task->refresh(), $rider)['issues'])->toHaveKey('proof');

@@ -26,11 +26,6 @@ class ImportRow extends Model
         return $this->belongsTo(ImportBatch::class, 'import_batch_id');
     }
 
-    public function customer(): BelongsTo
-    {
-        return $this->belongsTo(Debtor::class, 'target_customer_id');
-    }
-
     public function assignmentBatch(): BelongsTo
     {
         return $this->belongsTo(AssignmentBatch::class, 'target_assignment_batch_id');

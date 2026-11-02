@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /** M04 / Database.md: versioned registry, private source documents and encrypted staging. */
 class Document extends Model
 {
+    public const CLEARED_SCANS = ['clean', 'skipped'];
+
     use HasFactory, HasPublicId;
     use SoftDeletes;
 
@@ -31,6 +33,12 @@ class Document extends Model
     }
 
     /** M06 / UI23: stable display reference; original evidence bytes remain untouched. */
+    /** Clean, or skipped where the environment does not require a scan. Production always scans. */
+    public function isCleared(): bool
+    {
+        return in_array($this->scan_status, self::CLEARED_SCANS, true);
+    }
+
     public function proofReference(): string
     {
         return 'IMG-'.$this->id.'-'.strtoupper(substr(str_replace('-', '', $this->public_id), -8));

@@ -14,7 +14,7 @@ class DebtAccountPolicy
 
     public function create(User $user): bool
     {
-        return $user->isActive() && $user->can('admin.access') && $user->can('customers.update') && $user->can('tasks.create');
+        return $user->isActive() && $user->can('admin.access') && $user->can('tasks.create');
     }
 
     public function update(User $user, DebtAccount $account): bool

@@ -23,6 +23,8 @@ class Index extends Component
 {
     use WithPagination;
 
+    private const ADVANCED_FILTERS = ['rider', 'from', 'until'];
+
     #[Url]
     public string $status = 'pending';
 
@@ -46,6 +48,13 @@ class Index extends Component
 
     public string $reason = '';
 
+    /**
+     * Unapplied filter panel values; they reach the query only through applyFilters().
+     *
+     * @var array{rider: string, from: string, until: string}
+     */
+    public array $draft = ['rider' => '', 'from' => '', 'until' => ''];
+
     #[Locked]
     public array $preview = [];
 
@@ -55,10 +64,14 @@ class Index extends Component
     public function mount(): void
     {
         $this->query = session('verification_search.'.Auth::id(), '');
+        $this->syncDraft();
     }
 
     public function updated(string $property): void
     {
+        if (str_starts_with($property, 'draft')) {
+            return;
+        }
         $this->preview = [];
         $this->results = [];
         if (! in_array($property, ['selected', 'reason', 'decision']) && ! str_starts_with($property, 'selected.')) {
@@ -68,6 +81,44 @@ class Index extends Component
         if ($property === 'query') {
             session()->put('verification_search.'.Auth::id(), mb_substr($this->query, 0, 100));
         }
+    }
+
+    private function syncDraft(): void
+    {
+        foreach (self::ADVANCED_FILTERS as $filter) {
+            $this->draft[$filter] = $this->{$filter};
+        }
+    }
+
+    private function filtersChanged(): void
+    {
+        $this->syncDraft();
+        $this->preview = [];
+        $this->results = [];
+        $this->selected = [];
+        $this->resetPage();
+    }
+
+    public function applyFilters(): void
+    {
+        foreach (self::ADVANCED_FILTERS as $filter) {
+            $value = $this->draft[$filter] ?? '';
+            $this->{$filter} = is_string($value) ? mb_substr(trim($value), 0, 64) : '';
+        }
+        $this->filtersChanged();
+    }
+
+    public function resetAdvancedFilters(): void
+    {
+        $this->reset(self::ADVANCED_FILTERS);
+        $this->filtersChanged();
+    }
+
+    public function resetFilters(): void
+    {
+        $this->reset([...self::ADVANCED_FILTERS, 'query', 'status', 'batch']);
+        session()->forget('verification_search.'.Auth::id());
+        $this->filtersChanged();
     }
 
     public function prepareReview(ReviewSubmission $review): void
@@ -120,7 +171,7 @@ class Index extends Component
         session()->put('verification_filters.'.Auth::id(), ['status' => $this->status, 'batch' => $this->batch, 'rider' => $this->rider, 'from' => $this->from, 'until' => $this->until]);
 
         return view('livewire.admin.verification.index', [
-            'submissions' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'dateError' => $dates->fails() ? 'Choose a valid submission date range (MYT).' : null,
+            'submissions' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'dateError' => $dates->fails() ? 'Choose a valid submission date range (MYT).' : null, 'activeFilterCount' => count(array_filter([$this->rider, $this->from.$this->until], fn (string $value): bool => $value !== '')),
             'batches' => AssignmentBatch::query()->orderByDesc('id')->limit(200)->get(),
             'riders' => Staff::query()->whereHas('user', fn ($u) => $u->whereIn('id', TaskSubmission::query()->select('submitted_by')))->orderBy('first_name')->limit(200)->get(),
         ]);

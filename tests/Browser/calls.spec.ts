@@ -54,9 +54,6 @@ test('agent finds customer records backdated callback updates contacts and resol
         await page.setViewportSize({width:375,height:667});
     }
     await page.screenshot({path:'.local-tools/m11-'+surface+'-workspace.png',fullPage:true});
-    await page.getByRole('link',{name:'Customer details',exact:true}).click();
-    await page.getByRole('button',{name:'Communication',exact:true}).click();
-    await expect(page.getByText('Synthetic callback conversation '+run,{exact:true})).toBeVisible();
     await page.goto('/admin/calls/follow-ups');
     const card=page.locator('article').filter({hasText:'Synthetic Call Customer '+surface});
     await card.getByLabel('Resolution remarks',{exact:true}).fill('Synthetic callback complete '+run);

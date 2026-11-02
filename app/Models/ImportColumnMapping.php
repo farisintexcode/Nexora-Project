@@ -28,9 +28,4 @@ class ImportColumnMapping extends Model
     {
         return $this->belongsTo(ImportField::class, 'field_id');
     }
-
-    public function alias(): BelongsTo
-    {
-        return $this->belongsTo(ColumnAlias::class, 'alias_id');
-    }
 }

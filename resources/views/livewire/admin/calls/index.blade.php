@@ -2,7 +2,7 @@
 <form wire:submit="$refresh" class="surface grid min-w-0 gap-4 p-5 md:grid-cols-3">
 <x-select name="searchBy" label="Search by" wire:model="searchBy"><option value="reference">Exact customer reference</option><option value="name">Customer name (3+ characters per word)</option><option value="contact">Exact phone or email</option><option value="account">Exact account number</option>@if($canTasks)<option value="task">Exact task reference (UUID)</option>@endif</x-select>
 <x-input name="query" label="Search customers" wire:model="query" maxlength="200" placeholder="Enter a reference or search value" help="Search values stay out of the URL." />
-<x-select name="category" label="Customer category" wire:model="category"><option value="">All categories</option>@foreach($categories as $option)<option value="{{ $option->public_id }}">{{ $option->name }}</option>@endforeach</x-select>
+
 @if($canTasks)<x-select name="rider" label="Current assigned Rider" wire:model="rider"><option value="">All Riders</option>@foreach($riders as $option)<option value="{{ $option->public_id }}">{{ $option->full_name }} · {{ $option->staff_no }}</option>@endforeach</x-select>@endif
 <x-button variant="secondary">Search</x-button></form>
 <div wire:loading.delay role="status" class="rounded-xl bg-brand-soft p-4 text-sm">Searching your permitted customer portfolio…</div>

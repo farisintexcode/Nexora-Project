@@ -27,6 +27,22 @@ class TaskProof
 {
     public function __construct(private RiderAccess $access, private RiderWork $work) {}
 
+    /** Production always scans, whatever the environment configuration says. */
+    public static function scanRequired(): bool
+    {
+        return config('task_execution.scan_required') || app()->isProduction();
+    }
+
+    public static function bucket(): ?string
+    {
+        return config('task_execution.disk') === 's3' ? config('filesystems.disks.s3.bucket') : 'local';
+    }
+
+    public static function storageReady(): bool
+    {
+        return filled(self::bucket());
+    }
+
     public function upload(User $actor, Task $context, int $version, UploadedFile $file, string $category, ?string $caption): Document
     {
         Gate::forUser($actor->fresh())->authorize('execute', $context);
@@ -37,7 +53,7 @@ class TaskProof
         ])->validate();
         $this->access->current($actor, $context) || abort(404);
         $bytes = $this->raster($file);
-        $bucket = config('filesystems.disks.s3.bucket');
+        $bucket = self::bucket();
         if (! $bucket) {
             throw new RuntimeException('private_storage_unavailable');
         }
@@ -64,13 +80,15 @@ class TaskProof
                 if ($documents->count() >= config('task_execution.max_images')) {
                     throw ValidationException::withMessages(['proof' => 'Remove a draft image before adding more. Maximum 10 images.']);
                 }
-                if (! Storage::disk('s3')->put($object, Crypt::encryptString($bytes), ['visibility' => 'private'])) {
+                if (! Storage::disk(config('task_execution.disk'))->put($object, Crypt::encryptString($bytes), ['visibility' => 'private'])) {
                     throw new RuntimeException('private_storage_failed');
                 }
                 $stored = true;
                 $document = new Document;
-                $document->forceFill(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $actor->id, 'disk' => 's3', 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => 'proof.jpg', 'mime_type' => 'image/jpeg', 'size_bytes' => strlen($bytes), 'sha256' => $hash, 'document_type_code' => 'proof_image', 'image_category_code' => $category, 'caption_ciphertext' => trim($caption ?? '') ?: null, 'scan_status' => 'pending'])->save();
-                $this->enqueue($document);
+                $document->forceFill(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $actor->id, 'disk' => config('task_execution.disk'), 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => 'proof.jpg', 'mime_type' => 'image/jpeg', 'size_bytes' => strlen($bytes), 'sha256' => $hash, 'document_type_code' => 'proof_image', 'image_category_code' => $category, 'caption_ciphertext' => trim($caption ?? '') ?: null, 'scan_status' => self::scanRequired() ? 'pending' : 'skipped'])->save();
+                if (self::scanRequired()) {
+                    $this->enqueue($document);
+                }
                 $this->work->change($actor, $task, 'proof_uploaded', 'in_progress', 'none');
 
                 return $document->refresh();
@@ -78,7 +96,7 @@ class TaskProof
         } catch (\Throwable $error) {
             if ($stored) {
                 try {
-                    Storage::disk('s3')->delete($object);
+                    Storage::disk(config('task_execution.disk'))->delete($object);
                 } catch (\Throwable) {
                 }
             }
@@ -184,11 +202,11 @@ class TaskProof
 
     public function bytes(Document $document): string
     {
-        if ($document->disk !== 's3' || $document->bucket !== config('filesystems.disks.s3.bucket') || $document->document_type_code !== 'proof_image' ||
+        if ($document->disk !== config('task_execution.disk') || $document->bucket !== self::bucket() || $document->document_type_code !== 'proof_image' ||
             $document->size_bytes > config('task_execution.max_image_kib') * 1024) {
             throw new RuntimeException('proof_storage_invalid');
         }
-        $encrypted = Storage::disk('s3')->get($document->object_key);
+        $encrypted = Storage::disk(config('task_execution.disk'))->get($document->object_key);
         if (! is_string($encrypted) || strlen($encrypted) > config('task_execution.max_image_kib') * 2048 + 8192) {
             throw new RuntimeException('proof_unavailable');
         }

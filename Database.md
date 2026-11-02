@@ -6,6 +6,25 @@ Terminology: **Customer** is the UI/business term for the existing party record 
 
 InteXcode (IXC) · 16 October 2026 · Proposed normalized schema derived from observed DRMS fields and workflows.
 
+## Current implementation — November 2026
+
+**This section overrides anything older in this document.** Text marked O or U, and IWK labels in particular, remain evidence about the reference system only.
+
+| Area | What is built now |
+|---|---|
+| Clients | Removed. There is one tenant, so there are no client scopes or client_id columns. |
+| Customer Management (M13) | Removed: customer pages, categories, the customer import type, and account editing pages. `debtors` stays as the internal record behind tasks, calls and communications, created automatically from Create Task or Upload Task. |
+| Task ID | Replaces the IWK ID. Comes from the workbook or Create Task, must end in a number, and is read by its trailing digits within its assignment: FG001 is 1 and DT2304 is 2304. Numbers are unique per assignment. |
+| Upload Task (M04) | Fixed contract with automatic column detection. Missing required columns fail immediately with a message. History lists successful uploads, searched by file name and uploaded date. A blank Excel template can be downloaded. |
+| Assign Task (M05) | Choose the assignment, then Single (12), Selected (12, 15, 18), Range (From 10 - To 20) or Range and Selected (10-20 plus 25). Tasks ticked on Manage Task still go straight to Assign Task. |
+| Delete task (M05) | Admins with `tasks.delete` can delete tasks that have no Rider and no recorded work. The record is hidden, not erased, because task history is immutable, and its task ID can be reused. Started work uses Cancel. |
+| Amounts owed (M08) | Each task has append-only encrypted balance records: outstanding balance, monthly charge and balance date, from upload or Create Task. Customers pay the client directly. |
+| Payment claims (M06, M07) | The Rider sees the balance, enters the amount paid and adds a Payment Evidence photo. A reviewer must confirm the photo matches the amount. An equal amount clears the balance, a lower amount needs a second confirmation as a part payment, and a higher amount cannot be approved. Claims are reviewed one at a time, never in bulk. |
+| Reports (M09) | Show total outstanding and verified collected, per task and per Rider. Only approved claims count as collected. Task ID accepts one ID, several, a range or a mix. |
+| Proof storage | `PROOF_DISK` and `PROOF_SCAN_REQUIRED` allow local storage without scanning for development. Production always scans. |
+
+Physical changes behind this: `tasks.source_iwk_id` is now `source_task_id`, with `source_task_number` and `deleted_at` added; `bulk_operations` lost `from_iwk_id` and `to_iwk_id` and allows selection mode `range_selected`; `collection_activities` gained `paid_amount_ciphertext`; `import_rows.target_customer_id` was dropped. The tables clients, user_client_scopes, customer_categories, customer_category_assignments and column_aliases were dropped, and financial_updates was never built.
+
 ## Evidence, readiness and naming
 
 This is the expanded confirmed DebtOps design, not a reverse-engineered DRMS schema. E01–E24 and G01–G08 remain reference evidence/follow-ups. C defines required product behaviour; table/constraint choices are P. Legacy template/data semantics need fixtures, while attendance policy values, template wording and provider enablement are release configuration gates. The absence of a DRMS feature does not block implementing confirmed attendance, mapping, Customer Management or communications.
@@ -483,6 +502,9 @@ erDiagram
 
 ## Table: clients
 
+> **Removed (November 2026).** This table no longer exists. The system has one tenant. The text below is kept as history only.
+
+
 - **Purpose / description:** Commissioning company/account namespace.
 - **Module / evidence:** M03/M06; E14 client company; management UI P. Physical design P.
 - **Model:** Client.
@@ -785,7 +807,9 @@ erDiagram
 | assignment_batch_id | bigint | Yes | — | FK → assignment_batches.id; indexed | Parent batch |
 | debt_account_id | bigint | Yes | — | FK → debt_accounts.id; indexed | Stable account |
 | source_import_row_id | bigint | No | NULL | FK → import_rows.id; indexed | Source row provenance |
-| source_iwk_id | varchar(100) | No | NULL | Partial unique with assignment_batch_id | Required for imported source-keyed task; null for manual task |
+| source_task_id | varchar(100) | No | NULL | Partial unique with assignment_batch_id where not deleted | Task ID such as FG001; immutable |
+| source_task_number | bigint | No | NULL | Partial unique with assignment_batch_id where not deleted | Trailing digits of the task ID; used by Assign Task and Reports; immutable |
+| deleted_at | timestamptz | No | NULL | — | Set when an admin deletes a task with no work; the row and its history remain |
 | type_category | varchar(50) | Yes | 'assignment_type' | See constraints below | Fixed lookup category; CHECK type_category='assignment_type' |
 | type_code | varchar(64) | Yes | — | Composite FK (type_category,type_code) → reference_values(category,code); indexed | Pinned task type from batch at intake |
 | work_status | varchar(24) | Yes | 'unstarted' | See constraints below | unstarted/in_progress/submitted/completed/cancelled |
@@ -845,6 +869,8 @@ erDiagram
 <a id="table-collection_activities"></a>
 
 ## Table: collection_activities
+
+**M08 physical extension (November 2026):** nullable `paid_amount_ciphertext` TEXT, encrypted, holds the amount a Rider says the customer paid. It is a claim until approved.
 
 **M11 physical extension (18 October 2026):** nullable `call_details_ciphertext` TEXT with encrypted:array cast and hidden serialization stores versioned outgoing/manual direction, selected phone snapshot, outcome label, Other detail and optional PTP narrative/date/decimal-string amount/currency. Existing person_contacted/notes/backdating_reason and created_at preserve typed narrative, approved historical justification and server entry time. Calls remain immutable, use existing customer/contact/task context guards and UUID idempotency; no duplicate call table. Index(customer_id,occurred_at,id) supports scoped chronological history. One-day MYT backdating with reason follows owner approval in Module.md M11. Outcome reference metadata.activity_types separates call-only values from site visits; Promise to Pay supports both. Legacy visit outcomes without that metadata retain their visit meaning.
 
@@ -1024,6 +1050,9 @@ erDiagram
 
 ## Table: financial_updates
 
+> **Not built.** Balances are recorded directly in financial_snapshots. The text below is an unused earlier proposal.
+
+
 - **Purpose / description:** Staged/approved external financial update, not a payment receipt.
 - **Module / evidence:** M08; E11 Payment Update; review P. Physical design P.
 - **Model:** FinancialUpdate.
@@ -1047,29 +1076,25 @@ erDiagram
 
 ## Table: financial_snapshots
 
-- **Purpose / description:** Immutable client-reported amounts with date and source.
-- **Module / evidence:** M08; E14 monetary fields. Physical design P.
+- **Purpose / description:** Append-only record of what a customer owed at a point in time, and of verified payments. Not a receipt.
+- **Module / evidence:** M08.
 - **Model:** FinancialSnapshot.
 - **Primary key / common columns:** Universal bigint id, public UUID and timestamps above.
 
 | Column | PostgreSQL type / length | Required | Default | Key / relationship | Description / validation meaning |
 |---|---|---|---|---|---|
-| debt_account_id | bigint | Yes | — | FK → debt_accounts.id; indexed | Stable account |
-| task_id | bigint | No | NULL | FK → tasks.id; indexed | Source assignment context |
-| financial_update_id | bigint | No | NULL | FK → financial_updates.id; indexed | Approved update provenance |
-| import_row_id | bigint | No | NULL | FK → import_rows.id; indexed | Original assignment snapshot provenance |
-| as_of_date | date | No | NULL | See constraints below | Source balance date; null when absent |
-| currency | char(3) | Yes | 'MYR' | See constraints below | Amount denomination |
-| lod_overdue_amount | numeric(18,2) | No | NULL | See constraints below | LODOverdueAmount |
-| sewerage_service_charge | numeric(18,2) | No | NULL | See constraints below | CajPerkhidmatanPembentungan |
-| ctos_cancellation_charge | numeric(18,2) | No | NULL | See constraints below | Source 3pctg label; do not recalculate automatically |
-| demand_letter_charge | numeric(18,2) | No | NULL | See constraints below | CajUntukSuratTuntutan |
-| total_charge_payable | numeric(18,2) | No | NULL | See constraints below | JumlahCajYangPerluDibayar |
-| balance_at_date | numeric(18,2) | No | NULL | See constraints below | balanceAmountAtDate |
-| balance_copy_bill | numeric(18,2) | No | NULL | See constraints below | balanceAmountAsCopyBill |
-| balance_difference_flag | varchar(32) | No | NULL | See constraints below | Source Y/other marker, not decimal delta |
+| task_id | bigint | Yes | — | FK → tasks.id; indexed with id | The task this balance belongs to |
+| debt_account_id | bigint | Yes | — | FK → debt_accounts.id | Stable account |
+| recorded_by | bigint | Yes | — | FK → users.id | Who added this row |
+| submission_id | bigint | No | NULL | FK → task_submissions.id | The approved submission, for source payment |
+| source_code | varchar(16) | Yes | — | CHECK | import, manual or payment |
+| currency | char(3) | Yes | 'MYR' | — | Amount denomination |
+| outstanding_balance_ciphertext | text | No | NULL | Encrypted | Balance as plain decimal text, for example 1234.50 |
+| monthly_charge_ciphertext | text | No | NULL | Encrypted | Monthly charge |
+| paid_amount_ciphertext | text | No | NULL | Encrypted | Required for source payment |
+| balance_date | date | No | NULL | — | Date of the balance |
 
-**Constraints, indexes, validation, relationships and remarks:** Unique financial_update_id when non-null; index(debt_account_id,as_of_date,created_at),(task_id). Require import_row_id or financial_update_id, with source kind validated. Null means unknown, not zero. Permit signed source amounts until G04 confirms credit handling. Current projection chooses approved latest dated snapshot under explicit null-date rule; never sum snapshots.
+**Constraints, indexes, validation, relationships and remarks:** A trigger refuses every update and delete, so a change adds a row and the latest row is current. Amounts are compared as whole cents in application code. Encrypted values cannot be summed in SQL, so reports total them in PHP within the existing report task limit.
 
 <a id="table-documents"></a>
 
@@ -1152,9 +1177,7 @@ erDiagram
 | assignment_batch_id | bigint | Yes | — | FK → assignment_batches.id; indexed | Scope |
 | operation_code | varchar(32) | Yes | — | See constraints below | new/replace/reassign/unassign/cancel |
 | target_collector_id | bigint | No | NULL | FK → staff.id; indexed | Required except unassign/cancel |
-| selection_mode | varchar(24) | Yes | — | CHECK single/selected/range | Explicit selection contract; no invented source keys |
-| from_iwk_id | varchar(100) | Range only | NULL | Required only for range mode | Source range start |
-| to_iwk_id | varchar(100) | Range only | NULL | Required only for range mode | Source range end |
+| selection_mode | varchar(24) | Yes | — | CHECK single/selected/range/range_selected | How the tasks were chosen on Assign Task |
 | reason | text | Yes | — | See constraints below | Operation rationale |
 | preview_digest | char(64) | Yes | — | See constraints below | Selected task/version digest |
 | idempotency_key | uuid | Yes | application UUID v7 | See constraints below | Repeat protection |
@@ -1347,6 +1370,9 @@ erDiagram
 
 ## Table: user_client_scopes
 
+> **Removed (November 2026).** This table no longer exists. Access is controlled by roles and permissions only. The text below is kept as history only.
+
+
 - **Purpose / description:** Explicit client portfolio access, independent of global action permissions.
 - **Module / evidence:** M01/M12; P implementing record-level authorization. Physical design P.
 - **Model:** UserClientScope.
@@ -1368,6 +1394,9 @@ erDiagram
 
 ## Table: customer_categories
 
+> **Removed (November 2026).** This table no longer exists. Customer Management was removed. The text below is kept as history only.
+
+
 - **Purpose / description:** Customer classification reference, scoped to commissioning client.
 - **Module / evidence:** M13; C confirmed scope, P relational implementation.
 - **Model:** CustomerCategory.
@@ -1386,6 +1415,9 @@ erDiagram
 <a id="table-customer_category_assignments"></a>
 
 ## Table: customer_category_assignments
+
+> **Removed (November 2026).** This table no longer exists. Customer Management was removed. The text below is kept as history only.
+
 
 - **Purpose / description:** Time-bound membership without duplicating customer identity.
 - **Module / evidence:** M13; C confirmed scope, P relational implementation.
@@ -1425,6 +1457,9 @@ erDiagram
 <a id="table-column_aliases"></a>
 
 ## Table: column_aliases
+
+> **Removed (November 2026).** This table no longer exists. Header aliases now live in `config/imports.php`. The text below is kept as history only.
+
 
 - **Purpose / description:** Configurable multilingual header variants, not hardcoded Excel positions.
 - **Module / evidence:** M04; C confirmed scope, P relational implementation.

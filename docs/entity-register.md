@@ -1,5 +1,7 @@
 # DebtOps entity implementation register
 
+> **November 2026:** clients, Customer Management (M13), customer categories and column aliases were removed, the IWK ID became the task ID, and financial snapshots were added. See "Current implementation" in [Module.md](../Module.md) and [Database.md](../Database.md), which override older text here.
+
 Derived tracking index only; Database.md remains authoritative for every field, relationship and constraint. Foundation does not imply module CRUD is complete. Framework reset/job tables and package-owned Pulse tables are additional operational schema.
 
 | Entity / source | Model | Module | Disposition |
@@ -15,9 +17,9 @@ Derived tracking index only; Database.md remains authoritative for every field, 
 | [clients](../Database.md#table-clients) | Client | M03/M06 | Foundation |
 | [assignment_batches](../Database.md#table-assignment_batches) | AssignmentBatch | M03 | Metadata/register/archive implemented; task intake pending M04/M05 |
 | [properties](../Database.md#table-properties) | Property | M06 | M05 implemented; execution/review extensions follow in M06/M07 |
-| [debtors](../Database.md#table-debtors) | Debtor | M13/M06 | M13 implemented |
-| [contacts](../Database.md#table-contacts) | Contact | M13/M06 | M13 implemented |
-| [addresses](../Database.md#table-addresses) | Address | M13/M06 | M13 implemented |
+| [debtors](../Database.md#table-debtors) | Debtor | M05/M06 | Internal record, created from tasks |
+| [contacts](../Database.md#table-contacts) | Contact | M05/M06/M11 | Implemented; created from tasks, edited in Call Centre |
+| [addresses](../Database.md#table-addresses) | Address | M06 | Table kept; no longer written by a page |
 | [debt_accounts](../Database.md#table-debt_accounts) | DebtAccount | M06/M08 | M05 implemented; execution/review extensions follow in M06/M07 |
 | [account_parties](../Database.md#table-account_parties) | AccountParty | M06 | M05 implemented; execution/review extensions follow in M06/M07 |
 | [import_templates](../Database.md#table-import_templates) | ImportTemplate | M04/M11/M12 | M04 implemented; dependent target kinds remain gated |
@@ -30,8 +32,8 @@ Derived tracking index only; Database.md remains authoritative for every field, 
 | [task_observations](../Database.md#table-task_observations) | TaskObservation | M06 | Planned |
 | [follow_ups](../Database.md#table-follow_ups) | FollowUp | M06/M11 | Implemented visit/call reminders and immutable assigned-agent call resolutions |
 | [task_reviews](../Database.md#table-task_reviews) | TaskReview | M07 | Implemented M07: immutable independent decisions |
-| [financial_updates](../Database.md#table-financial_updates) | FinancialUpdate | M08 | Planned |
-| [financial_snapshots](../Database.md#table-financial_snapshots) | FinancialSnapshot | M08 | Planned |
+| [financial_updates](../Database.md#table-financial_updates) | FinancialUpdate | M08 | Not built |
+| [financial_snapshots](../Database.md#table-financial_snapshots) | FinancialSnapshot | M08 | Implemented |
 | [documents](../Database.md#table-documents) | Document | M04/M06/M09/M01/M14 | Private source/proof/letter artifacts implemented; reporting targets remain gated |
 | [export_jobs](../Database.md#table-export_jobs) | ExportJob | M09 | Planned |
 | [bulk_operations](../Database.md#table-bulk_operations) | BulkOperation | M05 | M05 implemented; execution/review extensions follow in M06/M07 |
@@ -45,10 +47,10 @@ Derived tracking index only; Database.md remains authoritative for every field, 
 | [outbox_events](../Database.md#table-outbox_events) | OutboxEvent | M04/M05/M09/M12 | Foundation |
 | [processed_events](../Database.md#table-processed_events) | ProcessedEvent | M12 | Foundation |
 | [user_client_scopes](../Database.md#table-user_client_scopes) | UserClientScope | M01/M12 | Foundation |
-| [customer_categories](../Database.md#table-customer_categories) | CustomerCategory | M13 | M13 implemented |
-| [customer_category_assignments](../Database.md#table-customer_category_assignments) | CustomerCategoryAssignment | M13 | M13 implemented |
+| [customer_categories](../Database.md#table-customer_categories) | CustomerCategory | — | Removed |
+| [customer_category_assignments](../Database.md#table-customer_category_assignments) | CustomerCategoryAssignment | — | Removed |
 | [import_fields](../Database.md#table-import_fields) | ImportField | M04 | M04 implemented; dependent target kinds remain gated |
-| [column_aliases](../Database.md#table-column_aliases) | ColumnAlias | M04 | M04 implemented; dependent target kinds remain gated |
+| [column_aliases](../Database.md#table-column_aliases) | ColumnAlias | — | Removed; aliases are in config/imports.php |
 | [import_mapping_profiles](../Database.md#table-import_mapping_profiles) | ImportMappingProfile | M04 | M04 implemented; dependent target kinds remain gated |
 | [import_column_mappings](../Database.md#table-import_column_mappings) | ImportColumnMapping | M04 | M04 implemented; dependent target kinds remain gated |
 | [task_status_histories](../Database.md#table-task_status_histories) | TaskStatusHistory | M05/M06/M07 | M05 implemented; execution/review extensions follow in M06/M07 |

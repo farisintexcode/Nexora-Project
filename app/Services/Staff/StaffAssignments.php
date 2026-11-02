@@ -22,7 +22,7 @@ class StaffAssignments
         }
 
         return DB::table('task_allocations as allocation')->join('tasks', 'tasks.id', '=', 'allocation.task_id')
-            ->where('allocation.collector_id', $staff->id)->whereNull('allocation.released_at')
+            ->where('allocation.collector_id', $staff->id)->whereNull('allocation.released_at')->whereNull('tasks.deleted_at')
             ->whereNotIn('tasks.work_status', ['completed', 'cancelled'])->count();
     }
 }

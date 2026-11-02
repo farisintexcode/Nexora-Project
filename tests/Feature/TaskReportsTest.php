@@ -42,7 +42,7 @@ function reportFixture(): array
 }
 function reportCriteria(array $overrides = []): array
 {
-    return array_replace(['family' => 'task', 'from' => '', 'until' => '', 'batch' => '', 'rider' => '', 'status' => '', 'iwk' => '', 'columns' => TaskReports::DEFAULT_COLUMNS], $overrides);
+    return array_replace(['family' => 'task', 'from' => '', 'until' => '', 'batch' => '', 'rider' => '', 'status' => '', 'task_id' => '', 'columns' => TaskReports::DEFAULT_COLUMNS], $overrides);
 }
 
 test('reports require active administrative report and source access', function () {
@@ -71,7 +71,7 @@ test('criteria reject invalid dates columns families and excessive snapshots', f
         expect(fn () => $reports->snapshot($actor, reportCriteria($overrides)))->toThrow(ValidationException::class);
     }
     expect($reports->snapshot($actor, reportCriteria(['until' => now()->addDay()->format('Y-m-d')]))['totals']['tasks'])->toBe(1);
-    expect($reports->snapshot($actor, reportCriteria(['iwk' => 'MISSING-SYNTHETIC-REFERENCE']))['rows'])->toBe([]);
+    expect($reports->snapshot($actor, reportCriteria(['task_id' => '99999']))['rows'])->toBe([]);
     config(['reports.max_tasks' => 0]);
     expect(fn () => $reports->snapshot($actor, reportCriteria()))->toThrow(ValidationException::class);
 });

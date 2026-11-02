@@ -17,7 +17,7 @@
             <p class="rounded-xl bg-brand-soft p-3 text-sm">Eligible tasks will become Pending Verification. Only independent Admin approval makes them Completed.</p>
         @endif
         @if($operation === 'visit_date')<p class="text-xs leading-6 text-ink-500">Actual visits may be today or yesterday in MYT. This creates a new visit draft. Earlier proof is retained in history; the new draft needs its own proof before submission.</p>@endif
-        @if($operation === 'dr_code')<p class="text-xs leading-6 text-ink-500">DR01 is a payment claim, not a financial receipt, and needs Payment Evidence before submission. DR02 needs a due follow-up.</p>@endif
+        @if($operation === 'dr_code')<p class="text-xs leading-6 text-ink-500">DR01 is a payment claim, not a receipt. It needs the amount paid, entered on the task, and Payment Evidence before submission. DR02 needs a due follow-up.</p>@endif
         <x-input name="reason" label="Reason / explanation" wire:model.live.debounce.300ms="reason" required maxlength="2000" help="Recorded with the update. For Other selections, explain the value; for visit time changes, explain the correction." />
     </div>
     @if($tasks)

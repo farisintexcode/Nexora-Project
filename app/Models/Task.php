@@ -9,11 +9,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /** M05 / Database.md: canonical account, task and allocation entities. */
 class Task extends Model
 {
-    use HasFactory,HasPublicId;
+    use HasFactory,HasPublicId,SoftDeletes;
 
     protected $dateFormat = 'Y-m-d H:i:s.u';
 
@@ -27,6 +28,26 @@ class Task extends Model
     public function batch(): BelongsTo
     {
         return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id');
+    }
+
+    /** Task IDs are read by their last run of digits: FG001 is 1, DT2304 is 2304. */
+    public static function numberFromId(string $id): ?int
+    {
+        if (! preg_match('/(\d+)\D*$/', $id, $match) || strlen($match[1]) > 18) {
+            return null;
+        }
+
+        return (int) $match[1];
+    }
+
+    public function balances(): HasMany
+    {
+        return $this->hasMany(FinancialSnapshot::class)->orderBy('id');
+    }
+
+    public function latestBalance(): HasOne
+    {
+        return $this->hasOne(FinancialSnapshot::class)->latestOfMany('id');
     }
 
     public function account(): BelongsTo

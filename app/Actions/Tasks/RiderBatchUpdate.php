@@ -168,6 +168,7 @@ class RiderBatchUpdate
             $input[$field] = $visit->inspection?->{$field.'_code'};
         }
         $input['dr_code'] = $visit->inspection?->dr_code;
+        $input['paid_amount'] = $visit->paid_amount_ciphertext;
         $input['usage_other'] = $visit->inspection?->usage_other;
         $input['shop_name'] = $visit->inspection?->shop_company_ciphertext;
         $input['business_other'] = $visit->inspection?->business_other_ciphertext;

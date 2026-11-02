@@ -56,7 +56,7 @@ class Index extends Component
         abort_unless(Auth::user()->can('tasks.view'), 403);
         $this->validate(['status' => ['required', Rule::in(['all', 'today', 'pending', 'assigned', 'in_progress', 'returned', 'submitted', 'completed', 'history'])],
             'batch' => ['nullable', 'string', 'max:100'], 'due' => ['nullable', 'date_format:Y-m-d'], 'query' => ['nullable', 'string', 'max:100']]);
-        $tasks = $access->scope(Task::query(), Auth::user())->with(['batch', 'customer', 'account', 'currentAllocation']);
+        $tasks = $access->scope(Task::query(), Auth::user())->with(['batch', 'customer', 'account', 'currentAllocation', 'latestBalance']);
         match ($this->status) {
             'today' => $tasks->whereRaw('(COALESCE(scheduled_visit_at,due_at,((SELECT due_date FROM assignment_batches WHERE id=tasks.assignment_batch_id)+1)::timestamp AT TIME ZONE ? - interval \'1 microsecond\') AT TIME ZONE ?)::date=?', [config('dcms.business_timezone'), config('dcms.business_timezone'), now()->timezone(config('dcms.business_timezone'))->toDateString()]),
             'pending' => $tasks->whereIn('work_status', ['unstarted', 'in_progress']),

@@ -51,6 +51,9 @@ class Review extends Component
         $this->sheet = $batch->selected_sheet ?? '';
         $this->header = $batch->header_row_number ?? 1;
         $this->hydrateMapping($batch);
+        if ($batch->status === 'mapping' && $this->selections !== []) {
+            $this->tab = 'mapping';
+        }
     }
 
     private function batch(): ImportBatch
@@ -111,14 +114,20 @@ class Review extends Component
             }
         }
         $workflow->confirm(Auth::user(), $batch, $this->digest);
-        session()->flash('success', 'Accepted rows confirmed. Processing begins when the imports worker receives this job.');
+        if (config('queue.default') === 'sync') {
+            $workflow->process($batch->id);
+            $batch->refresh();
+            session()->flash('status', ($batch->processed_count === 1 ? '1 task created.' : "{$batch->processed_count} tasks created.").($batch->failed_count > 0 ? " {$batch->failed_count} rows failed. See the Errors tab." : ''));
+        } else {
+            session()->flash('status', 'Accepted rows confirmed. The tasks are being created in the background.');
+        }
         $this->tab = 'summary';
     }
 
     public function cancel(ImportWorkflow $workflow): void
     {
         $workflow->cancel(Auth::user(), $this->batch());
-        session()->flash('success', 'Import cancelled. Previously processed rows remain in history.');
+        session()->flash('status', 'Import cancelled. Previously processed rows remain in history.');
     }
 
     public function retry(ImportWorkflow $workflow): void
@@ -157,6 +166,12 @@ class Review extends Component
     public function render(ImportWorkflow $workflow): View
     {
         $batch = $this->batch();
+        if ($this->selections === [] && $batch->status === 'mapping' && $batch->mappings()->exists()) {
+            $this->sheet = $batch->selected_sheet ?? '';
+            $this->header = $batch->header_row_number ?? 1;
+            $this->hydrateMapping($batch);
+            $this->tab = 'mapping';
+        }
         $sheets = [];
         if ($batch->source?->scan_status === 'clean' && in_array($batch->status, ['mapping', 'ready'], true)) {
             try {

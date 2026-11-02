@@ -41,7 +41,7 @@ test('Rider can start assigned work save a validated visit and review a blocked 
     await page.screenshot({path:'.local-tools/m06-'+surface+'-visit.png',fullPage:true});
     await page.getByRole('button',{name:'Save visit & remarks',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Proof images',exact:true})).toBeVisible();
-    await expect(page.getByText('Private S3 storage is not configured.',{exact:false})).toBeVisible();
+    await expect(page.getByText('Private storage is not configured.',{exact:false})).toBeVisible();
     await expect(page.getByLabel('Choose images from camera or gallery',{exact:true})).toBeDisabled();
     await page.getByRole('button',{name:'Review completion checklist',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Completion review',exact:true})).toBeVisible();

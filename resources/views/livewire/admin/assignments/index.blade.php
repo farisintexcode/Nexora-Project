@@ -3,7 +3,7 @@
     <x-page-header title="Assignment batches" eyebrow="Recovery work packages" description="Organize assignments, schedules and routing metadata before importing tasks."><x-slot:actions>@can('create', \App\Models\AssignmentBatch::class)<a class="btn btn-primary" href="{{ route('admin.assignments.create') }}"><x-icon name="plus" class="size-4" />New assignment</a>@endcan</x-slot:actions></x-page-header>
     <nav aria-label="Assignment register" class="flex flex-wrap gap-2"><a class="tab-button" href="{{ route('admin.assignments.index') }}" @if($status === 'active') aria-current="page" @endif>Active assignments</a><a class="tab-button" href="{{ route('admin.assignments.index', ['status'=>'archived']) }}" @if($status === 'archived') aria-current="page" @endif>Archived assignments</a></nav>
     <div class="assignment-register grid min-w-0 gap-4">
-        <form class="surface grid gap-5 p-4 sm:p-5" wire:submit="applyFilters" x-data="{ filtersOpen: @js($activeFilterCount > 0) }">
+        <form class="surface grid gap-5 p-4 sm:p-5" wire:submit="applyFilters" data-start-open="{{ $activeFilterCount > 0 ? '1' : '0' }}" x-data="{ filtersOpen: $el.dataset.startOpen === '1' }">
             <div class="flex flex-col gap-3 sm:flex-row">
                 <div class="relative min-w-0 flex-1">
                     <label for="query" class="sr-only">Search assignments</label>

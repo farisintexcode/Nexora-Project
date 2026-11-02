@@ -13,6 +13,7 @@ use App\Models\TaskAllocation;
 use App\Models\User;
 use App\Services\AuditWriter;
 use App\Services\Tasks\TaskHistory;
+use App\Services\Tasks\TaskIdSelection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
@@ -38,15 +39,12 @@ class TaskOperation
 
     public function prepare(User $actor, array $input): BulkOperation
     {
-        $data = Validator::make($input, ['assignment_batch_id' => ['required', 'integer'], 'operation_code' => ['required', Rule::in(['new', 'replace', 'reassign', 'unassign', 'cancel'])], 'selection_mode' => ['required', Rule::in(['single', 'selected', 'range'])], 'task_ids' => ['required_unless:selection_mode,range', 'array', 'min:1', 'max:200'], 'task_ids.*' => ['integer', 'distinct'], 'target_collector_id' => ['nullable', 'required_unless:operation_code,unassign,cancel', 'integer'], 'reason' => ['required', 'string', 'min:3', 'max:2000']])->validate();
+        $data = Validator::make($input, ['assignment_batch_id' => ['required', 'integer'], 'operation_code' => ['required', Rule::in(['new', 'replace', 'reassign', 'unassign', 'cancel'])], 'selection_mode' => ['required', Rule::in(array_keys(TaskIdSelection::MODES))], 'task_ids' => ['required', 'array', 'min:1', 'max:200'], 'task_ids.*' => ['integer', 'distinct'], 'target_collector_id' => ['nullable', 'required_unless:operation_code,unassign,cancel', 'integer'], 'reason' => ['required', 'string', 'min:3', 'max:2000']])->validate();
         $context = AssignmentBatch::query()->findOrFail($data['assignment_batch_id']);
 
         return DB::transaction(function () use ($actor, $data, $context): BulkOperation {
             $batch = AssignmentBatch::query()->lockForUpdate()->findOrFail($context->id);
             $this->authorize($actor, $batch, $data['operation_code']);
-            if ($data['selection_mode'] === 'range') {
-                throw ValidationException::withMessages(['operation' => 'IWK range processing requires an approved numeric source contract (G02). Use explicit task selection for manual tasks.']);
-            }
             if ($data['selection_mode'] === 'single' && count($data['task_ids']) !== 1) {
                 throw ValidationException::withMessages(['operation' => 'Single-task mode requires exactly one task.']);
             }

@@ -158,7 +158,6 @@ test('Livewire form saves manual call and reads the shared timeline', function (
     [$actor, $customer] = callFixture();
     $this->actingAs($actor);
     Livewire::test(Show::class, ['customer' => $customer])->set('form.outcome', 'answered')->set('form.remarks', 'Synthetic Livewire conversation')->call('saveCall')->assertHasNoErrors()->assertSee('Synthetic Livewire conversation');
-    $this->get(route('admin.customers.show', ['customer' => $customer, 'tab' => 'communication']))->assertOk();
     expect(CollectionActivity::query()->count())->toBe(1);
 });
 

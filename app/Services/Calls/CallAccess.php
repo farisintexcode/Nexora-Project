@@ -61,20 +61,10 @@ class CallAccess
     public function search(User $actor, array $filters): Builder
     {
         $q = $this->customers($actor);
-        foreach (['category', 'rider'] as $field) {
-            $value = $filters[$field] ?? '';
-            if ($value === '') {
-                continue;
-            }
-            if (! Str::isUuid($value)) {
-                $q->whereRaw('false');
-
-                continue;
-            }
-            if ($field === 'category') {
-                $q->whereHas('categoryAssignments', fn ($b) => $b->whereNull('revoked_at')->whereHas('category', fn ($b) => $b->where('public_id', $value)));
-            } elseif (Gate::forUser($actor)->allows('viewAny', Task::class)) {
-                $q->whereIn('id', Task::query()->select('customer_id')->whereHas('currentAllocation.collector', fn ($b) => $b->where('public_id', $value)));
+        $rider = $filters['rider'] ?? '';
+        if ($rider !== '') {
+            if (Str::isUuid($rider) && Gate::forUser($actor)->allows('viewAny', Task::class)) {
+                $q->whereIn('id', Task::query()->select('customer_id')->whereHas('currentAllocation.collector', fn ($b) => $b->where('public_id', $rider)));
             } else {
                 $q->whereRaw('false');
             }

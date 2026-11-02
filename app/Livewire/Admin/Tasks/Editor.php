@@ -2,14 +2,17 @@
 
 namespace App\Livewire\Admin\Tasks;
 
+use App\Actions\Tasks\ResolveTaskSource;
 use App\Actions\Tasks\SaveTask;
 use App\Models\AssignmentBatch;
-use App\Models\DebtAccount;
 use App\Models\Debtor;
 use App\Models\ReferenceValue;
 use App\Models\Task;
+use App\Support\Money;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -24,9 +27,7 @@ class Editor extends Component
     #[Locked]
     public ?int $version = null;
 
-    public array $data = ['assignment_batch_id' => '', 'customer_id' => '', 'debt_account_id' => '', 'priority_code' => 'normal', 'scheduled_visit_at' => '', 'due_at' => '', 'instructions' => '', 'admin_remarks' => ''];
-
-    public string $customerSearch = '';
+    public array $data = ['assignment_batch_id' => '', 'task_id' => '', 'customer_reference' => '', 'customer_name' => '', 'phone' => '', 'email' => '', 'outstanding_balance' => '', 'monthly_charge' => '', 'balance_date' => '', 'account_number' => '', 'address' => '', 'building' => '', 'postcode' => '', 'state_code' => '', 'priority_code' => 'normal', 'scheduled_visit_at' => '', 'due_at' => '', 'instructions' => '', 'admin_remarks' => ''];
 
     public function mount(?Task $task = null): void
     {
@@ -37,20 +38,31 @@ class Editor extends Component
             Gate::authorize('update', $task);
             $this->taskId = $task->id;
             $this->version = $task->lock_version;
-            $this->data = ['assignment_batch_id' => (string) $task->assignment_batch_id, 'customer_id' => (string) $task->customer_id, 'debt_account_id' => (string) $task->debt_account_id, 'priority_code' => $task->priority_code, 'scheduled_visit_at' => $task->scheduled_visit_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '', 'due_at' => $task->due_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '', 'instructions' => $task->special_instruction_ciphertext ?? '', 'admin_remarks' => $task->admin_remarks_ciphertext ?? ''];
+            $balance = $task->latestBalance;
+            $this->data = ['outstanding_balance' => $balance?->outstandingCents() === null ? '' : Money::plain($balance->outstandingCents()), 'monthly_charge' => $balance?->monthlyCents() === null ? '' : Money::plain($balance->monthlyCents()), 'balance_date' => $balance?->balance_date?->toDateString() ?? '', 'assignment_batch_id' => (string) $task->assignment_batch_id, 'customer_id' => (string) $task->customer_id, 'debt_account_id' => (string) $task->debt_account_id, 'task_id' => $task->source_task_id ?? '', 'customer_reference' => $task->customer->customer_reference, 'customer_name' => $task->customer->display_name_ciphertext, 'account_number' => $task->account->account_number, 'priority_code' => $task->priority_code, 'scheduled_visit_at' => $task->scheduled_visit_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '', 'due_at' => $task->due_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '', 'instructions' => $task->special_instruction_ciphertext ?? '', 'admin_remarks' => $task->admin_remarks_ciphertext ?? ''];
         }
     }
 
-    public function updatedDataCustomerId(): void
+    public function save(SaveTask $save, ResolveTaskSource $source): void
     {
         if (! $this->taskId) {
-            $this->data['debt_account_id'] = '';
+            $this->validate([
+                'data.assignment_batch_id' => ['required', 'integer'],
+                'data.task_id' => ['required', 'string', 'max:100'],
+                'data.customer_reference' => ['required', 'string', 'max:80'],
+                'data.customer_name' => [Rule::requiredIf(fn (): bool => ! Debtor::query()->where('customer_reference', trim($this->data['customer_reference']))->exists()), 'nullable', 'string', 'max:200'],
+                'data.account_number' => ['required', 'string', 'max:100'],
+            ], ['data.customer_name.required' => 'Enter the customer name. This reference has not been used before.'], ['data.assignment_batch_id' => 'assignment', 'data.task_id' => 'task ID', 'data.customer_reference' => 'customer reference', 'data.customer_name' => 'customer name', 'data.account_number' => 'account number']);
         }
-    }
+        $task = DB::transaction(function () use ($save, $source): Task {
+            $input = $this->data;
+            if (! $this->taskId) {
+                [$customer, $account] = $source->handle(Auth::user(), $this->data);
+                $input = ['customer_id' => $customer->id, 'debt_account_id' => $account->id] + $input;
+            }
 
-    public function save(SaveTask $save): void
-    {
-        $task = $save->handle(Auth::user(), $this->data, $this->taskId ? Task::query()->findOrFail($this->taskId) : null, $this->version);
+            return $save->handle(Auth::user(), $input, $this->taskId ? Task::query()->findOrFail($this->taskId) : null, $this->version);
+        });
         session()->flash('status', 'Task saved with its source and history preserved.');
         $this->redirectRoute('admin.tasks.show', ['task' => $task]);
     }
@@ -63,8 +75,9 @@ class Editor extends Component
             abort_unless(Auth::user()->isActive(), 404);
             Gate::authorize('update', $task);
         }
-        $customers = Debtor::query()->when(! $task, fn ($q) => $q->where('status', 'active'))->when($this->customerSearch !== '', fn ($q) => $q->where('customer_reference', trim($this->customerSearch)))->when($task, fn ($q) => $q->where('id', $task->customer_id))->orderBy('customer_reference')->limit(100)->get();
 
-        return view('livewire.admin.tasks.editor', ['task' => $task, 'batches' => AssignmentBatch::query()->where(fn ($q) => $q->where('status', 'active')->when($task, fn ($q) => $q->orWhere('id', $task->assignment_batch_id)))->latest('id')->limit(200)->get(), 'customers' => $customers, 'accounts' => DebtAccount::query()->whereHas('parties', fn ($q) => $q->where('debtor_id', ctype_digit((string) $this->data['customer_id']) ? $this->data['customer_id'] : 0)->where('valid_from', '<=', now()->format('Y-m-d H:i:s.uP'))->where(fn ($q) => $q->whereNull('valid_to')->orWhere('valid_to', '>', now()->format('Y-m-d H:i:s.uP'))))->get(), 'priorities' => ReferenceValue::query()->where('category', 'priority')->where('is_active', true)->get()]);
+        $batches = AssignmentBatch::query()->with('type')->where(fn ($q) => $q->where('status', 'active')->when($task, fn ($q) => $q->orWhere('id', $task->assignment_batch_id)))->latest('id')->limit(200)->get();
+
+        return view('livewire.admin.tasks.editor', ['task' => $task, 'batches' => $batches, 'selectedAssignment' => $batches->firstWhere('id', (int) $this->data['assignment_batch_id']), 'states' => ReferenceValue::query()->where('category', 'state')->where('is_active', true)->orderBy('label')->get(), 'priorities' => ReferenceValue::query()->where('category', 'priority')->where('is_active', true)->get()]);
     }
 }

@@ -16,7 +16,6 @@ test('Admin independently approves or returns frozen submissions and Rider sees 
     for(const decision of ['approve','return']){
         await page.goto('/admin/verification');
         await page.getByLabel('Account or customer reference',{exact:true}).fill('M07-'+decision.toUpperCase()+'-'+surface.toUpperCase());
-        await page.getByRole('button',{name:'Apply filters',exact:true}).click();
         await expect(page.getByRole('link',{name:'Review submission',exact:true})).toHaveCount(1);
         await page.getByRole('link',{name:'Review submission',exact:true}).click();
         await expect(page.getByRole('heading',{name:'Review submission',exact:true})).toBeVisible();

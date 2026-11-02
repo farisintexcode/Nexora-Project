@@ -1,13 +1,11 @@
 // Calendar filter field: a double-click picks one day, two separate dates pick a range in either order.
-const RANGE_CLOSE_DELAY = 300;
-const pad = value => String(value).padStart(2, '0');
-const toIso = (year, month, day) => `${year}-${pad(month + 1)}-${pad(day)}`;
-const isIso = value => /^\d{4}-\d{2}-\d{2}$/.test(value ?? '');
-const toDisplay = iso => iso.split('-').reverse().join('/');
+import { isIso, monthCells, monthName, toDisplay, todayIso } from './calendar';
 
-window.nexoraDateRange = (wire, fromModel, untilModel) => ({
-    from: wire.entangle(fromModel),
-    until: wire.entangle(untilModel),
+const RANGE_CLOSE_DELAY = 300;
+
+window.nexoraDateRange = (wire, fromModel, untilModel, live = false) => ({
+    from: wire.entangle(fromModel, live),
+    until: wire.entangle(untilModel, live),
     open: false,
     pending: null,
     hovered: null,
@@ -20,8 +18,7 @@ window.nexoraDateRange = (wire, fromModel, untilModel) => ({
     },
 
     get today() {
-        const now = new Date();
-        return toIso(now.getFullYear(), now.getMonth(), now.getDate());
+        return todayIso();
     },
 
     get summary() {
@@ -33,19 +30,11 @@ window.nexoraDateRange = (wire, fromModel, untilModel) => ({
     },
 
     get monthLabel() {
-        return new Date(this.viewYear, this.viewMonth, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        return monthName(this.viewYear, this.viewMonth);
     },
 
     get cells() {
-        const leadingBlanks = (new Date(this.viewYear, this.viewMonth, 1).getDay() + 6) % 7;
-        const dayCount = new Date(this.viewYear, this.viewMonth + 1, 0).getDate();
-        const blanks = Array.from({ length: leadingBlanks }, (_, index) => ({ key: `blank-${index}`, iso: null }));
-        const days = Array.from({ length: dayCount }, (_, index) => {
-            const day = index + 1;
-            const iso = toIso(this.viewYear, this.viewMonth, day);
-            return { key: iso, iso, day, label: new Date(this.viewYear, this.viewMonth, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) };
-        });
-        return [...blanks, ...days];
+        return monthCells(this.viewYear, this.viewMonth);
     },
 
     get hint() {

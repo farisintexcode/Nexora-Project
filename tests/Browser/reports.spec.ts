@@ -9,7 +9,7 @@ test('Admin previews scoped report families filters and queues a frozen export',
  await expect(page.getByRole('heading',{name:'Reports',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Preview report',exact:true}).click();await expect(page.getByRole('heading',{name:'Task preview',exact:true})).toBeVisible();await expect(page.locator('table tbody tr').first()).toBeVisible();
  await page.getByLabel('Report family',{exact:true}).selectOption('rider_performance');await page.getByRole('button',{name:'Preview report',exact:true}).click();await expect(page.getByRole('heading',{name:'Rider Performance preview',exact:true})).toBeVisible();await expect(page.getByRole('columnheader',{name:'Verified/completed tasks',exact:true})).toBeVisible();
- await page.getByRole('textbox',{name:'IWK ID',exact:true}).fill('MISSING-SYNTHETIC-REFERENCE');await page.getByRole('button',{name:'Preview report',exact:true}).click();await expect(page.getByText('No matching tasks',{exact:true})).toBeVisible();
+ await page.getByRole('textbox',{name:'Task ID',exact:true}).fill('99999');await page.getByRole('button',{name:'Preview report',exact:true}).click();await expect(page.getByText('No matching tasks',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Reset filters',exact:true}).click();await page.getByRole('button',{name:'Preview report',exact:true}).click();
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Queue CSV',exact:true}).click();await expect(page.getByText('Queued',{exact:true}).first()).toBeVisible();
  for(const width of [320,430,768,1280]){await page.setViewportSize({width,height:850});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}

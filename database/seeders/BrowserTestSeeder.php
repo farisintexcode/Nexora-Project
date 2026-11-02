@@ -13,6 +13,7 @@ use App\Models\Contact;
 use App\Models\DebtAccount;
 use App\Models\Debtor;
 use App\Models\Document;
+use App\Models\FinancialSnapshot;
 use App\Models\ImportBatch;
 use App\Models\ImportColumnMapping;
 use App\Models\ImportField;
@@ -50,7 +51,6 @@ class BrowserTestSeeder extends Seeder
             Contact::factory()->create(['debtor_id' => $callCustomer->id, 'kind_code' => 'mobile', 'value_ciphertext' => '+60123456789', 'value_fingerprint' => app(CustomerSearch::class)->token('contact:mobile', '+60123456789')]);
         }
         // Historical synthetic UI fixture only; this does not bypass production scan or storage adapters.
-        $customer = Debtor::factory()->create(['customer_reference' => 'IMPORT-UI-FIXTURE', 'display_name_ciphertext' => 'Synthetic Import Customer']);
         $import = ImportBatch::factory()->create(['uploaded_by' => $admin->id, 'status' => 'mapping']);
         $fields = ImportField::query()->whereIn('id', $import->template->schema_definition['field_ids'])->get();
         foreach ($fields as $column => $field) {
@@ -58,7 +58,7 @@ class BrowserTestSeeder extends Seeder
             $mapping->forceFill(['import_batch_id' => $import->id, 'source_sheet' => 'Intake', 'source_column_index' => $column + 1, 'original_header' => $field->canonical_field, 'normalized_header' => ImportWorkflow::normalize($field->canonical_field), 'field_id' => $field->id, 'match_method' => 'canonical', 'transform_code' => 'exact', 'confirmed_by' => $admin->id, 'confirmed_at' => now()])->save();
         }
         $row = new ImportRow;
-        $row->forceFill(['import_batch_id' => $import->id, 'sheet_name' => 'Intake', 'row_number' => 2, 'raw_payload_ciphertext' => ['IMPORT-UI-FIXTURE', 'person', 'Synthetic Import Customer', 'active'], 'normalized_payload_ciphertext' => ['operation' => 'create', 'changes' => ['name' => ['before' => '—', 'after' => 'Sy•••er']]], 'state' => 'processed', 'target_customer_id' => $customer->id, 'processed_at' => now()])->save();
+        $row->forceFill(['import_batch_id' => $import->id, 'sheet_name' => 'Intake', 'row_number' => 2, 'raw_payload_ciphertext' => ['IMPORT-UI-FIXTURE', 'Synthetic Import Customer', 'domestic_dr', '2026-10-01', '2026-10-31'], 'normalized_payload_ciphertext' => ['operation' => 'create', 'changes' => ['name' => ['before' => '—', 'after' => 'Sy•••er']]], 'state' => 'processed', 'target_assignment_batch_id' => AssignmentBatch::factory()->create(['name' => 'Synthetic Import Fixture'])->id, 'processed_at' => now()])->save();
         $import->forceFill(['input_count' => 1, 'accepted_count' => 1, 'processed_count' => 1, 'mapping_digest' => hash('sha256', 'synthetic historical UI fixture'), 'selected_sheet' => 'Intake', 'header_row_number' => 1, 'mapping_confirmed_by' => $admin->id, 'mapping_confirmed_at' => now(), 'confirmed_by' => $admin->id, 'confirmed_at' => now(), 'status' => 'completed', 'completed_at' => now()])->save();
         $rider = User::factory()->for(Staff::factory()->create())->create(['name' => 'Synthetic Rider', 'email' => 'rider@example.test', 'password' => config('dcms.e2e_password')]);
         $rider->assignRole('Rider');
@@ -87,6 +87,7 @@ class BrowserTestSeeder extends Seeder
             $batch = AssignmentBatch::factory()->create(['created_by' => $admin->id, 'name' => 'Synthetic Rider Batch '.$surface]);
             $task = Task::factory()->create(['debt_account_id' => $account->id, 'customer_id' => $customer->id, 'assignment_batch_id' => $batch->id, 'created_by' => $admin->id, 'scheduled_visit_at' => now(), 'due_at' => now()->addDay(), 'special_instruction_ciphertext' => 'Synthetic field work only. No receipt is recorded.']);
             TaskAllocation::factory()->create(['task_id' => $task->id, 'collector_id' => $rider->staff_id, 'assigned_by' => $admin->id]);
+            FinancialSnapshot::factory()->create(['task_id' => $task->id, 'debt_account_id' => $account->id, 'recorded_by' => $admin->id, 'outstanding_balance_ciphertext' => '250.00']);
             foreach (['approve', 'return'] as $reviewPath) {
                 $reviewCustomer = Debtor::factory()->create(['customer_reference' => 'VERIFY-'.strtoupper($reviewPath.'-'.$surface), 'display_name_ciphertext' => 'Synthetic Verification '.$reviewPath.' '.$surface]);
                 $reviewAccount = DebtAccount::factory()->create(['account_number' => 'M07-'.strtoupper($reviewPath.'-'.$surface)]);

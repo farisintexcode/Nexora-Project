@@ -3,6 +3,7 @@
 namespace App\Services\Tasks;
 
 use App\Models\TaskSubmission;
+use App\Support\Money;
 
 /** M07 / UI42: assess the immutable submitted policy, never a later mutable draft or policy. */
 class SubmissionEvidence
@@ -29,6 +30,9 @@ class SubmissionEvidence
         if (($policy['business_required'] ?? false) && (! isset($snapshot['business']) || empty($snapshot['business']['type']) || empty($snapshot['business']['nature']) || empty($snapshot['business']['status']))) {
             $issues['business'] = 'Required submitted business details are missing.';
         }
+        if (($snapshot['payment']['claimed'] ?? false) && ! Money::cents($snapshot['payment']['amount'] ?? null)) {
+            $issues['payment'] = 'The submitted payment claim has no amount.';
+        }
         $submission->loadMissing('documents.document');
         $manifest = $submission->documents;
         if ($manifest->count() !== count($snapshot['proof']) || $manifest->count() < $policy['min_images'] || $manifest->count() > ($policy['max_images'] ?? 10)) {
@@ -38,7 +42,7 @@ class SubmissionEvidence
         foreach ($manifest as $item) {
             $document = $item->document;
             $entry = $frozen->get($item->document_id);
-            if (! $document || ! is_array($entry) || $document->scan_status !== 'clean' || $document->owner_type !== 'task' || $document->owner_id !== $submission->task_id ||
+            if (! $document || ! is_array($entry) || ! $document->isCleared() || $document->owner_type !== 'task' || $document->owner_id !== $submission->task_id ||
                 $document->uploaded_by !== $submission->submitted_by || $document->sha256 !== ($entry['sha256'] ?? null) || $document->public_id !== ($entry['reference'] ?? null) ||
                 $document->bucket !== ($entry['bucket'] ?? null) || $document->object_key !== ($entry['key'] ?? null) || $document->version_id !== ($entry['version'] ?? null) ||
                 $document->activity_id !== ($entry['activity'] ?? null) || $document->image_category_code !== $item->category_code || $item->category_code !== ($entry['category'] ?? null)) {

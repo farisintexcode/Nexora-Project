@@ -4,6 +4,7 @@ namespace App\Actions\Tasks;
 
 use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
+use App\Models\FinancialSnapshot;
 use App\Models\Task;
 use App\Models\TaskReview;
 use App\Models\TaskStatusHistory;
@@ -12,6 +13,7 @@ use App\Models\User;
 use App\Notifications\TaskReviewed;
 use App\Services\AuditWriter;
 use App\Services\Tasks\SubmissionEvidence;
+use App\Support\Money;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -26,7 +28,10 @@ class ReviewSubmission
 
     public function __construct(private SubmissionEvidence $evidence, private AuditWriter $audit) {}
 
-    public function prepare(User $actor, array $selection, string $decision, ?string $reason): array
+    /**
+     * @param  array<string, array{photo: bool, partial: bool}>  $paymentChecks  the reviewer's payment confirmations by submission reference
+     */
+    public function prepare(User $actor, array $selection, string $decision, ?string $reason, array $paymentChecks = []): array
     {
         $actor = $actor->fresh();
         Gate::forUser($actor)->authorize('viewAny', TaskSubmission::class);
@@ -41,12 +46,12 @@ class ReviewSubmission
         sort($selection);
         foreach ($selection as $reference) {
             $submission = $records->get($reference);
-            $issues = $submission ? $this->issues($actor, $submission, $decision) : ['access' => 'Submission unavailable or outside your current permissions.'];
+            $issues = $submission ? $this->issues($actor, $submission, $decision, $paymentChecks) : ['access' => 'Submission unavailable or outside your current permissions.'];
             $rows[] = ['submission' => $reference, 'customer' => $submission?->completion_snapshot_ciphertext['customer']['name'] ?? 'Unavailable',
                 'account' => $submission?->completion_snapshot_ciphertext['account'] ?? '—', 'version' => $submission?->submission_version, 'issues' => $issues];
             $expected[] = ['submission' => $reference, 'task_version' => $submission?->task->lock_version, 'submission_version' => $submission?->submission_version];
         }
-        $preview = ['actor' => $actor->id, 'decision' => $decision, 'reason' => $reason, 'selection' => $expected, 'expires_at' => now()->addMinutes(20)->timestamp, 'rows' => $rows];
+        $preview = ['actor' => $actor->id, 'decision' => $decision, 'reason' => $reason, 'selection' => $expected, 'payments' => $paymentChecks, 'expires_at' => now()->addMinutes(20)->timestamp, 'rows' => $rows];
         $preview['digest'] = $this->signature($preview);
 
         return $preview;
@@ -84,7 +89,7 @@ class ReviewSubmission
 
                     continue;
                 }
-                $issues = $this->issues($actor, $submission, $preview['decision']);
+                $issues = $this->issues($actor, $submission, $preview['decision'], $preview['payments'] ?? []);
                 if ($submission->task->lock_version !== $expected['task_version'] || $submission->submission_version !== $expected['submission_version']) {
                     $issues['version'] = 'Task or submission version changed.';
                 }
@@ -118,6 +123,11 @@ class ReviewSubmission
                 $history->forceFill(['task_id' => $task->id, 'actor_id' => $actor->id, 'event_code' => $review->decision, 'from_work_status' => $from, 'to_work_status' => $task->work_status,
                     'from_review_status' => $oldReview, 'to_review_status' => $task->review_status, 'submission_id' => $submission->id, 'allocation_id' => $task->currentAllocation?->id,
                     'reason' => 'Verification '.$review->public_id, 'occurred_at' => now()])->save();
+                $claim = $review->decision === 'approved' ? $this->paymentClaim($submission) : null;
+                if ($claim) {
+                    FinancialSnapshot::record($task, $actor, 'payment', ['outstanding' => $claim['remaining'], 'monthly' => $claim['monthly'], 'paid' => $claim['amount'], 'submission_id' => $submission->id]);
+                    $task->forceFill(['payment_update_flag' => true])->save();
+                }
                 $this->audit->record($actor, 'task_'.$review->decision, $task->public_id, ['status' => $task->work_status], module: 'M07', entityType: 'task', previous: ['status' => $from]);
                 $recipient = $task->currentAllocation ? User::query()->where('staff_id', $task->currentAllocation->collector_id)->first() : null;
                 if ($recipient) {
@@ -130,13 +140,37 @@ class ReviewSubmission
         }, 3);
     }
 
+    /**
+     * The frozen payment claim of a submission, in whole cents.
+     *
+     * @return array{amount: ?int, balance: ?int, monthly: ?int, remaining: ?int, state: string}|null null when no payment was claimed
+     */
+    public function paymentClaim(TaskSubmission $submission): ?array
+    {
+        $payment = $submission->completion_snapshot_ciphertext['payment'] ?? [];
+        if (! ($payment['claimed'] ?? false)) {
+            return null;
+        }
+        $amount = Money::cents($payment['amount'] ?? null);
+        $balance = Money::cents($payment['balance'] ?? null);
+        $state = match (true) {
+            $amount === null => 'missing',
+            $balance === null => 'no_balance',
+            $amount > $balance => 'over',
+            $amount < $balance => 'partial',
+            default => 'full',
+        };
+
+        return ['amount' => $amount, 'balance' => $balance, 'monthly' => Money::cents($payment['monthly'] ?? null), 'remaining' => $amount !== null && $balance !== null ? max(0, $balance - $amount) : null, 'state' => $state];
+    }
+
     private function records(User $actor, array $references): Collection
     {
         return TaskSubmission::query()->whereIn('public_id', $references)
             ->with(['task.batch', 'task.currentAllocation', 'review', 'documents.document'])->get();
     }
 
-    private function issues(User $actor, TaskSubmission $submission, string $decision): array
+    private function issues(User $actor, TaskSubmission $submission, string $decision, array $paymentChecks = []): array
     {
         $issues = [];
         $task = $submission->task;
@@ -159,7 +193,18 @@ class ReviewSubmission
         if ($decision === 'returned') {
             $recipient = $task->currentAllocation ? User::query()->where('staff_id', $task->currentAllocation->collector_id)->first() : null;
             if (! $recipient || ! $recipient->canUseRiderInterface() || ! $recipient->can('tasks.view') || ! $recipient->can('tasks.submit')) {
-                $issues['rider'] = 'The current Rider needs active task access to receive a correction.';
+                $issues['rider'] = 'The Rider needs active task access to receive a correction.';
+            }
+        }
+
+        if ($decision === 'approved' && ($claim = $this->paymentClaim($submission))) {
+            $check = $paymentChecks[$submission->public_id] ?? [];
+            if (! ($check['photo'] ?? false)) {
+                $issues['payment'] = 'Open this submission on its own and confirm the amount in the photo matches what the Rider entered.';
+            } elseif ($claim['state'] === 'over') {
+                $issues['payment'] = 'The amount claimed is more than the outstanding balance. Return it to the Rider to correct.';
+            } elseif ($claim['state'] === 'partial' && ! ($check['partial'] ?? false)) {
+                $issues['payment'] = 'This is less than the outstanding balance. Confirm you accept it as a part payment.';
             }
         }
 
@@ -168,6 +213,6 @@ class ReviewSubmission
 
     private function signature(array $preview): string
     {
-        return hash_hmac('sha256', json_encode(array_intersect_key($preview, array_flip(['actor', 'decision', 'reason', 'selection', 'expires_at'])), JSON_THROW_ON_ERROR), config('app.key'));
+        return hash_hmac('sha256', json_encode(array_intersect_key($preview, array_flip(['actor', 'decision', 'reason', 'selection', 'payments', 'expires_at'])), JSON_THROW_ON_ERROR), config('app.key'));
     }
 }

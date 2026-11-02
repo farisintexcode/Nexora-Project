@@ -6,6 +6,23 @@ Terminology: **Customer** is the UI/business term for the existing party record 
 
 InteXcode (IXC) · 16 October 2026 · Baseline for implementation with discovery gates.
 
+## Current implementation — November 2026
+
+**This section overrides anything older in this document.** Text marked O or U, and IWK labels in particular, remain evidence about the reference system only.
+
+| Area | What is built now |
+|---|---|
+| Clients | Removed. There is one tenant, so there are no client scopes or client_id columns. |
+| Customer Management (M13) | Removed: customer pages, categories, the customer import type, and account editing pages. `debtors` stays as the internal record behind tasks, calls and communications, created automatically from Create Task or Upload Task. |
+| Task ID | Replaces the IWK ID. Comes from the workbook or Create Task, must end in a number, and is read by its trailing digits within its assignment: FG001 is 1 and DT2304 is 2304. Numbers are unique per assignment. |
+| Upload Task (M04) | Fixed contract with automatic column detection. Missing required columns fail immediately with a message. History lists successful uploads, searched by file name and uploaded date. A blank Excel template can be downloaded. |
+| Assign Task (M05) | Choose the assignment, then Single (12), Selected (12, 15, 18), Range (From 10 - To 20) or Range and Selected (10-20 plus 25). Tasks ticked on Manage Task still go straight to Assign Task. |
+| Delete task (M05) | Admins with `tasks.delete` can delete tasks that have no Rider and no recorded work. The record is hidden, not erased, because task history is immutable, and its task ID can be reused. Started work uses Cancel. |
+| Amounts owed (M08) | Each task has append-only encrypted balance records: outstanding balance, monthly charge and balance date, from upload or Create Task. Customers pay the client directly. |
+| Payment claims (M06, M07) | The Rider sees the balance, enters the amount paid and adds a Payment Evidence photo. A reviewer must confirm the photo matches the amount. An equal amount clears the balance, a lower amount needs a second confirmation as a part payment, and a higher amount cannot be approved. Claims are reviewed one at a time, never in bulk. |
+| Reports (M09) | Show total outstanding and verified collected, per task and per Rider. Only approved claims count as collected. Task ID accepts one ID, several, a range or a mix. |
+| Proof storage | `PROOF_DISK` and `PROOF_SCAN_REQUIRED` allow local storage without scanning for development. Production always scans. |
+
 ## Reading this blueprint
 
 Evidence IDs E01–E24 and outstanding gaps G01–G08 are defined in [Plan.md](Plan.md). **O** means observed, **P** means proposed, **U** means unverified. Confirmed DebtOps behaviours below are marked C; physical implementation choices remain P. Existing O/U statements describe the reference only, not whether confirmed features will be built. A visible Save/Update/Delete control proves availability, not successful server enforcement. No live business records were changed during review.
@@ -123,6 +140,22 @@ All list screens use scoped server pagination, explicit sort allowlists, persist
 
 **C — Excel import and automated column mapping.** Reuses existing intake/staging rather than a second importer.
 
+**Current contract:** Upload Task accepts the columns below, in row 1 of the first sheet. Common header names are detected automatically and every match can be changed during review.
+
+| Column | Required | Rule |
+|---|---|---|
+| task_id | Yes | Ends in a number unique within the assignment |
+| account_number | Yes | One open task per account in an assignment; an existing account must belong to the customer |
+| customer_reference | Yes | Creates the customer when new |
+| outstanding_balance | Yes | Amount in RM, for example 1234.50 |
+| customer_name | When new | Needed on the first row of a new customer reference |
+| phone, email | No | Saved only for a new customer |
+| monthly_charge | No | Amount in RM |
+| balance_date | No | YYYY-MM-DD; today if blank |
+| address, building, postcode, state_code | No | Saved only for a new account |
+| priority_code | No | low, normal, high or urgent; normal if blank |
+| instructions | No | Up to 5,000 characters |
+
 | Requirement | Functional contract |
 |---|---|
 | Purpose / roles / entry | Admin or authorized importer; customer/debt/assignment-batch/task/payment-update/databank data. Entry Upload Excel or context batch/customer screen. |
@@ -173,7 +206,7 @@ flowchart TD
 
 ### Confirmed task creation, assignment and monitoring
 
-**C:** UI56 creates/edits a task from selected customer/account, active batch/type, priority, planned visit and due date. Manually created tasks use public_id and origin=manual; no fabricated IWK source key. UI16/UI18 accept one task, explicit multi-selection or verified IWK range; New/Replace/Reassign/Unassign semantics retain allocation history. Imported assigned_rider requires the same permission and preview rules. Deactivated Riders cannot receive new tasks; pending reviews cannot be reassigned without an explicit transfer/reopen policy and audit. Cancel is recoverable and requires reason; no erasure of evidence/history.
+**C:** UI56 creates or edits a task with its assignment, task ID, customer reference and name, phone, email, account number and address, outstanding balance, monthly charge, balance date, priority, planned visit and due date. New customers and accounts are created automatically; task identity is fixed once created.
 
 UI55 Task Monitoring filters all/unassigned/assigned/in-progress/visited/pending completion/pending verification/completed/rejected-returned/overdue/cancelled by Rider, customer, category, date, priority and batch. Display customer, account, current Rider, due/visit time, work/review badges, latest outcome and task history. Single/selected assignment rechecks versions and scope; all task creation, edits, reallocation and status events are persisted in task_status_histories and audit_logs. M06 defines status dimensions; monitoring does not write arbitrary statuses.
 
@@ -297,18 +330,19 @@ task_submissions retains submitted_by, submitted_at and task version; task_revie
 
 ## M08 — Financial snapshots and payment updates
 
-| Requirement | Blueprint |
+**C (November 2026).** Customers pay the client directly (online or at a counter). Riders do not handle cash and the system issues no receipts.
+
+| Requirement | Contract |
 |---|---|
-| Purpose / description | Preserve imported balance/fee information and payment-update state; E11/E14/E16. No observed payment ledger, method selector, receipts or gateway. |
-| Roles / entry | Administrative/finance permission P; import kind Payment Update; task control and report Payment Update filter O. |
-| Submodules / screens | UI14 import, UI19 task control, UI27 report; P UI28 financial update review/exceptions. |
-| Forms / fields / tables | O snapshot fields above, Payment Update action, report yes/no; actual update workbook columns U. P source reference/date/currency, account match, before/after amounts and approval reason. |
-| Actions / filters | O Upload/Update task and Yes/No report filter. P preview matched/unmatched/duplicate rows and approve/reject. |
-| Validation / statuses | P reject ambiguous account match, invalid money/date or duplicate source update; pending/approved/rejected update state separate from task work status. |
-| Business rules | Balance snapshot is not a receipt or proof of payment. Do not calculate collected cash by subtracting snapshots without client accounting rules. Imported fee totals preserved; reconciliation flags discrepancies instead of assuming a 3% formula applies. |
-| Workflow | Source update → staged matching → exception review → approved immutable snapshot → current projection → filtered report. Proposed approval G04. |
-| Dependencies / related | M04, M06 account/task, M09, M12 audit. |
-| Input → processing → output | Update workbook/marker → validate source/idempotency/account and review → balance snapshot, task payment marker, reconciliation and audit. |
+| Purpose | Show what each customer owes, record what they say they paid, and count it as collected only once verified. |
+| Entry | Outstanding balance, monthly charge and balance date come from Upload Task or Create Task, and can be changed on Edit Task. |
+| Storage | `financial_snapshots`: append-only and encrypted. Every upload, edit or verified payment adds a row, shown as Balance history on Task Details. |
+| Rider | Sees the balance on the task card and task. A payment needs the amount paid and a Payment Evidence photo before submission (outcome Payment Claimed or DR01). |
+| Verification | The reviewer compares the photo, the amount entered and the balance, and must tick that the photo matches. Equal clears the balance. Lower needs a second tick and leaves the rest outstanding. Higher cannot be approved and is returned to the Rider. |
+| Reports | Total outstanding and verified collected, per task and per Rider. Unreviewed claims never count. |
+| Business rules | A balance is not a receipt. A claim is not a payment until approved. Later uploads do not change earlier records. |
+
+Historical reference requirements, not built: payment-update workbooks, the fee breakdown columns and a financial approval queue.
 
 <a id="m09"></a>
 
@@ -435,18 +469,9 @@ Admin/Rider permission bundles, customer categories/reference codes, canonical i
 
 ## M13 — Customer Management and categories
 
-**C.** Customer is the existing debtor/party identity, not the commissioning client or a new duplicate table.
+**Removed (November 2026).** There are no customer pages, categories or customer import type.
 
-| Requirement | Functional contract |
-|---|---|
-| Purpose / roles / entry | Admin manages customer master and categories; Rider views only task-relevant subset. Entry Customers in Admin sidebar; UI24 existing account/party detail becomes consolidated Customer Details. |
-| Screens / submodules | UI62 Customer List; UI24 details/history; UI63 create/edit customer; UI61 category list/editor/assignment. |
-| Functions / actions | View/search/filter/create/update/activate-deactivate, categorize, view related accounts/tasks/visits/collection remarks and communications. Edit contacts/address with provenance; no physical delete of referenced customers. |
-| Forms / fields | Customer reference, individual/company, name, optional identifier, client, contact(s), address(es), active state, category selection; identifier masked/permission-gated. Categories code/name/description/active; assignments effective/revoked times and actor. |
-| Tables / search / filters | Customer reference/name/type/category/status/client; scoped reference/name-token/identifier/contact search, category/type/status filters and stable pagination. Related task/visit/collection/communication tabs preserve filters. |
-| Validation / business rules | Unique reference within client; valid required name/type; safe optional identifiers; contact format/type; no fuzzy party merges. Inactive category cannot be newly assigned but historical memberships remain visible. Category changes do not change debt, task status or existing source snapshots. Multiple active categories allowed; duplicate active membership prohibited. |
-| Workflow / statuses | Create or import → resolve duplicate warnings → persist customer and contacts/categories → create/view related task → trace visits/calls/messages. Customer active/inactive; category active/inactive. |
-| Dependencies / input-processing-output | M04 imports, M05/M06 tasks, M11 calls, M14 communication; existing debtors/contacts/addresses/account_parties plus customer_categories/customer_category_assignments. Input metadata → scoped validation/audited transaction → master record and combined read-only history. |
+Customer remains the UI word for the `debtors` record, which tasks, Call Centre and Communications still use. It is created automatically the first time a task uses a new customer reference, with the name, phone and email supplied at that point. An existing customer's details are not changed by later tasks. Contact details can be corrected in the Call Centre workspace.
 
 
 <a id="m14"></a>

@@ -1,5 +1,7 @@
 # Foundation conventions
 
+> **November 2026:** clients, Customer Management (M13), customer categories and column aliases were removed, the IWK ID became the task ID, and financial snapshots were added. See "Current implementation" in [Module.md](../Module.md) and [Database.md](../Database.md), which override older text here.
+
 Requirements authority: root Plan.md, Module.md, Prototype.md, Database.md. Review and backlog: [foundation-review.md](foundation-review.md).
 
 Use one modular Laravel monolith. `app/Actions/{Domain}` owns business transactions; `app/Services` owns reusable domain/infrastructure work; `app/Policies` combines permission/scope/ownership; `app/Http/Requests` validates HTTP boundaries; `app/Livewire/{Admin,Rider,Account}` orchestrates server-rendered interactions. Components call actions/services rather than embedding workflow logic in views or routes. Introduce domain subdirectories as functionality arrives, without an empty class for every future table.

@@ -14,7 +14,7 @@ class TaskProofController extends Controller
 {
     public function __invoke(Request $request, Document $document, TaskProof $proof, RiderAccess $access): Response
     {
-        abort_unless($document->owner_type === 'task' && $document->document_type_code === 'proof_image' && $document->scan_status === 'clean', 404);
+        abort_unless($document->owner_type === 'task' && $document->document_type_code === 'proof_image' && $document->isCleared(), 404);
         $task = Task::query()->findOrFail($document->owner_id);
         $actor = $request->user();
         abort_unless(($actor->can('admin.access') && Gate::forUser($actor)->allows('view', $task)) ||

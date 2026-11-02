@@ -24,7 +24,7 @@ class Show extends Component
 
     public function render(): View
     {
-        $task = Task::query()->with(['batch', 'account.property', 'customer', 'currentAllocation.collector', 'history.actor', 'allocations.collector'])->where('public_id', $this->taskId)->firstOrFail();
+        $task = Task::query()->with(['batch', 'account.property', 'customer.contacts', 'currentAllocation.collector', 'history.actor', 'allocations.collector', 'balances.recorder'])->where('public_id', $this->taskId)->firstOrFail();
         abort_unless(Auth::user()->isActive(), 404);
         Gate::authorize('view', $task);
 

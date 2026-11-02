@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\AuditWriter;
 use App\Services\Tasks\CompletionChecklist;
 use App\Services\Tasks\RiderAccess;
+use App\Support\Money;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -80,6 +81,11 @@ class RiderWork
                 $rules[$field] = ['nullable', Rule::exists('reference_values', 'code')->where('category', $category)->where('is_active', true)];
             }
             $rules['usage_other'] = ['nullable', 'string', 'max:2000'];
+            $rules['paid_amount'] = ['nullable', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (filled($value) && ! Money::cents($value)) {
+                    $fail('Enter the amount paid, for example 1234.50.');
+                }
+            }];
             if (($input['signboard_available'] ?? '') === '') {
                 $input['signboard_available'] = null;
             }
@@ -138,6 +144,7 @@ class RiderWork
             foreach (['site_address', 'person_contacted', 'visit_remarks', 'collection_remarks', 'customer_remarks'] as $field) {
                 $values[$field.'_ciphertext'] = trim($data[$field] ?? '') ?: null;
             }
+            $values['paid_amount_ciphertext'] = filled($data['paid_amount'] ?? null) ? Money::plain(Money::cents($data['paid_amount'])) : null;
             $activity->forceFill($values)->save();
             if ($backdated) {
                 $this->audit->record($actor, 'visit_backdated', $activity->public_id, ['status' => 'backdated'], module: 'M06', entityType: 'activity');

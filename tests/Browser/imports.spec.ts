@@ -12,7 +12,6 @@ test('import history mapping and masked preview remain usable on desktop and mob
     await expect(page).toHaveURL(/\/admin$/, { timeout: 90000 });
     await page.goto('/admin/imports');
     await expect(page.getByRole('heading', { name: 'Excel imports', exact: true })).toBeVisible();
-    await page.getByLabel('Filter state', { exact: true }).selectOption('completed');
     await page.getByRole('link', { name: 'Review', exact: true }).first().click();
     await expect(page.getByRole('heading', { name: 'Workbook review', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Column mapping', exact: true }).click();
@@ -28,13 +27,4 @@ test('import history mapping and masked preview remain usable on desktop and mob
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Download redacted errors CSV', exact: true }).click();
     expect((await download).suggestedFilename()).toMatch(/^import-errors-.*\.csv$/);
-    await page.goto('/admin/imports/configuration');
-    await expect(page.getByRole('heading', { name: 'Import configuration', exact: true })).toBeVisible();
-    const sourceHeader = `Browser header ${test.info().project.name}`;
-    await page.getByLabel('Canonical field *', { exact: true }).selectOption({ label: 'name · string · v1' });
-    await page.getByLabel('Source header alias *', { exact: true }).fill(sourceHeader);
-    await page.getByRole('button', { name: 'Publish alias', exact: true }).click();
-    await expect(page.getByRole('cell', { name: sourceHeader, exact: true })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: test.info().outputPath('import-configuration.png'), fullPage: true });
 });

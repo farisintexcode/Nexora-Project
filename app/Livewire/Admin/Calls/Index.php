@@ -3,7 +3,6 @@
 namespace App\Livewire\Admin\Calls;
 
 use App\Models\CollectionActivity;
-use App\Models\CustomerCategory;
 use App\Models\Staff;
 use App\Models\Task;
 use App\Services\Calls\CallAccess;
@@ -26,9 +25,6 @@ class Index extends Component
     public string $searchBy = 'reference';
 
     #[Url]
-    public string $category = '';
-
-    #[Url]
     public string $rider = '';
 
     public function mount(): void
@@ -38,7 +34,7 @@ class Index extends Component
 
     public function updated(string $property): void
     {
-        if (in_array($property, ['query', 'searchBy', 'category', 'rider'], true)) {
+        if (in_array($property, ['query', 'searchBy', 'rider'], true)) {
             $this->resetPage();
         }
         if ($property === 'query') {
@@ -49,12 +45,11 @@ class Index extends Component
     public function render(CallAccess $access): View
     {
         Gate::authorize('viewAny', CollectionActivity::class);
-        $customers = $access->search(auth()->user(), $this->only(['query', 'searchBy', 'category', 'rider']))->orderBy('customer_reference')->orderBy('id')->paginate(25);
+        $customers = $access->search(auth()->user(), $this->only(['query', 'searchBy', 'rider']))->orderBy('customer_reference')->orderBy('id')->paginate(25);
         $canTasks = Gate::allows('viewAny', Task::class);
 
         return view('livewire.admin.calls.index', [
             'customers' => $customers,
-            'categories' => CustomerCategory::query()->where('is_active', true)->orderBy('name')->limit(200)->get(),
             'riders' => $canTasks ? Staff::query()->where('is_rider', true)->orderBy('staff_no')->limit(200)->get() : collect(),
             'canTasks' => $canTasks,
         ]);

@@ -25,7 +25,7 @@ class Show extends Component
     public function render(RiderAssignments $assignments): View
     {
         $batch = $assignments->batches(auth()->user())->where('assignment_batches.public_id', $this->batchId)->firstOrFail();
-        $tasks = $assignments->tasks(auth()->user())->where('assignment_batch_id', $batch->id)->with(['customer', 'account', 'batch'])->orderByRaw('COALESCE(scheduled_visit_at,due_at) ASC NULLS LAST')->orderBy('id')->paginate(12);
+        $tasks = $assignments->tasks(auth()->user())->where('assignment_batch_id', $batch->id)->with(['customer', 'account', 'batch', 'latestBalance'])->orderByRaw('COALESCE(scheduled_visit_at,due_at) ASC NULLS LAST')->orderBy('id')->paginate(12);
 
         return view('livewire.rider.assignments.show', compact('batch', 'tasks'));
     }

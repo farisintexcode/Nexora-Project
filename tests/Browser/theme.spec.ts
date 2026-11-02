@@ -42,13 +42,13 @@ test('Admin screens share the theme without changing their navigation or forms',
     page.on('pageerror', error => errors.push(error.message));
     await login(page);
     await expect(page.locator('#admin-navigation')).toHaveCSS('background-color', 'rgb(2, 48, 71)');
-    const routes = ['/admin', '/admin/customers', '/admin/customers/create', '/admin/customers/categories', '/admin/staff', '/admin/staff/create', '/admin/assignments', '/admin/assignments/create', '/admin/tasks', '/admin/tasks/create', '/admin/imports', '/admin/imports/configuration', '/admin/verification', '/admin/attendance', '/admin/attendance/configuration', '/admin/calls', '/admin/calls/follow-ups', '/admin/communications', '/admin/communications/letters', '/admin/communications/recipients', '/admin/communications/receipts', '/account'];
+    const routes = ['/admin', '/admin/staff', '/admin/staff/create', '/admin/assignments', '/admin/assignments/create', '/admin/tasks', '/admin/tasks/create', '/admin/imports', '/admin/verification', '/admin/attendance', '/admin/attendance/configuration', '/admin/calls', '/admin/calls/follow-ups', '/admin/communications', '/admin/communications/letters', '/admin/communications/recipients', '/admin/communications/receipts', '/account'];
     for (const route of routes) {
         const response = await page.goto(route);
         expect(response?.status(), route).toBe(200);
         await expect(page.locator('#main-content')).toBeVisible();
         await fits(page);
-        if (['/admin', '/admin/customers', '/admin/customers/create', '/admin/communications'].includes(route)) {
+        if (['/admin', '/admin/communications'].includes(route)) {
             await page.screenshot({ path: test.info().outputPath(route.replaceAll('/', '-') + '-light.png'), fullPage: true });
         }
     }

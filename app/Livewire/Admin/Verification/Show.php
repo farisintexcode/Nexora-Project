@@ -29,6 +29,10 @@ class Show extends Component
 
     public string $reason = '';
 
+    public bool $photoMatches = false;
+
+    public bool $partialAccepted = false;
+
     public function mount(TaskSubmission $submission): void
     {
         $this->submissionId = $submission->public_id;
@@ -41,7 +45,7 @@ class Show extends Component
 
     public function prepareReview(ReviewSubmission $review): void
     {
-        $this->preview = $review->prepare(Auth::user(), [$this->submissionId], $this->decision, $this->reason);
+        $this->preview = $review->prepare(Auth::user(), [$this->submissionId], $this->decision, $this->reason, [$this->submissionId => ['photo' => $this->photoMatches, 'partial' => $this->partialAccepted]]);
         $this->resetErrorBag();
     }
 
@@ -53,7 +57,7 @@ class Show extends Component
         session()->flash('status', 'Verification decision saved. The Rider has an in-app notification.');
     }
 
-    public function render(SubmissionEvidence $evidence): View
+    public function render(SubmissionEvidence $evidence, ReviewSubmission $review): View
     {
         $submission = TaskSubmission::query()->with(['task.batch', 'task.account.property', 'task.customer', 'submitter', 'review.reviewer', 'documents.document'])->where('public_id', $this->submissionId)->firstOrFail();
         abort_unless(Auth::user()->isActive(), 404);
@@ -73,7 +77,7 @@ class Show extends Component
         $pending = TaskSubmission::query()->whereDoesntHave('review')->whereHas('task', fn ($q) => $q->where('work_status', 'submitted')->where('review_status', 'pending'));
 
         return view('livewire.admin.verification.show', [
-            'submission' => $submission, 'snapshot' => $snapshot, 'issues' => $evidence->issues($submission), 'referenceLabel' => $label, 'formatTime' => $formatTime,
+            'submission' => $submission, 'snapshot' => $snapshot, 'payment' => $review->paymentClaim($submission), 'issues' => $evidence->issues($submission), 'referenceLabel' => $label, 'formatTime' => $formatTime,
             'previous' => (clone $pending)->where('id', '<', $submission->id)->orderByDesc('id')->first(),
             'next' => (clone $pending)->where('id', '>', $submission->id)->orderBy('id')->first(),
             'history' => $submission->task->submissions()->with('review.reviewer')->latest('submission_version')->limit(20)->get(),

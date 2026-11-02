@@ -6,7 +6,7 @@ use App\Actions\Tasks\SaveTask;
 use App\Actions\Tasks\TaskOperation;
 use App\Enums\BatchStatus;
 use App\Jobs\ProcessTaskOperation;
-use App\Livewire\Admin\Customers\Show;
+use App\Livewire\Admin\Tasks\Editor;
 use App\Livewire\Admin\Tasks\Index;
 use App\Models\AccountParty;
 use App\Models\AssignmentBatch;
@@ -26,8 +26,11 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Permission;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(LazilyRefreshDatabase::class);
@@ -46,7 +49,9 @@ function taskContext(): array
 }
 function taskInput(AssignmentBatch $batch, DebtAccount $account, Debtor $customer, array $changes = []): array
 {
-    return $changes + ['assignment_batch_id' => $batch->id, 'debt_account_id' => $account->id, 'customer_id' => $customer->id, 'priority_code' => 'normal', 'scheduled_visit_at' => '2026-10-20T09:30', 'due_at' => '2026-10-21T17:30', 'instructions' => 'Synthetic private instructions'];
+    static $nextTaskNumber = 0;
+
+    return $changes + ['outstanding_balance' => '1000.00', 'task_id' => 'T'.++$nextTaskNumber, 'assignment_batch_id' => $batch->id, 'debt_account_id' => $account->id, 'customer_id' => $customer->id, 'priority_code' => 'normal', 'scheduled_visit_at' => '2026-10-20T09:30', 'due_at' => '2026-10-21T17:30', 'instructions' => 'Synthetic private instructions'];
 }
 function eligibleRider(): Staff
 {
@@ -63,8 +68,8 @@ function taskPreview(User $actor, Task $task, string $operation, ?Staff $rider =
 
 test('manual task preserves source identity encrypts instructions normalizes timezone and writes history atomically', function (): void {
     [$actor,$customer,$account,$batch] = taskContext();
-    $task = app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer, ['work_status' => 'completed', 'source_iwk_id' => 'FAKE', 'created_by' => 99999]));
-    expect($task->origin_code)->toBe('manual')->and($task->source_iwk_id)->toBeNull()->and($task->work_status)->toBe('unstarted')->and($task->created_by)->toBe($actor->id)->and($task->scheduled_visit_at->format('H:i'))->toBe('01:30')->and($task->history()->count())->toBe(1);
+    $task = app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer, ['work_status' => 'completed', 'source_task_number' => 99999, 'created_by' => 99999]));
+    expect($task->origin_code)->toBe('manual')->and($task->source_task_number)->toBe(Task::numberFromId($task->source_task_id))->and($task->work_status)->toBe('unstarted')->and($task->created_by)->toBe($actor->id)->and($task->scheduled_visit_at->format('H:i'))->toBe('01:30')->and($task->history()->count())->toBe(1);
     expect(DB::table('tasks')->value('special_instruction_ciphertext'))->not->toContain('Synthetic private');
     expect($task->toJson())->not->toContain('Synthetic private');
     expect($account->account_number)->toBe('000123')->and(AccountParty::query()->count())->toBe(1);
@@ -155,12 +160,7 @@ test('an account without a current relationship to the customer cannot be tasked
     expect(fn () => app(SaveTask::class)->handle($actor, taskInput($batch, $unrelated, $customer)))->toThrow(ValidationException::class);
 });
 
-test('range mode requires approved source semantics and cannot invent numeric task IDs', function (): void {
-    [$actor,$customer,$account,$batch] = taskContext();
-    expect(fn () => app(TaskOperation::class)->prepare($actor, ['assignment_batch_id' => $batch->id, 'selection_mode' => 'range', 'operation_code' => 'cancel', 'reason' => 'Synthetic range request']))->toThrow(ValidationException::class, 'IWK range processing');
-});
-
-test('task monitoring account editor and reviewed operations render', function (): void {
+test('task monitoring and reviewed operations render', function (): void {
     [$actor,$customer,$account,$batch] = taskContext();
     $task = app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer));
     $this->actingAs($actor)->get(route('admin.tasks.index'))->assertOk()->assertSee('Task monitoring');
@@ -168,7 +168,6 @@ test('task monitoring account editor and reviewed operations render', function (
     $this->get(route('admin.tasks.edit', $task))->assertOk();
     $this->get(route('admin.tasks.create'))->assertOk();
     $this->get(route('admin.tasks.allocate-one', $task))->assertOk();
-    $this->get(route('admin.accounts.edit', ['customer' => $customer, 'account' => $account]))->assertOk();
     $op = taskPreview($actor, $task, 'cancel');
     $this->get(route('admin.tasks.operation', $op))->assertOk()->assertSee('Eligible at preview');
 });
@@ -206,7 +205,7 @@ test('database protects operation criteria task provenance and one current alloc
     $rider = eligibleRider();
     $op = taskPreview($actor, $task, 'new', $rider);
     expect(fn () => DB::transaction(fn () => DB::table('bulk_operations')->where('id', $op->id)->update(['reason' => 'Changed behind preview'])))->toThrow(QueryException::class);
-    expect(fn () => DB::transaction(fn () => DB::table('tasks')->where('id', $task->id)->update(['source_iwk_id' => '123'])))->toThrow(QueryException::class);
+    expect(fn () => DB::transaction(fn () => DB::table('tasks')->where('id', $task->id)->update(['source_task_id' => '123'])))->toThrow(QueryException::class);
     expect(fn () => DB::transaction(fn () => DB::table('task_status_histories')->where('task_id', $task->id)->delete()))->toThrow(QueryException::class);
     app(TaskOperation::class)->confirm($actor, $op, $op->preview_digest);
     app(TaskOperation::class)->process($op->id);
@@ -274,8 +273,110 @@ test('the reviewed selection digest prevents hidden expansion before confirmatio
     expect(fn () => DB::transaction(fn () => BulkOperationItem::factory()->create(['bulk_operation_id' => $op->id, 'task_id' => $two->id])))->toThrow(QueryException::class);
 });
 
-test('customer account history lists multiple linked accounts', function (): void {
+test('creating a task with new references creates the customer and account behind it', function (): void {
+    [$actor,,,$batch] = taskContext();
+    Livewire::actingAs($actor)->test(Editor::class)
+        ->set('data.assignment_batch_id', (string) $batch->id)
+        ->set('data.task_id', 'FG001')
+        ->set('data.outstanding_balance', '1234.50')
+        ->set('data.customer_reference', 'NEW-REF')
+        ->set('data.customer_name', 'Synthetic New Customer')
+        ->set('data.account_number', 'NEW-ACC')
+        ->set('data.address', '12 Synthetic Road')
+        ->call('save')
+        ->assertHasNoErrors();
+    $task = Task::query()->sole();
+    expect($task->customer->customer_reference)->toBe('NEW-REF')
+        ->and($task->customer->display_name_ciphertext)->toBe('Synthetic New Customer')
+        ->and($task->account->account_number)->toBe('NEW-ACC')
+        ->and($task->account->property->address_lines_ciphertext)->toBe('12 Synthetic Road');
+});
+
+test('creating a task reuses an existing customer and account by reference', function (): void {
     [$actor,$customer,$account,$batch] = taskContext();
-    app(SaveDebtAccount::class)->handle($actor, $customer, ['account_number' => '000456', 'currency' => 'MYR', 'status' => 'active', 'role_code' => 'owner', 'address' => 'Second Synthetic Road']);
-    Livewire::actingAs($actor)->test(Show::class, ['customer' => $customer])->set('tab', 'accounts')->assertSee('000123')->assertSee('000456')->assertSee('Edit account');
+    Livewire::actingAs($actor)->test(Editor::class)
+        ->set('data.assignment_batch_id', (string) $batch->id)
+        ->set('data.task_id', 'DT2304')
+        ->set('data.outstanding_balance', '50')
+        ->set('data.customer_reference', $customer->customer_reference)
+        ->set('data.account_number', $account->account_number)
+        ->call('save')
+        ->assertHasNoErrors();
+    expect(Task::query()->sole()->source_task_number)->toBe(2304);
+    expect(Task::query()->sole()->customer_id)->toBe($customer->id)
+        ->and(Debtor::query()->count())->toBe(1)
+        ->and(DebtAccount::query()->count())->toBe(1);
+});
+
+test('a new customer reference needs a name and failed saves leave nothing behind', function (): void {
+    [$actor,,,$batch] = taskContext();
+    Livewire::actingAs($actor)->test(Editor::class)
+        ->set('data.assignment_batch_id', (string) $batch->id)
+        ->set('data.task_id', 'FG001')
+        ->set('data.customer_reference', 'NEW-REF')
+        ->set('data.account_number', 'NEW-ACC')
+        ->call('save')
+        ->assertHasErrors(['data.customer_name']);
+    expect(Debtor::query()->where('customer_reference', 'NEW-REF')->exists())->toBeFalse()
+        ->and(DebtAccount::query()->where('account_number', 'NEW-ACC')->exists())->toBeFalse();
+});
+
+test('an account belonging to another customer cannot be tasked and creates no customer', function (): void {
+    [$actor,,$account,$batch] = taskContext();
+    Livewire::actingAs($actor)->test(Editor::class)
+        ->set('data.assignment_batch_id', (string) $batch->id)
+        ->set('data.task_id', 'FG001')
+        ->set('data.outstanding_balance', '50')
+        ->set('data.customer_reference', 'OTHER-REF')
+        ->set('data.customer_name', 'Synthetic Other Customer')
+        ->set('data.account_number', $account->account_number)
+        ->call('save')
+        ->assertHasErrors(['data.debt_account_id']);
+    expect(Debtor::query()->where('customer_reference', 'OTHER-REF')->exists())->toBeFalse()
+        ->and(Task::query()->count())->toBe(0);
+});
+
+test('a repeated or numberless task id is refused and leaves nothing behind', function (string $taskId): void {
+    [$actor,$customer,$account,$batch] = taskContext();
+    app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer, ['task_id' => 'FG001']));
+    Livewire::actingAs($actor)->test(Editor::class)
+        ->set('data.assignment_batch_id', (string) $batch->id)
+        ->set('data.task_id', $taskId)
+        ->set('data.outstanding_balance', '50')
+        ->set('data.customer_reference', 'REPEAT-REF')
+        ->set('data.customer_name', 'Synthetic Repeat')
+        ->set('data.account_number', 'REPEAT-ACC')
+        ->call('save')
+        ->assertHasErrors(['data.task_id']);
+    expect(Debtor::query()->where('customer_reference', 'REPEAT-REF')->exists())->toBeFalse()
+        ->and(Task::query()->count())->toBe(1);
+})->with(['FG001', 'DT1', 'NODIGITS']);
+
+test('task details shows field activity once and says Rider', function (): void {
+    [$actor,$customer,$account,$batch] = taskContext();
+    $task = app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer));
+    $page = $this->actingAs($actor)->get(route('admin.tasks.show', $task))->assertOk()->assertSee('Task history')->assertSee('Rider allocation history')->assertDontSee('Current Rider');
+
+    expect(substr_count($page->getContent(), 'Field activity &amp; completion submissions') + substr_count($page->getContent(), 'Field activity & completion submissions'))->toBe(1);
+});
+
+test('task details keeps the communication and call buttons at the bottom of source and safeguards', function (): void {
+    [$actor,$customer,$account,$batch] = taskContext();
+    $task = app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer));
+
+    $this->actingAs($actor)->get(route('admin.tasks.show', $task))->assertOk()
+        ->assertSeeInOrder(['Source &amp; safeguards', 'connect in M06/M07', 'Open communication templates', 'Open Call Centre workspace', '</aside>'], false)
+        ->assertSee('btn btn-success min-h-9', false);
+});
+
+test('customer management pages and permissions are gone', function (): void {
+    [$actor] = taskContext();
+    foreach (['/admin/customers', '/admin/customers/create', '/admin/customers/categories'] as $path) {
+        $this->actingAs($actor)->get($path)->assertNotFound();
+    }
+    expect(Route::has('admin.customers.index'))->toBeFalse()
+        ->and(Route::has('admin.accounts.edit'))->toBeFalse()
+        ->and(Permission::query()->whereIn('name', ['customers.create', 'customers.update', 'customers.categorize', 'customers.manage_categories', 'customers.view_sensitive'])->exists())->toBeFalse()
+        ->and(Schema::hasTable('customer_categories'))->toBeFalse()
+        ->and(Schema::hasColumn('import_rows', 'target_customer_id'))->toBeFalse();
 });

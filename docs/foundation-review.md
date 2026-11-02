@@ -1,5 +1,7 @@
 # DebtOps foundation review — 16 October 2026
 
+> **November 2026:** clients, Customer Management (M13), customer categories and column aliases were removed, the IWK ID became the task ID, and financial snapshots were added. See "Current implementation" in [Module.md](../Module.md) and [Database.md](../Database.md), which override older text here.
+
 The four root documents are the requirements authority. This file records implementation disposition, not replacement requirements. C sections override historical O/U evidence. Product: DebtOps by InteXcode; DRMS remains a reference only.
 
 ## Dependency order

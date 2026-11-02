@@ -5,11 +5,6 @@ use Tests\TestCase;
 
 pest()->extend(TestCase::class)->in('Feature');
 
-function customerInput(array $overrides = []): array
-{
-    return array_replace(['customer_reference' => 'C-001', 'party_type' => 'person', 'name' => 'Nur Aisyah Tan', 'identity' => '', 'status' => 'active', 'contacts' => [], 'addresses' => [], 'category_ids' => []], $overrides);
-}
-
 function staffManager(): User
 {
     $user = User::factory()->create();

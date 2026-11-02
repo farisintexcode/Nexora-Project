@@ -4,7 +4,7 @@
 <a class="btn btn-secondary justify-self-start" href="{{ route('admin.communications.index',['customer'=>$customer->public_id]) }}">Open communication templates</a>
 @endcan
 @endcan
-<x-page-header :title="$customer->display_name_ciphertext" eyebrow="Call workspace" :description="$customer->customer_reference"><x-slot:actions><a class="btn btn-secondary" href="{{ route('admin.customers.show',$customer) }}">Customer details</a><a class="btn btn-secondary" href="{{ route('admin.calls.follow-ups') }}">Follow-up queue</a></x-slot:actions></x-page-header>
+<x-page-header :title="$customer->display_name_ciphertext" eyebrow="Call workspace" :description="$customer->customer_reference"><x-slot:actions><a class="btn btn-secondary" href="{{ route('admin.calls.follow-ups') }}">Follow-up queue</a></x-slot:actions></x-page-header>
 <div class="grid min-w-0 gap-6 xl:grid-cols-3"><section class="surface grid min-w-0 content-start gap-4 p-5"><h2 class="text-lg font-semibold">Customer context</h2><h3 class="text-sm font-semibold">Current phone contacts</h3>
 @forelse($contacts as $contact)<div class="rounded-xl border border-ink-200 p-3"><p class="text-xs text-ink-500">{{ ucfirst($contact->kind_code) }} {{ $contact->is_primary?'· Primary':'' }}</p><p class="mt-2 break-all text-sm font-semibold">{{ $contact->value_ciphertext }}</p></div>@empty<p class="text-sm text-ink-500">No current phone contacts are recorded.</p>@endforelse
 @can('updateContacts',$customer)<x-button type="button" variant="secondary" wire:click="editContacts">Edit contact observations</x-button>@endcan
