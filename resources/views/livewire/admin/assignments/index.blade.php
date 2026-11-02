@@ -69,7 +69,7 @@
                         @foreach($batches as $batch)
                             <tr wire:key="batch-row-{{ $batch->public_id }}">
                                 <td class="text-ink-500 tabular-nums">{{ $batches->firstItem() + $loop->index }}</td>
-                                <td class="tabular-nums">{{ $batch->id }}</td>
+                                <td class="tabular-nums">{{ $batch->register_no }}</td>
                                 <td class="assignment-name"><a class="font-semibold underline" href="{{ route('admin.assignments.edit', ['batch' => $batch->public_id]) }}">{{ $batch->name }}</a></td>
                                 <td class="whitespace-nowrap">{{ $batch->start_date->format('d/m/Y') }} to {{ $batch->due_date->format('d/m/Y') }}</td>
                                 <td class="whitespace-nowrap">{{ $batch->type?->label ?? '-' }}</td>

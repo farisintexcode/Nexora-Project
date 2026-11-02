@@ -167,7 +167,7 @@ test('literal search safe filters and archive register do not leak other records
 test('register applies draft filters on demand combines them with search and counts batch tasks', function (): void {
     $user = staffManager();
     $counted = AssignmentBatch::factory()->create(['name' => 'Counted package', 'start_date' => '2026-10-05', 'due_date' => '2026-10-30']);
-    AssignmentBatch::factory()->create(['name' => 'Later package', 'start_date' => '2026-11-05', 'due_date' => '2026-11-30']);
+    AssignmentBatch::factory()->create(['name' => 'Later package', 'external_reference' => null, 'start_date' => '2026-11-05', 'due_date' => '2026-11-30']);
     $account = DebtAccount::factory()->create();
     $tasks = Task::factory()->count(3)->create(['assignment_batch_id' => $counted->id, 'debt_account_id' => $account->id]);
     $tasks[0]->forceFill(['payment_update_flag' => true])->save();
@@ -177,12 +177,53 @@ test('register applies draft filters on demand combines them with search and cou
         ->assertViewHas('batches', fn ($batches): bool => $batches->firstWhere('id', $counted->id)->only(['upload_count', 'assigned_count', 'completed_count', 'payment_update_count']) === ['upload_count' => 3, 'assigned_count' => 1, 'completed_count' => 0, 'payment_update_count' => 1])
         ->set('draft.from', '2026-11-01')->assertSet('from', '')->assertSee('Counted package')
         ->call('applyFilters')->assertSet('from', '2026-11-01')->assertSee('Later package')->assertDontSee('Counted package')
-        ->set('query', (string) $counted->id)->assertSee('No assignments found')
+        ->set('query', (string) $counted->refresh()->register_no)->assertSee('No assignments found')
         ->call('resetAdvancedFilters')->assertSet('draft.from', '')->assertSee('Counted package')->assertDontSee('Later package')
         ->call('resetFilters')->assertSet('query', '')->assertSee('Later package')
         ->set('sort', 'oldest')->assertSeeInOrder(['Counted package', 'Later package'])
         ->call('sortBy', 'name')->assertSet('sort', 'name_asc')->call('sortBy', 'name')->assertSet('sort', 'name_desc')
         ->set('perPage', '10')->assertViewHas('batches', fn ($batches): bool => $batches->perPage() === 10);
+});
+
+test('register numbers run per status and change only when the status changes', function (): void {
+    $user = staffManager();
+    $user->givePermissionTo('assignments.reopen');
+    $save = app(SaveAssignmentBatch::class);
+    $change = app(ChangeBatchStatus::class);
+    $create = fn (string $name, string $status = 'active'): AssignmentBatch => $save->handle($user, batchInput(['name' => $name, 'external_reference' => '']), initialStatus: $status);
+
+    $first = $create('First package');
+    $archivedOnCreate = $create('Archived package', 'archived');
+    $alpha = $create('Alpha package');
+    $beta = $create('Beta package');
+    expect([$first->register_no, $archivedOnCreate->register_no, $alpha->register_no, $beta->register_no])->toBe([1, 1, 2, 3]);
+
+    $this->actingAs($user)->get(route('admin.assignments.edit', $alpha))->assertOk();
+    $alpha = $save->handle($user, batchInput(['name' => 'Renamed package', 'external_reference' => '']), $alpha, $alpha->lock_version);
+    expect($alpha->register_no)->toBe(2);
+
+    $alpha = $change->handle($user, $alpha, 'archived', 'Work package finished', $alpha->lock_version);
+    expect($alpha->register_no)->toBe(2)->and($beta->fresh()->register_no)->toBe(3);
+    expect($create('Gamma package')->register_no)->toBe(4);
+
+    $alpha = $change->handle($user, $alpha, 'active', 'Approved reopening for new work', $alpha->lock_version);
+    expect($alpha->register_no)->toBe(5);
+    expect($change->handle($user, $alpha, 'archived', 'Finished again', $alpha->lock_version)->register_no)->toBe(3);
+});
+
+test('register numbers cannot be overwritten and archived numbers repeat without clashing in the register', function (): void {
+    $user = staffManager();
+    $active = AssignmentBatch::factory()->create(['name' => 'Active package', 'external_reference' => null]);
+    AssignmentBatch::factory()->create(['name' => 'Other active package', 'external_reference' => null]);
+    AssignmentBatch::factory()->create(['name' => 'Archived package', 'external_reference' => null, 'status' => 'archived', 'archived_at' => now()]);
+
+    DB::table('assignment_batches')->where('id', $active->id)->update(['register_no' => 99]);
+    expect($active->refresh()->register_no)->toBe(1);
+
+    Livewire::actingAs($user)->test(Index::class)
+        ->set('query', '1')->assertSee('Active package')->assertDontSee('Other active package')->assertDontSee('Archived package')
+        ->set('status', 'archived')->assertSee('Archived package')->assertDontSee('Active package')
+        ->set('query', '99999999999999999999')->assertSee('No assignments found');
 });
 
 test('register filters one assignment date or a range through the combined date field', function (): void {
