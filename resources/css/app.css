@@ -558,6 +558,36 @@
     .rider-header .nexora-brand .nexora-on-dark { display: block; }
 }
 
+/* Admin assignment register: compact table and filter controls, scoped to this page only. */
+@layer components {
+    .assignment-filter-count { @apply grid min-w-5 place-items-center rounded-full bg-brand-accent px-1.5 text-[11px] leading-5 font-bold text-brand-primary; }
+    .assignment-apply { @apply border-brand-primary bg-brand-primary text-white hover:border-brand-hover hover:bg-brand-hover active:border-brand-active active:bg-brand-active; }
+    .assignment-table th { @apply px-4 py-3 text-xs font-semibold tracking-normal normal-case; color: var(--color-brand-dark); }
+    .assignment-table td { @apply px-4 py-3; }
+    .assignment-table tbody tr:nth-child(even) { background-color: color-mix(in srgb, var(--color-ink-50) 70%, transparent); }
+    .assignment-table tbody tr:hover { background-color: var(--color-brand-soft); }
+    .assignment-table .assignment-name { @apply min-w-56 break-words; }
+    .assignment-sort { @apply inline-flex items-center gap-1.5 rounded-md hover:text-brand-accent-active; }
+    .assignment-menu-trigger { @apply ml-auto grid size-9 place-items-center rounded-lg border border-transparent text-ink-600 transition-colors hover:border-ink-200 hover:bg-brand-soft; }
+    .assignment-menu { @apply z-30 grid min-w-44 gap-0.5 rounded-xl border border-ink-200 bg-white p-1.5 text-left text-sm shadow-lg; color: var(--foreground); }
+    .assignment-menu a { @apply rounded-lg px-3 py-2 no-underline hover:bg-brand-soft; }
+    .dark .assignment-apply { @apply border-brand-accent bg-brand-accent text-brand-primary hover:border-brand-accent-hover hover:bg-brand-accent-hover; }
+    .dark .assignment-table th { color: var(--foreground); }
+    .dark .assignment-menu { background-color: var(--surface-raised); }
+}
+
+/* Calendar filter field: selected days use the primary button colours, days between them the soft brand tint. */
+@layer components {
+    .date-range-panel { @apply z-30 grid w-80 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border border-ink-200 bg-white p-4 shadow-lg; color: var(--foreground); }
+    .date-range-nav { @apply grid size-9 place-items-center rounded-lg border border-transparent text-ink-600 transition-colors hover:border-ink-200 hover:bg-brand-soft; }
+    .date-range-day { @apply grid min-h-10 touch-manipulation place-items-center rounded-lg text-sm tabular-nums transition-colors hover:bg-brand-soft; }
+    .date-range-day[data-today='true'] { @apply font-bold underline underline-offset-4; }
+    .date-range-day[data-state='range'] { @apply rounded-none bg-brand-soft; }
+    .date-range-day[data-state='selected'] { @apply bg-brand-primary font-semibold text-white hover:bg-brand-hover; }
+    .dark .date-range-panel { background-color: var(--surface-raised); }
+    .dark .date-range-day[data-state='selected'] { @apply bg-brand-accent text-brand-primary hover:bg-brand-accent-hover; }
+}
+
 @layer components {
  .nexora-attendance { width: 100%; }
  .attendance-welcome { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }

@@ -18,6 +18,8 @@
     @case('arrow-right')<path d="M4 12h16m-6-6 6 6-6 6"/>@break
     @case('arrow-left')<path d="M20 12H4m6-6-6 6 6 6"/>@break
     @case('chevron')<path d="m9 5 7 7-7 7"/>@break
+    @case('sort')<path d="m8 9 4-4 4 4M16 15l-4 4-4-4"/>@break
+    @case('more')<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>@break
     @case('plus')<path d="M12 5v14M5 12h14"/>@break
     @case('search')<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>@break
     @case('filter')<path d="M3 6h18M6 12h12M9 18h6 M7 4v4M16 10v4M12 16v4"/>@break

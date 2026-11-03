@@ -2,26 +2,96 @@
     <x-feedback />
     <x-page-header title="Assignment batches" eyebrow="Recovery work packages" description="Organize assignments, schedules and routing metadata before importing tasks."><x-slot:actions>@can('create', \App\Models\AssignmentBatch::class)<a class="btn btn-primary" href="{{ route('admin.assignments.create') }}"><x-icon name="plus" class="size-4" />New assignment</a>@endcan</x-slot:actions></x-page-header>
     <nav aria-label="Assignment register" class="flex flex-wrap gap-2"><a class="tab-button" href="{{ route('admin.assignments.index') }}" @if($status === 'active') aria-current="page" @endif>Active assignments</a><a class="tab-button" href="{{ route('admin.assignments.index', ['status'=>'archived']) }}" @if($status === 'archived') aria-current="page" @endif>Archived assignments</a></nav>
-    @php($extraFilters = collect([$type, $state, $from, $until])->filter(fn ($value) => $value !== '')->count() + ($perPage !== '25' ? 1 : 0))
-    <div class="surface grid gap-4 p-5" x-data="{ more: {{ $extraFilters > 0 ? 'true' : 'false' }} }">
-        <div class="grid items-end gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-            <x-input name="query" label="Search assignments" wire:model.live.debounce.400ms="query" placeholder="Name or external reference" maxlength="200" autocomplete="off" />
-            <x-select name="sort" label="Sort by" wire:model.live="sort"><option value="newest">Newest first</option><option value="name">Assignment name</option><option value="due">Earliest due date</option></x-select>
-            <div class="flex flex-wrap items-center gap-3"><button type="button" class="btn btn-secondary" @click="more = !more" :aria-expanded="more" aria-controls="assignment-more-filters"><x-icon name="filter" class="size-4" />More filters @if($extraFilters)<span class="rounded-full bg-brand-soft px-2 text-[11px] font-semibold">{{ $extraFilters }}</span>@endif</button>@if($extraFilters || $query !== '' || $sort !== 'newest')<button type="button" class="min-h-11 text-xs underline" wire:click="resetFilters">Clear filters</button>@endif</div>
+    <div class="assignment-register grid min-w-0 gap-4">
+        <form class="surface grid gap-5 p-4 sm:p-5" wire:submit="applyFilters" x-data="{ filtersOpen: @js($activeFilterCount > 0) }">
+            <div class="flex flex-col gap-3 sm:flex-row">
+                <div class="relative min-w-0 flex-1">
+                    <label for="query" class="sr-only">Search assignments</label>
+                    <x-icon name="search" class="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-ink-500" />
+                    <input id="query" name="query" type="search" class="field pl-11" wire:model.live.debounce.400ms="query" placeholder="Search by ID, name or external reference..." maxlength="200" autocomplete="off">
+                </div>
+                <button type="button" class="btn btn-secondary shrink-0" x-on:click="filtersOpen = !filtersOpen" x-bind:aria-expanded="filtersOpen" aria-controls="assignment-filters">
+                    <x-icon name="filter" class="size-4" />Filters
+                    @if($activeFilterCount)<span class="assignment-filter-count" aria-label="{{ $activeFilterCount }} applied">{{ $activeFilterCount }}</span>@endif
+                    <x-icon name="chevron" class="size-4 transition-transform" x-bind:class="filtersOpen ? '-rotate-90' : 'rotate-90'" />
+                </button>
+            </div>
+            <div id="assignment-filters" class="grid gap-5 border-t border-ink-100 pt-5" x-show="filtersOpen" x-cloak>
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <x-select name="filter-type" label="Assignment type" wire:model="draft.type"><option value="">All types</option>@foreach($types as $item)<option value="{{ $item->code }}">{{ $item->label }}</option>@endforeach</x-select>
+                    <x-select name="filter-state" label="State" wire:model="draft.state"><option value="">All states</option>@foreach($states as $item)<option value="{{ $item->code }}">{{ $item->label }}</option>@endforeach</x-select>
+                    <x-date-range name="filter-date" label="Assignment Date" from="draft.from" until="draft.until" />
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <button type="button" class="min-h-11 text-xs font-semibold text-ink-700 underline decoration-ink-300 underline-offset-4 hover:decoration-brand-accent" wire:click="resetFilters">Clear all filters</button>
+                    <div class="flex flex-wrap gap-3">
+                        <button type="button" class="btn btn-secondary min-h-11 py-2" wire:click="resetAdvancedFilters">Reset</button>
+                        <button type="submit" class="btn assignment-apply min-h-11 py-2">Apply filters</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+        @if($filterError)<p role="alert" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs">{{ $filterError }}</p>@endif
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-ink-600" aria-live="polite">Showing {{ $batches->firstItem() ?? 0 }} to {{ $batches->lastItem() ?? 0 }} of {{ $batches->total() }} entries</p>
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex items-center gap-2"><label for="sort" class="field-label whitespace-nowrap">Sort by</label><select id="sort" name="sort" class="field min-h-10 w-auto py-2 text-sm" wire:model.live="sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name_asc">Name ascending</option><option value="name_desc">Name descending</option></select></div>
+                <div class="flex items-center gap-2"><label for="perPage" class="field-label whitespace-nowrap">Per page</label><select id="perPage" name="perPage" class="field min-h-10 w-auto py-2 text-sm" wire:model.live="perPage">@foreach(['10', '25', '50', '100'] as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach</select></div>
+            </div>
         </div>
-        <div id="assignment-more-filters" x-show="more" x-cloak class="grid gap-4 border-t border-ink-100 pt-4 sm:grid-cols-2 xl:grid-cols-5">
-            <x-select name="type" label="Assignment type" wire:model.live="type"><option value="">All types</option>@foreach($types as $item)<option value="{{ $item->code }}">{{ $item->label }}</option>@endforeach</x-select>
-            <x-select name="state" label="State" wire:model.live="state"><option value="">All states</option>@foreach($states as $item)<option value="{{ $item->code }}">{{ $item->label }}</option>@endforeach</x-select>
-            <x-input name="from" label="Assignment date from" type="date" wire:model.live="from" /><x-input name="until" label="Assignment date until" type="date" wire:model.live="until" />
-            <x-select name="perPage" label="Assignments per page" wire:model.live="perPage"><option value="25">25</option><option value="50">50</option><option value="100">100</option></x-select>
-        </div>
+        <x-loading wire:loading.delay label="Loading assignments…" />
+        @if($batches->isEmpty())
+            <x-empty-state icon="briefcase" title="No assignments found" message="Try adjusting your search or filters to find what you're looking for."><button type="button" class="btn btn-secondary" wire:click="resetFilters">Clear filters</button></x-empty-state>
+        @else
+            @php
+                $idSort = ['newest' => 'descending', 'oldest' => 'ascending'][$sort] ?? null;
+                $nameSort = ['name' => 'ascending', 'name_asc' => 'ascending', 'name_desc' => 'descending'][$sort] ?? null;
+            @endphp
+            <div class="surface overflow-x-auto">
+                <table class="data-table assignment-table">
+                    <caption class="sr-only">Scoped assignment register</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">#</th>
+                            <th scope="col" aria-sort="{{ $idSort ?? 'none' }}"><button type="button" class="assignment-sort" wire:click="sortBy('id')">ID<x-icon :name="$idSort ? 'chevron' : 'sort'" @class(['size-3.5', '-rotate-90' => $idSort === 'ascending', 'rotate-90' => $idSort === 'descending', 'opacity-50' => ! $idSort]) /></button></th>
+                            <th scope="col" aria-sort="{{ $nameSort ?? 'none' }}"><button type="button" class="assignment-sort" wire:click="sortBy('name')">Name<x-icon :name="$nameSort ? 'chevron' : 'sort'" @class(['size-3.5', '-rotate-90' => $nameSort === 'ascending', 'rotate-90' => $nameSort === 'descending', 'opacity-50' => ! $nameSort]) /></button></th>
+                            <th scope="col">Date</th>
+                            <th scope="col">Type</th>
+                            <th scope="col" class="text-right">Upload</th>
+                            <th scope="col" class="text-right">Assign</th>
+                            <th scope="col" class="text-right">Complete</th>
+                            <th scope="col" class="text-right">Payment Update</th>
+                            <th scope="col">Status</th>
+                            <th scope="col" class="relative"><span class="sr-only">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($batches as $batch)
+                            <tr wire:key="batch-row-{{ $batch->public_id }}">
+                                <td class="text-ink-500 tabular-nums">{{ $batches->firstItem() + $loop->index }}</td>
+                                <td class="tabular-nums">{{ $batch->register_no }}</td>
+                                <td class="assignment-name"><a class="font-semibold underline" href="{{ route('admin.assignments.edit', ['batch' => $batch->public_id]) }}">{{ $batch->name }}</a></td>
+                                <td class="whitespace-nowrap">{{ $batch->start_date->format('d/m/Y') }} to {{ $batch->due_date->format('d/m/Y') }}</td>
+                                <td class="whitespace-nowrap">{{ $batch->type?->label ?? '-' }}</td>
+                                @foreach(['upload_count', 'assigned_count', 'completed_count', 'payment_update_count'] as $count)
+                                    <td class="text-right tabular-nums">{{ $batch->{$count} ?: '-' }}</td>
+                                @endforeach
+                                <td><x-badge :tone="$batch->status->value === 'active' ? 'success' : 'neutral'">{{ ucfirst($batch->status->value) }}</x-badge></td>
+                                <td class="text-right">
+                                    <div x-data="{ open: false }" x-on:keydown.escape="open = false">
+                                        <button type="button" x-ref="trigger" class="assignment-menu-trigger" x-on:click="open = !open" x-bind:aria-expanded="open" aria-haspopup="menu" aria-label="Actions for {{ $batch->name }}"><x-icon name="more" class="size-4" /></button>
+                                        <div class="assignment-menu" role="menu" x-show="open" x-cloak x-anchor.bottom-end.offset.4="$refs.trigger" x-on:click.outside="open = false">
+                                            <a role="menuitem" href="{{ route('admin.assignments.edit', ['batch' => $batch->public_id]) }}">View assignment</a>
+                                            @if($canViewTasks)<a role="menuitem" href="{{ route('admin.tasks.index', ['batch' => $batch->public_id]) }}">View tasks</a>@endif
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+        {{ $batches->links() }}
     </div>
-    @if($filterError)<p role="alert" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs">{{ $filterError }}</p>@endif
-    <x-loading wire:loading.delay label="Loading assignments…" />
-    <p class="text-xs text-ink-500">{{ $batches->total() }} matching assignments · {{ $batches->perPage() }} per page</p>
-    @if($batches->isEmpty())<x-empty-state icon="briefcase" title="No matching assignments" message="Adjust your filters or create a work package." />@else
-    <div class="grid gap-3 lg:hidden">@foreach($batches as $batch)<article class="surface grid gap-4 p-5" wire:key="batch-card-{{ $batch->public_id }}"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><a class="break-words text-sm font-semibold" href="{{ route('admin.assignments.edit',['batch'=>$batch->public_id]) }}">{{ $batch->name }}</a><p class="mt-2 break-words text-xs text-ink-500">{{ $batch->type?->label }}</p></div><x-badge :tone="$batch->status->value === 'active' ? 'brand' : 'neutral'">{{ ucfirst($batch->status->value) }}</x-badge></div><p class="text-xs text-ink-600">{{ $batch->start_date->format('d M Y') }} → {{ $batch->due_date->format('d M Y') }}</p><a class="btn btn-secondary" href="{{ route('admin.assignments.edit',['batch'=>$batch->public_id]) }}">View assignment<x-icon name="arrow-right" class="size-4" /></a></article>@endforeach</div>
-    <div class="surface hidden overflow-x-auto lg:block"><table class="data-table"><caption class="sr-only">Scoped assignment register</caption><thead><tr>@foreach(['Assignment','Type / state','Assignment date','Due date','Status','Action'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead><tbody>@foreach($batches as $batch)<tr wire:key="batch-row-{{ $batch->public_id }}"><td><a class="font-semibold underline" href="{{ route('admin.assignments.edit',['batch'=>$batch->public_id]) }}">{{ $batch->name }}</a><p class="mt-2 text-[11px] text-ink-500">{{ $batch->external_reference ?: 'No external reference' }}</p></td><td><p>{{ $batch->type?->label }}</p><p class="mt-2 text-xs text-ink-500">{{ $batch->state?->label ?? 'Not specified' }}</p></td><td class="whitespace-nowrap">{{ $batch->start_date->format('d M Y') }}</td><td class="whitespace-nowrap">{{ $batch->due_date->format('d M Y') }}</td><td><x-badge :tone="$batch->status->value === 'active' ? 'brand' : 'neutral'">{{ ucfirst($batch->status->value) }}</x-badge></td><td><a class="grid size-11 place-items-center rounded-xl border border-ink-200" href="{{ route('admin.assignments.edit',['batch'=>$batch->public_id]) }}" aria-label="View {{ $batch->name }}"><x-icon name="arrow-right" /></a></td></tr>@endforeach</tbody></table></div>
-    @endif
-    {{ $batches->links() }}
 </section>

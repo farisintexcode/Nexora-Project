@@ -19,6 +19,8 @@ class Index extends Component
 {
     use WithPagination;
 
+    private const ADVANCED_FILTERS = ['type', 'state', 'from', 'until'];
+
     #[Url]
     public string $status = 'active';
 
@@ -42,19 +44,30 @@ class Index extends Component
 
     public string $query = '';
 
+    /**
+     * Unapplied advanced filter form values; they reach the query only through applyFilters().
+     *
+     * @var array{type: string, state: string, from: string, until: string}
+     */
+    public array $draft = ['type' => '', 'state' => '', 'from' => '', 'until' => ''];
+
     public function mount(): void
     {
         $this->query = session('assignment_search.'.Auth::id(), '');
-        session()->put('assignment_filters.'.Auth::id(), $this->filters());
+        $this->syncDraft();
+        $this->rememberFilters();
     }
 
     public function updated(string $property): void
     {
+        if (str_starts_with($property, 'draft')) {
+            return;
+        }
         $this->resetPage();
         if ($property === 'query') {
             session()->put('assignment_search.'.Auth::id(), mb_substr($this->query, 0, 200));
         }
-        session()->put('assignment_filters.'.Auth::id(), $this->filters());
+        $this->rememberFilters();
     }
 
     private function filters(): array
@@ -62,11 +75,55 @@ class Index extends Component
         return array_filter(['status' => $this->status, 'type' => $this->type, 'state' => $this->state, 'from' => $this->from, 'until' => $this->until, 'sort' => $this->sort, 'perPage' => $this->perPage], fn ($value) => $value !== '');
     }
 
+    private function rememberFilters(): void
+    {
+        session()->put('assignment_filters.'.Auth::id(), $this->filters());
+    }
+
+    private function syncDraft(): void
+    {
+        foreach (self::ADVANCED_FILTERS as $filter) {
+            $this->draft[$filter] = $this->{$filter};
+        }
+    }
+
+    public function applyFilters(): void
+    {
+        foreach (self::ADVANCED_FILTERS as $filter) {
+            $value = $this->draft[$filter] ?? '';
+            $this->{$filter} = is_string($value) ? mb_substr(trim($value), 0, 64) : '';
+        }
+        $this->syncDraft();
+        $this->resetPage();
+        $this->rememberFilters();
+    }
+
+    public function resetAdvancedFilters(): void
+    {
+        $this->reset(self::ADVANCED_FILTERS);
+        $this->syncDraft();
+        $this->resetPage();
+        $this->rememberFilters();
+    }
+
     public function resetFilters(): void
     {
-        $this->reset('status', 'type', 'state', 'from', 'until', 'sort', 'perPage', 'query');
-        session()->forget(['assignment_search.'.Auth::id(), 'assignment_filters.'.Auth::id()]);
+        $this->reset([...self::ADVANCED_FILTERS, 'query']);
+        $this->syncDraft();
+        session()->forget('assignment_search.'.Auth::id());
         $this->resetPage();
+        $this->rememberFilters();
+    }
+
+    public function sortBy(string $column): void
+    {
+        $this->sort = match ($column) {
+            'id' => $this->sort === 'newest' ? 'oldest' : 'newest',
+            'name' => $this->sort === 'name_asc' ? 'name_desc' : 'name_asc',
+            default => $this->sort,
+        };
+        $this->resetPage();
+        $this->rememberFilters();
     }
 
     public function render(): View
@@ -86,20 +143,29 @@ class Index extends Component
             $batches->whereRaw('false');
         } elseif ($term !== '') {
             $literal = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term).'%';
-            $batches->where(fn ($q) => $q->where('name', 'ilike', $literal)->orWhere('external_reference', 'ilike', $literal));
+            $batches->where(fn ($q) => $q->where('name', 'ilike', $literal)->orWhere('external_reference', 'ilike', $literal)->when(ctype_digit($term) && strlen($term) < 10, fn ($q) => $q->orWhere('register_no', (int) $term)));
         }
         match ($this->sort) {
-            'name' => $batches->orderBy('name')->orderBy('id'),
-            'due' => $batches->orderBy('due_date')->orderBy('id'),
-            default => $batches->orderByDesc('id'),
+            'oldest' => $batches->orderBy('register_no'),
+            'name', 'name_asc' => $batches->orderBy('name')->orderBy('id'),
+            'name_desc' => $batches->orderByDesc('name')->orderByDesc('id'),
+            default => $batches->orderByDesc('register_no'),
         };
-        $size = in_array($this->perPage, ['25', '50', '100'], true) ? (int) $this->perPage : 25;
+        $batches->withCount([
+            'tasks as upload_count',
+            'tasks as assigned_count' => fn ($q) => $q->whereHas('currentAllocation'),
+            'tasks as completed_count' => fn ($q) => $q->where('work_status', 'completed'),
+            'tasks as payment_update_count' => fn ($q) => $q->where('payment_update_flag', true),
+        ]);
+        $size = in_array($this->perPage, ['10', '25', '50', '100'], true) ? (int) $this->perPage : 25;
 
         return view('livewire.admin.assignments.index', [
             'batches' => $batches->paginate($size),
             'types' => ReferenceValue::query()->where('category', 'assignment_type')->orderBy('sort_order')->get(),
             'states' => ReferenceValue::query()->where('category', 'state')->orderBy('label')->get(),
             'filterError' => $dates->fails() ? $dates->errors()->first() : null,
+            'activeFilterCount' => count(array_filter(self::ADVANCED_FILTERS, fn (string $filter): bool => $this->{$filter} !== '')),
+            'canViewTasks' => Auth::user()->can('tasks.view'),
         ]);
     }
 }

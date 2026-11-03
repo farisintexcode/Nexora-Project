@@ -21,7 +21,7 @@ class AssignmentBatch extends Model
 
     protected function casts(): array
     {
-        return ['start_date' => 'date', 'due_date' => 'date', 'archived_at' => 'immutable_datetime', 'lock_version' => 'integer', 'status' => BatchStatus::class];
+        return ['start_date' => 'date', 'due_date' => 'date', 'archived_at' => 'immutable_datetime', 'lock_version' => 'integer', 'register_no' => 'integer', 'status' => BatchStatus::class];
     }
 
     public function creator(): BelongsTo
