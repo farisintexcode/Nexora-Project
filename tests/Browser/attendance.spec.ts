@@ -23,8 +23,13 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await page.getByRole('button',{name:'Clock Out',exact:true}).click();
     await expect(page.getByRole('status').filter({hasText:'Clock out saved at'})).toBeVisible({timeout:30000});
     await expect(page.getByRole('button',{name:'Clock In',exact:true})).toHaveCount(0);
-    await expect(page.getByRole('link',{name:'History',exact:true})).toHaveAttribute('href','#attendance-history');
+    await expect(page.getByLabel('History from',{exact:true})).toHaveCount(0);
+    await expect(page.getByRole('link',{name:'History',exact:true})).toHaveAttribute('href',/\/rider\/attendance\/history$/);
     await expect(page.getByRole('navigation',{name:'Rider navigation',exact:true}).getByRole('link',{name:'Attendance',exact:true})).toHaveAttribute('aria-current','page');
+    await page.getByRole('navigation',{name:'Attendance shortcuts'}).getByRole('link',{name:'Attendance History',exact:false}).click();
+    await expect(page.getByRole('heading',{name:'Attendance History',exact:true,level:1})).toBeVisible();
+    await expect(page.getByRole('navigation',{name:'Rider navigation',exact:true}).getByRole('link',{name:'Attendance',exact:true})).toHaveAttribute('aria-current','page');
+    await expect(page.getByRole('link',{name:'Back to Attendance',exact:true})).toHaveAttribute('href',/\/rider\/attendance$/);
     await page.getByLabel('History from',{exact:true}).fill(localDate(-3));
     await page.getByLabel('History through',{exact:true}).fill(localDate(-1));
     await page.getByRole('button',{name:'View history',exact:true}).click();
@@ -52,8 +57,8 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await expect(historical.getByText('Pending Correction',{exact:true})).toBeVisible();
     await page.screenshot({path:'.local-tools/m10-'+surface+'-rider.png',fullPage:true});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
-    await page.getByRole('button',{name:'Menu',exact:true}).click();
-    await page.getByRole('button',{name:'Sign out',exact:true}).first().click();
+    await page.getByRole('button',{name:'Profile',exact:true}).click();
+    await page.getByRole('menuitem',{name:'Logout',exact:true}).click();
     await page.goto('/login');
     await page.getByLabel('Email',{exact:true}).fill(admin!);
     await page.getByLabel('Password',{exact:true}).fill(password!);

@@ -2,8 +2,10 @@
 
 namespace App\Livewire\Rider;
 
+use App\Models\LeaveRequest;
 use App\Models\Task;
 use App\Notifications\AttendanceCorrected;
+use App\Notifications\LeaveUpdated;
 use App\Notifications\TaskReviewed;
 use App\Services\Tasks\RiderAccess;
 use Illuminate\Support\Facades\Gate;
@@ -28,11 +30,14 @@ class Notifications extends Component
         }
         if (auth()->user()->can('attendance.view_own')) {
             $types[] = AttendanceCorrected::class;
+            $types[] = LeaveUpdated::class;
         }
         $notifications = auth()->user()->notifications()->whereIn('type', $types)->orderByDesc('created_at')->orderByDesc('id')->paginate(15);
         $taskIds = $notifications->getCollection()->where('type', TaskReviewed::class)->pluck('data.task')->filter(fn ($id) => is_string($id) && Str::isUuid($id))->all();
         $accessibleTasks = $access->scope(Task::query(), auth()->user())->whereIn('public_id', $taskIds)->pluck('public_id')->all();
 
-        return view('livewire.rider.notifications', compact('notifications', 'accessibleTasks'));
+        $accessibleLeave = LeaveRequest::query()->where('requested_by', auth()->id())->where('rider_id', auth()->user()->staff_id)->whereIn('public_id', $notifications->getCollection()->where('type', LeaveUpdated::class)->pluck('data.leave_request')->filter(fn ($id) => is_string($id) && Str::isUuid($id)))->pluck('public_id')->all();
+
+        return view('livewire.rider.notifications', compact('notifications', 'accessibleTasks', 'accessibleLeave'));
     }
 }

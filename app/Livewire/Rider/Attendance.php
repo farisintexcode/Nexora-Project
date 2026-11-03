@@ -23,6 +23,9 @@ class Attendance extends Component
     use WithPagination;
 
     #[Locked]
+    public bool $historyPage = false;
+
+    #[Locked]
     public string $inRequest;
 
     #[Locked]
@@ -55,6 +58,7 @@ class Attendance extends Component
     public function mount(): void
     {
         $this->authorizeOwn();
+        $this->historyPage = request()->routeIs('rider.attendance.history');
         $this->inRequest = (string) Str::uuid7();
         $this->outRequest = (string) Str::uuid7();
         $today = now()->timezone(config('dcms.business_timezone'));
@@ -134,6 +138,6 @@ class Attendance extends Component
         $todaySchedule = AttendanceSchedule::query()->with('policy')->where('rider_id', auth()->user()->staff_id)->where('service_date', $today)->first();
         $todayPunch = Punch::query()->where('rider_id', auth()->user()->staff_id)->where('service_date', $today)->first();
 
-        return view('livewire.rider.attendance', ['open' => $open, 'todaySchedule' => $todaySchedule, 'todayPunch' => $todayPunch, 'rows' => $query->orderByDesc('service_date')->orderByDesc('attendance_id')->paginate(15), 'filterError' => $error, 'notices' => auth()->user()->notifications()->where('type', AttendanceCorrected::class)->latest()->limit(5)->get()])->layout(auth()->user()->can('admin.access') ? 'layouts.admin' : 'layouts.rider');
+        return view($this->historyPage ? 'livewire.rider.attendance-history' : 'livewire.rider.attendance', ['open' => $open, 'todaySchedule' => $todaySchedule, 'todayPunch' => $todayPunch, 'rows' => $query->orderByDesc('service_date')->orderByDesc('attendance_id')->paginate(15), 'filterError' => $error, 'notices' => auth()->user()->notifications()->where('type', AttendanceCorrected::class)->latest()->limit(5)->get()])->layout(auth()->user()->can('admin.access') ? 'layouts.admin' : 'layouts.rider');
     }
 }

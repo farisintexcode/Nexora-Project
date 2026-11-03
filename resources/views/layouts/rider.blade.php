@@ -12,7 +12,7 @@
 <nav :inert="menuOpen" aria-label="Rider navigation" class="rider-bottom-nav rider-primary-nav"><div class="rider-nav-inner">
     <a href="{{ route('rider.home') }}" class="rider-nav-item" @if(request()->routeIs('rider.home')) aria-current="page" @endif><span><x-icon name="home" /></span>Home</a>
     @can('tasks.view')<a href="{{ route('rider.assignments.index') }}" class="rider-nav-item" @if(request()->routeIs('rider.assignments.*')) aria-current="page" @endif><span><x-icon name="layers" /></span>Assignment</a><a href="{{ route('rider.tasks.index') }}" class="rider-nav-item" @if(request()->routeIs('rider.tasks.*')) aria-current="page" @endif><span><x-icon name="clipboard" /></span>My Task</a>@else<span class="rider-nav-item" aria-disabled="true"><span><x-icon name="layers" /></span>Assignment</span><span class="rider-nav-item" aria-disabled="true"><span><x-icon name="clipboard" /></span>My Task</span>@endcan
-    @can('attendance.view_own')<a href="{{ route('rider.attendance') }}" class="rider-nav-item" @if(request()->routeIs('rider.attendance')) aria-current="page" @endif><span><x-icon name="clock" /></span>Attendance</a>@else<span class="rider-nav-item" aria-disabled="true"><span><x-icon name="clock" /></span>Attendance</span>@endcan
+    @can('attendance.view_own')<a href="{{ route('rider.attendance') }}" class="rider-nav-item" @if(request()->routeIs('rider.attendance', 'rider.attendance.history', 'rider.leave.*')) aria-current="page" @endif><span><x-icon name="clock" /></span>Attendance</a>@else<span class="rider-nav-item" aria-disabled="true"><span><x-icon name="clock" /></span>Attendance</span>@endcan
 </div></nav>
 @livewireScripts
 </body>

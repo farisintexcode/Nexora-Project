@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Actions\Attendance\ConfigureAttendance;
+use App\Actions\Attendance\ManageLeave;
 use App\Actions\Imports\ImportWorkflow;
 use App\Actions\Tasks\RiderWork;
 use App\Models\AccountParty;
@@ -68,6 +69,12 @@ class BrowserTestSeeder extends Seeder
         // M10 synthetic calendar/punch fixtures are confined to the guarded disposable E2E database.
         $admin->givePermissionTo('attendance.approve_correction');
         $attendancePolicy = app(ConfigureAttendance::class)->policy($admin, ['code' => 'browser-attendance', 'rules' => config('attendance.initial_rules')]);
+        // Synthetic leave types/calendars exist only in this guarded disposable browser database.
+        app(ManageLeave::class)->configure($admin, ['name' => 'Synthetic Personal Leave', 'max_calendar_days' => 14, 'requires_document' => false, 'allow_pending_cancel' => true, 'is_active' => true]);
+        foreach ([3, 4, 5, 6, 7, 8] as $offset) {
+            $date = now()->timezone(config('dcms.business_timezone'))->addDays($offset)->toDateString();
+            app(ConfigureAttendance::class)->assign($admin, $rider->staff->public_id, $attendancePolicy->public_id, $date, $date, 'scheduled');
+        }
         foreach (['desktop', 'rider-mobile'] as $attendanceSurface) {
             $attendanceStaff = Staff::factory()->create(['staff_no' => 'ATT-'.strtoupper($attendanceSurface), 'first_name' => 'Attendance', 'last_name' => $attendanceSurface]);
             $attendanceUser = User::factory()->for($attendanceStaff)->create(['name' => 'Attendance '.$attendanceSurface, 'email' => 'attendance-'.$attendanceSurface.'@example.test', 'password' => config('dcms.e2e_password')]);

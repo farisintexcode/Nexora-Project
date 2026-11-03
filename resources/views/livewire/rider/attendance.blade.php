@@ -5,9 +5,10 @@
     $currentPunch = $open ?? $todayPunch;
     $clockedOut = !$open && $todayPunch?->effective_clock_out_at;
     $shiftLabel = $open ? 'Checked In' : ($clockedOut ? 'Checked Out' : ($todayPunch ? 'Attendance recorded' : 'Not Checked In'));
+    $separateHistory = auth()->user()->canUseRiderInterface() && !auth()->user()->can('admin.access');
 @endphp
 <x-feedback />
-<header class="attendance-welcome"><div><p class="rider-kicker">Welcome, {{ auth()->user()->name }}</p><h1>Your attendance</h1><p class="text-sm text-ink-500">Rider workspace · Your time, recorded accurately</p></div><a href="#attendance-history" class="attendance-history-shortcut" aria-label="History" title="Attendance history"><x-icon name="clock" /><span class="sr-only sm:not-sr-only">History</span><x-icon name="chevron" class="hidden size-4 sm:block" /></a></header>
+<header class="attendance-welcome"><div><p class="rider-kicker">Welcome, {{ auth()->user()->name }}</p><h1>Your attendance</h1><p class="text-sm text-ink-500">Rider workspace · Your time, recorded accurately</p></div><a href="{{ $separateHistory ? route('rider.attendance.history') : '#attendance-history' }}" class="attendance-history-shortcut" aria-label="History" title="Attendance history"><x-icon name="clock" /><span class="sr-only sm:not-sr-only">History</span><x-icon name="chevron" class="hidden size-4 sm:block" /></a></header>
 @foreach($notices as $notice)<div class="rounded-xl bg-brand-soft p-4 text-sm" role="status">{{ $notice->data['message'] }}</div>@endforeach
 <div class="attendance-date-card"><span class="attendance-icon"><x-icon name="calendar" /></span><div><p class="rider-kicker">Today · Server-recorded time</p><p class="font-semibold">{{ $serverNow->format('d M Y, l') }}</p><p class="mt-1 text-xs text-ink-500">{{ $serverNow->format('H:i:s') }} · {{ config('dcms.business_timezone') }}</p></div></div>
 <section class="attendance-current surface" aria-labelledby="current-shift-title"><div class="attendance-current-grid"><div class="attendance-current-status">
@@ -29,11 +30,10 @@
 @if($todaySchedule)<p class="attendance-policy-note">Policy {{ $todaySchedule->policy->code }} v{{ $todaySchedule->policy->version }} · {{ $todaySchedule->policy->rules['break_minutes'] }} min fixed unpaid break per completed interval. Lateness is recorded separately.</p>@endif
 <p class="attendance-policy-note"><x-icon name="shield" class="size-4" />A successful confirmation appears only after your punch is saved. Times cannot be manually edited.</p>
 </section>
-<section id="attendance-history" class="attendance-history-section" aria-labelledby="attendance-history-title">
-<form wire:submit="$refresh" class="surface attendance-history-filters"><div class="flex items-center gap-3"><span class="attendance-icon"><x-icon name="calendar" /></span><div><h2 id="attendance-history-title" class="font-semibold">Attendance history</h2><p class="mt-1 text-xs text-ink-500">Review your shifts and recorded times</p></div></div><div class="grid min-w-0 gap-4 sm:grid-cols-2"><x-input name="from" type="date" label="History from" wire:model="from" class="min-w-0 max-w-full" /><x-input name="until" type="date" label="History through" wire:model="until" class="min-w-0 max-w-full" /></div><x-button variant="secondary" class="w-full sm:w-auto"><x-icon name="search" />View history</x-button></form>
-@if($filterError)<p role="alert" class="rounded-xl bg-red-50 p-4 text-sm text-red-800">{{ $filterError }}</p>@endif
-<div wire:loading.delay role="status" class="rounded-xl bg-brand-soft p-3 text-sm"><span class="loading-spinner"></span>Saving or updating attendance…</div>
-<x-rider.attendance-history :rows="$rows" />{{ $rows->links() }}
-</section>
-@if($correctionSchedule)<form wire:submit="requestCorrection" class="surface grid min-w-0 gap-4 p-5"><h2 class="font-semibold">Request correction</h2><x-input name="clock_in" type="datetime-local" label="Requested clock in (MYT)" wire:model="clockIn" class="min-w-0 max-w-full" required /><x-input name="clock_out" type="datetime-local" label="Requested clock out (MYT)" wire:model="clockOut" class="min-w-0 max-w-full" /><x-input name="reason" label="Correction reason" wire:model="reason" required maxlength="5000" /><x-button wire:loading.attr="disabled">Submit correction request</x-button></form>@endif
+@if(auth()->user()->canUseRiderInterface())
+<nav aria-label="Attendance shortcuts" class="grid gap-4 sm:grid-cols-2"><a href="{{ $separateHistory ? route('rider.attendance.history') : '#attendance-history' }}" class="surface flex min-h-24 items-center gap-4 p-5 transition-colors hover:border-brand-accent"><span class="attendance-icon"><x-icon name="clock" /></span><span class="min-w-0 flex-1"><span class="block font-semibold">Attendance History</span><span class="mt-1 block text-xs leading-5 text-ink-500">View previous attendance records.</span></span><x-icon name="chevron" class="size-4" /></a><a href="{{ route('rider.leave.index') }}" class="surface flex min-h-24 items-center gap-4 p-5 transition-colors hover:border-brand-accent"><span class="attendance-icon"><x-icon name="calendar" /></span><span class="min-w-0 flex-1"><span class="block font-semibold">Leave Request</span><span class="mt-1 block text-xs leading-5 text-ink-500">Apply for leave and check your applications.</span></span><x-icon name="chevron" class="size-4" /></a></nav>
+@endif
+@unless($separateHistory)
+    @include('livewire.rider.attendance-history-panel')
+@endunless
 </section>

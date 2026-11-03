@@ -24,12 +24,13 @@
         </x-sidebar-group>
         @endcanany
         @canany(['riders.manage', 'attendance.view_all', 'attendance.view_own'])
-        <x-sidebar-group label="Human Resources" icon="users" :active="request()->routeIs('admin.staff.*', 'admin.attendance.*', 'attendance.own')" keywords="Staff Management Riders personnel Add New Staff Attendance My attendance schedules">
+        <x-sidebar-group label="Human Resources" icon="users" :active="request()->routeIs('admin.staff.*', 'admin.attendance.*', 'admin.leave.*', 'attendance.own')" keywords="Staff Management Riders personnel Add New Staff Attendance My attendance schedules">
             @can('riders.manage')
             <x-sidebar-item label="Staff Management" icon="users" parent="Human Resources" :href="route('admin.staff.index')" :active="request()->routeIs('admin.staff.*') && !request()->routeIs('admin.staff.create')" />
             <x-sidebar-item label="Add New Staff" icon="plus" parent="Human Resources" :href="route('admin.staff.create')" :active="request()->routeIs('admin.staff.create')" />
             @endcan
             @can('attendance.view_all')<x-sidebar-item label="Attendance" icon="clock" parent="Human Resources" :href="route('admin.attendance.index')" :active="request()->routeIs('admin.attendance.*')" />@endcan
+            @can('attendance.view_all')<x-sidebar-item label="Leave Management" icon="calendar" parent="Human Resources" :href="route('admin.leave.index')" :active="request()->routeIs('admin.leave.*')" />@endcan
             @can('attendance.view_own')<x-sidebar-item label="My attendance" icon="clock" parent="Human Resources" :href="route('attendance.own')" :active="request()->routeIs('attendance.own')" />@endcan
         </x-sidebar-group>
         @endcanany
@@ -44,7 +45,7 @@
         <x-sidebar-item label="Home" icon="home" :href="route('rider.home')" :active="request()->routeIs('rider.home')" />
         @can('tasks.view')<x-sidebar-item label="Assignment" icon="layers" :href="route('rider.assignments.index')" :active="request()->routeIs('rider.assignments.*')" />@endcan
         @can('tasks.view')<x-sidebar-item label="My Task" icon="clipboard" :href="route('rider.tasks.index')" :active="request()->routeIs('rider.tasks.*')" />@endcan
-        @can('attendance.view_own')<x-sidebar-item label="Attendance" icon="clock" :href="route('rider.attendance')" :active="request()->routeIs('rider.attendance')" />@endcan
+        @can('attendance.view_own')<x-sidebar-item label="Attendance" icon="clock" :href="route('rider.attendance')" :active="request()->routeIs('rider.attendance', 'rider.attendance.history', 'rider.leave.*')" />@endcan
         <div class="sidebar-divider" x-show="!query.trim()"></div>
         <x-sidebar-item label="Notifications" icon="bell" :href="route('rider.notifications')" :active="request()->routeIs('rider.notifications')" />
         <div class="rider-menu-appearance sidebar-label"><span>Appearance</span><x-theme-toggle /></div>
