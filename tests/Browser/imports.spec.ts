@@ -19,12 +19,9 @@ test('import history mapping and masked preview remain usable on desktop and mob
     await page.getByRole('button', { name: 'Row preview', exact: true }).click();
     await expect(page.getByText('Sy•••er', { exact: false })).toBeVisible();
     await expect(page.getByText('Synthetic Import Customer', { exact: true })).toHaveCount(0);
-    await page.getByLabel('Filter row state', { exact: true }).selectOption('failed');
+    await page.getByLabel('Filter row status', { exact: true }).selectOption('failed');
     await expect(page.getByRole('heading', { name: 'No matching rows', exact: true })).toBeVisible();
-    await page.getByLabel('Filter row state', { exact: true }).selectOption('processed');
+    await page.getByLabel('Filter row status', { exact: true }).selectOption('processed');
     await expect(page.getByText('Sy•••er', { exact: false })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('import-review.png'), fullPage: true });
-    const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Download redacted errors CSV', exact: true }).click();
-    expect((await download).suggestedFilename()).toMatch(/^import-errors-.*\.csv$/);
 });

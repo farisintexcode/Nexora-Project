@@ -32,7 +32,7 @@ return new class extends Migration
             ALTER TABLE assignment_batches ALTER COLUMN register_no SET NOT NULL;
             ALTER TABLE assignment_batches ADD CONSTRAINT assignment_batches_status_register_no_unique UNIQUE (status, register_no);
 
-            CREATE FUNCTION dcms_assignment_register_number() RETURNS trigger LANGUAGE plpgsql AS $$
+            CREATE OR REPLACE FUNCTION dcms_assignment_register_number() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
                 IF TG_OP = 'UPDATE' AND NEW.status IS NOT DISTINCT FROM OLD.status THEN
                     NEW.register_no := OLD.register_no;

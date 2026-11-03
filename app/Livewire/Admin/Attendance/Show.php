@@ -61,6 +61,7 @@ class Show extends Component
 
     public function requestCorrection(CorrectAttendance $correct): void
     {
+        $this->validate(['clockIn' => ['required']], attributes: ['clockIn' => 'requested clock in']);
         $data = ['reason' => $this->reason, 'day_type' => $this->dayType, 'clock_in' => $this->clockIn, 'clock_out' => $this->clockOut];
         if (auth()->user()->can('attendance.configure')) {
             $data += ['scheduled_start' => $this->scheduledStart, 'scheduled_end' => $this->scheduledEnd];

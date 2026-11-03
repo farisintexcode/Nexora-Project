@@ -1,6 +1,6 @@
 <section class="rider-page">
 <x-feedback />
-<x-page-header title="Assignment" eyebrow="" description="Your assignment batches, with a clear view of the tasks allocated to you." />
+<x-page-header title="Assignment" eyebrow="" description="Your assignments, with a clear view of the tasks allocated to you." />
 <div class="rider-context-note"><x-icon name="shield" class="size-4" /><p>Only your current allocated tasks are shown.</p></div>
 <div class="rider-card-grid">
 @forelse($assignments as $assignment)

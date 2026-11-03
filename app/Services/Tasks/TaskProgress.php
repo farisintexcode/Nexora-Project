@@ -85,7 +85,7 @@ class TaskProgress
             'tasks as complete_tasks' => fn ($q) => $q->where('work_status', 'completed')->where('review_status', 'approved'),
         ])->orderBy('due_date')->orderBy('id')->limit($limit)->get()
             ->map(fn (AssignmentBatch $batch): object => (object) [
-                'public_id' => $batch->public_id, 'name' => $batch->name, 'external_reference' => $batch->external_reference, 'due_date' => $batch->due_date,
+                'id' => $batch->id, 'public_id' => $batch->public_id, 'name' => $batch->name, 'external_reference' => $batch->external_reference, 'due_date' => $batch->due_date,
                 'total' => $batch->total_tasks, 'complete' => $batch->complete_tasks, 'rate' => $this->rate($batch->complete_tasks, $batch->total_tasks),
                 'status' => match (true) {
                     $batch->due_date->toDateString() < $today->toDateString() => 'past_due',

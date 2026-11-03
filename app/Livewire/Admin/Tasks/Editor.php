@@ -6,6 +6,7 @@ use App\Actions\Tasks\ResolveTaskSource;
 use App\Actions\Tasks\SaveTask;
 use App\Models\AssignmentBatch;
 use App\Models\Debtor;
+use App\Models\ImportBatch;
 use App\Models\ReferenceValue;
 use App\Models\Task;
 use App\Support\Money;
@@ -27,7 +28,7 @@ class Editor extends Component
     #[Locked]
     public ?int $version = null;
 
-    public array $data = ['assignment_batch_id' => '', 'task_id' => '', 'customer_reference' => '', 'customer_name' => '', 'phone' => '', 'email' => '', 'outstanding_balance' => '', 'monthly_charge' => '', 'balance_date' => '', 'account_number' => '', 'address' => '', 'building' => '', 'postcode' => '', 'state_code' => '', 'priority_code' => 'normal', 'scheduled_visit_at' => '', 'due_at' => '', 'instructions' => '', 'admin_remarks' => ''];
+    public array $data = ['assignment_batch_id' => '', 'import_id' => '', 'task_id' => '', 'customer_reference' => '', 'customer_name' => '', 'phone' => '', 'email' => '', 'outstanding_balance' => '', 'monthly_charge' => '', 'balance_date' => '', 'account_number' => '', 'address' => '', 'building' => '', 'postcode' => '', 'state_code' => '', 'priority_code' => 'normal', 'scheduled_visit_at' => '', 'due_at' => '', 'instructions' => '', 'admin_remarks' => ''];
 
     public function mount(?Task $task = null): void
     {
@@ -40,6 +41,13 @@ class Editor extends Component
             $this->version = $task->lock_version;
             $balance = $task->latestBalance;
             $this->data = ['outstanding_balance' => $balance?->outstandingCents() === null ? '' : Money::plain($balance->outstandingCents()), 'monthly_charge' => $balance?->monthlyCents() === null ? '' : Money::plain($balance->monthlyCents()), 'balance_date' => $balance?->balance_date?->toDateString() ?? '', 'assignment_batch_id' => (string) $task->assignment_batch_id, 'customer_id' => (string) $task->customer_id, 'debt_account_id' => (string) $task->debt_account_id, 'task_id' => $task->source_task_id ?? '', 'customer_reference' => $task->customer->customer_reference, 'customer_name' => $task->customer->display_name_ciphertext, 'account_number' => $task->account->account_number, 'priority_code' => $task->priority_code, 'scheduled_visit_at' => $task->scheduled_visit_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '', 'due_at' => $task->due_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '', 'instructions' => $task->special_instruction_ciphertext ?? '', 'admin_remarks' => $task->admin_remarks_ciphertext ?? ''];
+        }
+    }
+
+    public function updatedData(mixed $value, string $key): void
+    {
+        if ($key === 'assignment_batch_id') {
+            $this->data['import_id'] = '';
         }
     }
 
@@ -59,6 +67,9 @@ class Editor extends Component
             if (! $this->taskId) {
                 [$customer, $account] = $source->handle(Auth::user(), $this->data);
                 $input = ['customer_id' => $customer->id, 'debt_account_id' => $account->id] + $input;
+                if (($this->data['import_id'] ?? '') !== '') {
+                    $input['import_batch_id'] = ImportBatch::query()->where('public_id', $this->data['import_id'])->value('id') ?? 0;
+                }
             }
 
             return $save->handle(Auth::user(), $input, $this->taskId ? Task::query()->findOrFail($this->taskId) : null, $this->version);
@@ -78,6 +89,8 @@ class Editor extends Component
 
         $batches = AssignmentBatch::query()->with('type')->where(fn ($q) => $q->where('status', 'active')->when($task, fn ($q) => $q->orWhere('id', $task->assignment_batch_id)))->latest('id')->limit(200)->get();
 
-        return view('livewire.admin.tasks.editor', ['task' => $task, 'batches' => $batches, 'selectedAssignment' => $batches->firstWhere('id', (int) $this->data['assignment_batch_id']), 'states' => ReferenceValue::query()->where('category', 'state')->where('is_active', true)->orderBy('label')->get(), 'priorities' => ReferenceValue::query()->where('category', 'priority')->where('is_active', true)->get()]);
+        $selectedAssignment = $batches->firstWhere('id', (int) $this->data['assignment_batch_id']);
+
+        return view('livewire.admin.tasks.editor', ['task' => $task, 'batches' => $batches, 'selectedAssignment' => $selectedAssignment, 'excelFiles' => ! $task && $selectedAssignment ? ImportBatch::query()->taskFilesFor($selectedAssignment->id)->get() : collect(), 'states' => ReferenceValue::query()->where('category', 'state')->where('is_active', true)->orderBy('label')->get(), 'priorities' => ReferenceValue::query()->where('category', 'priority')->where('is_active', true)->get()]);
     }
 }

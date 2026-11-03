@@ -160,7 +160,7 @@ test('an account without a current relationship to the customer cannot be tasked
     expect(fn () => app(SaveTask::class)->handle($actor, taskInput($batch, $unrelated, $customer)))->toThrow(ValidationException::class);
 });
 
-test('task monitoring and reviewed operations render', function (): void {
+test('task monitoring and assign task render', function (): void {
     [$actor,$customer,$account,$batch] = taskContext();
     $task = app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer));
     $this->actingAs($actor)->get(route('admin.tasks.index'))->assertOk()->assertSee('Task monitoring');
@@ -168,8 +168,6 @@ test('task monitoring and reviewed operations render', function (): void {
     $this->get(route('admin.tasks.edit', $task))->assertOk();
     $this->get(route('admin.tasks.create'))->assertOk();
     $this->get(route('admin.tasks.allocate-one', $task))->assertOk();
-    $op = taskPreview($actor, $task, 'cancel');
-    $this->get(route('admin.tasks.operation', $op))->assertOk()->assertSee('Eligible at preview');
 });
 
 test('selected task operations reconcile exclusions and interrupted work without losing applied records', function (): void {

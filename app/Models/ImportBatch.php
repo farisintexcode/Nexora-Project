@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,6 +19,12 @@ class ImportBatch extends Model
     protected function casts(): array
     {
         return ['started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime', 'mapping_confirmed_at' => 'immutable_datetime', 'confirmed_at' => 'immutable_datetime'];
+    }
+
+    /** Uploaded Excel files that created tasks in one assignment, newest first. */
+    public function scopeTaskFilesFor(Builder $query, int $assignmentId): void
+    {
+        $query->with('source')->where('assignment_batch_id', $assignmentId)->where('kind', 'task')->where('processed_count', '>', 0)->latest('id');
     }
 
     public function template(): BelongsTo
@@ -38,5 +45,15 @@ class ImportBatch extends Model
     public function source(): BelongsTo
     {
         return $this->belongsTo(Document::class, 'source_document_id');
+    }
+
+    public function assignment(): BelongsTo
+    {
+        return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id');
+    }
+
+    public function uploader(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'uploaded_by');
     }
 }

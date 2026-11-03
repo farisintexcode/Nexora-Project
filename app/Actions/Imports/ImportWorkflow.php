@@ -201,13 +201,6 @@ class ImportWorkflow
         });
     }
 
-    public function sheets(User $actor, ImportBatch $batch): array
-    {
-        Gate::forUser($actor)->authorize('view', $batch);
-
-        return $this->source($batch, fn (string $path) => $this->reader->inspect($path));
-    }
-
     public static function normalize(string $header): string
     {
         return trim(preg_replace('/[^\pL\pN]+/u', ' ', mb_strtolower(str_replace("\xEF\xBB\xBF", '', $header))));

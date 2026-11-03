@@ -6,8 +6,6 @@ use App\Actions\Imports\ImportWorkflow;
 use App\Models\AuditLog;
 use App\Models\ImportBatch;
 use App\Models\ImportField;
-use App\Models\ImportMappingProfile;
-use App\Services\AuditWriter;
 use App\Services\Imports\ImportTargets;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -17,7 +15,6 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\WithPagination;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[Layout('layouts.admin')]
 class Review extends Component
@@ -30,14 +27,6 @@ class Review extends Component
     #[Locked]
     public string $digest = '';
 
-    public string $sheet = '';
-
-    public int $header = 1;
-
-    public string $profileId = '';
-
-    public string $profileName = '';
-
     public array $selections = [];
 
     public string $tab = 'summary';
@@ -48,8 +37,6 @@ class Review extends Component
     {
         $this->importId = $import->public_id;
         $batch = $this->batch();
-        $this->sheet = $batch->selected_sheet ?? '';
-        $this->header = $batch->header_row_number ?? 1;
         $this->hydrateMapping($batch);
         if ($batch->status === 'mapping' && $this->selections !== []) {
             $this->tab = 'mapping';
@@ -58,7 +45,7 @@ class Review extends Component
 
     private function batch(): ImportBatch
     {
-        $batch = ImportBatch::query()->with(['template', 'source'])->where('public_id', $this->importId)->firstOrFail();
+        $batch = ImportBatch::query()->with(['template', 'source', 'assignment', 'uploader'])->where('public_id', $this->importId)->firstOrFail();
         abort_unless(Auth::user()->isActive(), 404);
         Gate::authorize('view', $batch);
 
@@ -74,21 +61,6 @@ class Review extends Component
         }
     }
 
-    public function autoMap(ImportWorkflow $workflow): void
-    {
-        $batch = $this->batch();
-        $this->validate(['sheet' => ['required', 'string', 'max:100'], 'header' => ['required', 'integer', 'min:1', 'max:100'], 'profileId' => ['nullable', 'integer']]);
-        try {
-            $workflow->map(Auth::user(), $batch, $this->sheet, $this->header, $this->profileId !== '' ? (int) $this->profileId : null);
-        } catch (\RuntimeException) {
-            $this->addError('mapping', 'This workbook cannot be read safely. Check its structure, formulas and configured limits.');
-
-            return;
-        }
-        $this->hydrateMapping($batch->refresh());
-        $this->tab = 'mapping';
-    }
-
     public function preview(ImportWorkflow $workflow): void
     {
         $batch = $this->batch();
@@ -96,12 +68,6 @@ class Review extends Component
         $this->hydrateMapping($batch->refresh());
         $this->tab = 'rows';
         $this->resetPage();
-    }
-
-    public function saveProfile(ImportWorkflow $workflow): void
-    {
-        $workflow->profile(Auth::user(), $this->batch(), $this->profileName);
-        session()->flash('success', 'A new reviewed profile version was saved.');
     }
 
     public function confirm(ImportWorkflow $workflow): void
@@ -117,7 +83,12 @@ class Review extends Component
         if (config('queue.default') === 'sync') {
             $workflow->process($batch->id);
             $batch->refresh();
-            session()->flash('status', ($batch->processed_count === 1 ? '1 task created.' : "{$batch->processed_count} tasks created.").($batch->failed_count > 0 ? " {$batch->failed_count} rows failed. See the Errors tab." : ''));
+            $created = $batch->processed_count === 1 ? '1 task created.' : "{$batch->processed_count} tasks created.";
+            if ($batch->failed_count > 0) {
+                session()->flash('warning', $created.' '.($batch->failed_count === 1 ? '1 row' : "{$batch->failed_count} rows").' failed. See Row preview.');
+            } else {
+                session()->flash('status', $created);
+            }
         } else {
             session()->flash('status', 'Accepted rows confirmed. The tasks are being created in the background.');
         }
@@ -133,29 +104,7 @@ class Review extends Component
     public function retry(ImportWorkflow $workflow): void
     {
         $workflow->retry(Auth::user(), $this->batch());
-        session()->flash('success', 'Retry queued with the same frozen mapping and target revisions.');
-    }
-
-    public function downloadErrors(): StreamedResponse
-    {
-        $batch = $this->batch();
-        $this->auditDownload($batch);
-
-        return response()->streamDownload(function () use ($batch): void {
-            $stream = fopen('php://output', 'w');
-            fputcsv($stream, ['Row', 'State', 'Field', 'Error code']);
-            foreach ($batch->rows()->whereIn('state', ['rejected', 'duplicate', 'failed'])->orderBy('row_number')->cursor() as $row) {
-                foreach ($row->validation_errors as $error) {
-                    fputcsv($stream, [$row->row_number, $row->state, preg_replace('/[^a-z0-9_.]/i', '', $error['field']), preg_replace('/[^a-z0-9_]/i', '', $error['code'])]);
-                }
-            }
-            fclose($stream);
-        }, 'import-errors-'.$batch->public_id.'.csv', ['Content-Type' => 'text/csv', 'Cache-Control' => 'no-store']);
-    }
-
-    private function auditDownload(ImportBatch $batch): void
-    {
-        app(AuditWriter::class)->record(Auth::user(), 'import_errors_downloaded', $batch->public_id, module: 'M04', entityType: 'import');
+        session()->flash('status', 'Retry queued with the same column mapping. Tasks already created stay as they are.');
     }
 
     public function updatedRowState(): void
@@ -163,22 +112,12 @@ class Review extends Component
         $this->resetPage();
     }
 
-    public function render(ImportWorkflow $workflow): View
+    public function render(): View
     {
         $batch = $this->batch();
         if ($this->selections === [] && $batch->status === 'mapping' && $batch->mappings()->exists()) {
-            $this->sheet = $batch->selected_sheet ?? '';
-            $this->header = $batch->header_row_number ?? 1;
             $this->hydrateMapping($batch);
             $this->tab = 'mapping';
-        }
-        $sheets = [];
-        if ($batch->source?->scan_status === 'clean' && in_array($batch->status, ['mapping', 'ready'], true)) {
-            try {
-                $sheets = $workflow->sheets(Auth::user(), $batch);
-            } catch (\RuntimeException) {
-                $this->addError('mapping', 'Source storage is temporarily unavailable.');
-            }
         }
         $rows = $batch->rows()->when($this->rowState !== '', fn ($q) => $q->where('state', $this->rowState))->orderBy('row_number')->paginate(25);
         $rows->getCollection()->transform(function ($row) {
@@ -196,6 +135,6 @@ class Review extends Component
             }
         }
 
-        return view('livewire.admin.imports.review', ['samples' => $samples, 'batch' => $batch, 'sheets' => $sheets, 'mappings' => $batch->mappings()->orderBy('source_column_index')->get(), 'fields' => ImportField::query()->whereIn('id', $batch->template->schema_definition['field_ids'])->get(), 'profiles' => ImportMappingProfile::query()->where('template_id', $batch->template_id)->where('is_active', true)->get(), 'rows' => $rows, 'audits' => Auth::user()->can('audit.view') ? AuditLog::query()->where('module', 'M04')->where('entity_id', $batch->public_id)->latest('id')->limit(30)->get() : collect()]);
+        return view('livewire.admin.imports.review', ['samples' => $samples, 'batch' => $batch, 'mappings' => $batch->mappings()->orderBy('source_column_index')->get(), 'fields' => ImportField::query()->whereIn('id', $batch->template->schema_definition['field_ids'])->get(), 'rows' => $rows, 'audits' => Auth::user()->can('audit.view') ? AuditLog::query()->with('actor')->where('module', 'M04')->where('entity_id', $batch->public_id)->latest('id')->limit(30)->get() : collect()]);
     }
 }

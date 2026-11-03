@@ -18,6 +18,7 @@ test('SES operators review safe inbox states and request rechecks without activa
     await expect(page.getByText(/The SES listener is disabled/)).toBeVisible();
     const row = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Synthetic SES receipts ' + surface, exact: true }) });
     await row.getByRole('button', { name: 'Recheck correlation', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Recheck this receipt?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Verified receipt queued for safe rechecking.' })).toBeVisible();
     await page.getByLabel('Receipt processing state', { exact: true }).selectOption('processed');
     await expect(page.getByRole('heading', { name: 'No verified receipts in this view', exact: true })).toBeVisible();

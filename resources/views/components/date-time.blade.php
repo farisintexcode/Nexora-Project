@@ -1,5 +1,5 @@
 @props(['name', 'label', 'model', 'defaultTime' => '09:00', 'withTime' => true, 'placeholder' => 'Select a date and time'])
-<div class="grid content-start gap-2" wire:ignore x-data="nexoraDateTime($wire, '{{ $model }}', {{ $withTime ? "'".$defaultTime."'" : 'null' }})" x-on:keydown.escape="open && finish()">
+<div class="grid content-start gap-2" wire:key="calendar-{{ $name }}" wire:ignore x-data="nexoraDateTime($wire, '{{ $model }}', {{ $withTime ? "'".$defaultTime."'" : 'null' }})" x-on:keydown.escape="open && finish()">
     <label id="{{ $name }}-label" for="{{ $name }}" class="field-label">{{ $label }}</label>
     <button id="{{ $name }}" type="button" x-ref="trigger" class="field flex items-center justify-between gap-3 text-left" aria-labelledby="{{ $name }}-label {{ $name }}-value" aria-haspopup="dialog" x-bind:aria-expanded="open" x-on:click="toggle()">
         <span id="{{ $name }}-value" class="min-w-0 truncate" x-bind:class="summary ? '' : 'text-ink-500'" x-text="summary || @js($placeholder)"></span>

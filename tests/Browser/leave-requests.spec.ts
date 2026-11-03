@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './fixtures';
+import { chooseDateRange, expect, test, type Page } from './fixtures';
 
 async function login(page: Page, admin = false) {
     await page.goto(admin ? '/login' : '/rider/login');
@@ -51,6 +51,7 @@ test('Rider applies reviews cancels and follows independent Admin leave decision
     await page.getByLabel('Decision', { exact: true }).selectOption('approved');
     await page.getByLabel('Admin Remarks / Rejection Reason').fill('Independent synthetic approval');
     await page.getByRole('button', { name: 'Confirm Decision' }).click();
+    await page.getByRole('dialog', { name: 'Save this leave decision?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'decision has been saved' })).toBeVisible();
     await expect(page.getByText('Approved', { exact: true }).first()).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('admin-leave-approved.png'), fullPage: true });
@@ -103,14 +104,14 @@ test('Admin configures actual leave rules and records a rejection reason', async
     const offset = test.info().project.name === 'desktop' ? 5 : 8;
     const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + offset * 86400000));
     await page.getByLabel('Status', { exact: true }).selectOption('pending');
-    await page.getByLabel('Date From', { exact: true }).fill(date);
-    await page.getByLabel('Date Through', { exact: true }).fill(date);
+    await chooseDateRange(page, 'leave-date', 'Date', date);
     await page.getByRole('button', { name: 'Apply Filters' }).click();
     await expect(page.getByRole('link', { name: 'View Request', exact: true })).toHaveCount(1);
     await page.getByRole('link', { name: 'View Request', exact: true }).click();
     await page.getByLabel('Decision', { exact: true }).selectOption('rejected');
     await page.getByLabel('Admin Remarks / Rejection Reason').fill('Synthetic staffing conflict; please choose another date.');
     await page.getByRole('button', { name: 'Confirm Decision' }).click();
+    await page.getByRole('dialog', { name: 'Save this leave decision?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'decision has been saved' })).toBeVisible();
     await page.getByRole('button', { name: 'OK', exact: true }).click();
     await expect(page.getByText('Rejected', { exact: true })).toBeVisible();

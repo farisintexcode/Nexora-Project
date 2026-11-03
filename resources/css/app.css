@@ -117,6 +117,13 @@
     .step-number { @apply grid size-7 shrink-0 place-items-center rounded-lg bg-brand-soft text-[11px] font-bold text-brand-dark; }
     .tab-button { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-transparent px-4 py-2.5 text-xs font-semibold text-ink-600 transition-colors hover:bg-brand-soft; }
     .tab-button[aria-current='page'] { @apply border-ink-200 bg-brand-soft text-brand-dark; box-shadow: inset 0 -3px var(--color-brand-accent); }
+    .segment-tabs { @apply flex w-fit max-w-full gap-1 overflow-x-auto rounded-2xl border border-ink-200 bg-ink-50 p-1; }
+    .segment-tab { @apply inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl px-4 py-2.5 text-xs font-semibold text-ink-600 transition-colors hover:bg-white hover:text-brand-dark; }
+    .segment-tab[aria-current='page'] { @apply bg-brand-primary text-white hover:bg-brand-primary hover:text-white; }
+    .dark .segment-tabs { background-color: var(--surface); }
+    .dark .segment-tab { color: var(--foreground); }
+    .dark .segment-tab:hover { background-color: var(--surface-raised); color: var(--foreground); }
+    .dark .segment-tab[aria-current='page'], .dark .segment-tab[aria-current='page']:hover { background-color: var(--color-brand-accent); color: var(--color-brand-primary); }
     .chart-bar { background: linear-gradient(180deg, var(--color-brand-hover), var(--color-brand-primary)); border-radius: 6px 6px 2px 2px; }
     .chart-bar:hover { background: var(--color-brand-accent); }
 .chart-bar-secondary { background: var(--color-brand-accent); border-radius: 6px 6px 2px 2px; }
@@ -561,15 +568,6 @@
 
 /* Admin assignment register: compact table and filter controls, scoped to this page only. */
 @layer components {
-    .task-metric { @apply min-w-0 rounded-2xl border p-5; }
-    .task-metric-blue { background-color: #e8f2fd; border-color: #b5d5f5; color: #0b4a8a; }
-    .task-metric-orange { background-color: #fff0e0; border-color: #ffcf9e; color: #8f4300; }
-    .task-metric-green { background-color: #e7f6ec; border-color: #aee0c1; color: #14603a; }
-    .task-metric-yellow { background-color: #fff9d6; border-color: #f0dc7c; color: #665000; }
-    .dark .task-metric-blue { background-color: #12344f; border-color: #2a5f8a; color: #b9dcff; }
-    .dark .task-metric-orange { background-color: #4a2d12; border-color: #a0601f; color: #ffd3a1; }
-    .dark .task-metric-green { background-color: #123f30; border-color: #2c7a5a; color: #b5ebcf; }
-    .dark .task-metric-yellow { background-color: #453b10; border-color: #a38b22; color: #ffe98a; }
     .assignment-filter-count { @apply grid min-w-5 place-items-center rounded-full bg-brand-accent px-1.5 text-[11px] leading-5 font-bold text-brand-primary; }
     .assignment-apply { @apply border-brand-primary bg-brand-primary text-white hover:border-brand-hover hover:bg-brand-hover active:border-brand-active active:bg-brand-active; }
     .assignment-table th { @apply px-4 py-3 text-xs font-semibold tracking-normal normal-case; color: var(--color-brand-dark); }

@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { chooseDate, expect, test } from './fixtures';
 
 test('agent finds customer records backdated callback updates contacts and resolves reminder', async ({page}) => {
     test.setTimeout(240000);
@@ -23,11 +23,11 @@ test('agent finds customer records backdated callback updates contacts and resol
     expect(page.url()).not.toContain('CALL-');
     await page.getByRole('link',{name:'Open call workspace',exact:true}).click();
     await page.getByLabel('Record an earlier call (today or yesterday)',{exact:true}).check();
-    await page.getByLabel('Actual call time (MYT)',{exact:true}).fill(local(-1)+'T10:00');
+    await chooseDate(page,'occurred-at','Actual call time (MYT) *',local(-1)+'T10:00');
     await page.getByLabel('Backdating reason',{exact:true}).fill('Synthetic offline notes '+run);
     await page.getByLabel('Call outcome',{exact:true}).selectOption('call_back_requested');
     await page.getByLabel('Call remarks',{exact:true}).fill('Synthetic callback conversation '+run);
-    await page.getByLabel('Follow-up due (MYT) — required',{exact:true}).fill(local(1)+'T10:00');
+    await chooseDate(page,'follow-up-at','Follow-up due (MYT) — required',local(1)+'T10:00');
     await page.getByLabel('Follow-up notes (optional)',{exact:true}).fill('Synthetic callback reminder '+run);
     await page.getByRole('button',{name:'Save call outcome',exact:true}).click();
     await expect(page.getByRole('status').filter({hasText:'Outgoing call recorded'})).toBeVisible();
@@ -35,12 +35,13 @@ test('agent finds customer records backdated callback updates contacts and resol
     await page.getByRole('button',{name:'Edit contact observations',exact:true}).click();
     await page.getByLabel('Contact value',{exact:true}).fill('+60198765432');
     await page.getByRole('button',{name:'Save contacts',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Save these contacts?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Contact observations saved.'})).toBeVisible();
     await expect(page.getByText('+60198765432',{exact:true})).toBeVisible();
     await page.getByLabel('Call outcome',{exact:true}).selectOption('promise_to_pay');
     await expect(page.getByLabel('Promise details',{exact:true})).toBeVisible();
     await page.getByLabel('Record an earlier call (today or yesterday)',{exact:true}).check();
-    await expect(page.getByLabel('Actual call time (MYT)',{exact:true})).toBeVisible();
+    await expect(page.locator('#occurred-at')).toBeVisible();
     if(surface==='rider-mobile'){
         for(const width of [320,430]){
             await page.setViewportSize({width,height:900});
@@ -58,6 +59,7 @@ test('agent finds customer records backdated callback updates contacts and resol
     const card=page.locator('article').filter({hasText:'Synthetic Call Customer '+surface});
     await card.getByLabel('Resolution remarks',{exact:true}).fill('Synthetic callback complete '+run);
     await card.getByRole('button',{name:'Record reminder decision',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Record this reminder decision?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Follow-up decision recorded.'})).toBeVisible();
     await page.getByLabel('Reminder status',{exact:true}).selectOption('done');
     await page.getByRole('button',{name:'Apply filters',exact:true}).click();

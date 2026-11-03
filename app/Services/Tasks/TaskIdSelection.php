@@ -23,12 +23,15 @@ class TaskIdSelection
     ];
 
     /**
+     * @param  int|null  $importBatchId  limits the match to tasks created from one uploaded Excel file
      * @return array<int, int> ids of the matching tasks in the assignment
      */
-    public function resolve(int $assignmentId, string $mode, string $input): array
+    public function resolve(int $assignmentId, string $mode, string $input, ?int $importBatchId = null): array
     {
         [$exact, $ranges] = $this->parse($mode, $input);
+        $scope = $importBatchId === null ? 'this assignment' : 'this Excel file';
         $tasks = Task::query()->where('assignment_batch_id', $assignmentId)->whereNotNull('source_task_number')
+            ->when($importBatchId !== null, fn ($query) => $query->fromImport($importBatchId))
             ->where(function ($query) use ($exact, $ranges): void {
                 $query->whereIn('source_task_number', $exact);
                 foreach ($ranges as [$from, $to]) {
@@ -37,10 +40,10 @@ class TaskIdSelection
             })->orderBy('source_task_number')->limit(self::MAX_TASKS + 1)->get(['id', 'source_task_number']);
         $missing = array_diff($exact, $tasks->pluck('source_task_number')->all());
         if ($missing !== []) {
-            throw ValidationException::withMessages(['taskIds' => 'Not found in this assignment: '.implode(', ', $missing).'.']);
+            throw ValidationException::withMessages(['taskIds' => "Not found in {$scope}: ".implode(', ', $missing).'.']);
         }
         if ($tasks->isEmpty()) {
-            throw ValidationException::withMessages(['taskIds' => 'No tasks in this assignment match that range.']);
+            throw ValidationException::withMessages(['taskIds' => "No tasks in {$scope} match that range."]);
         }
         if ($tasks->count() > self::MAX_TASKS) {
             throw ValidationException::withMessages(['taskIds' => 'Choose up to '.self::MAX_TASKS.' tasks at a time.']);

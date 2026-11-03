@@ -7,6 +7,7 @@ use App\Models\AssignmentBatch;
 use App\Models\DebtAccount;
 use App\Models\Debtor;
 use App\Models\FinancialSnapshot;
+use App\Models\ImportBatch;
 use App\Models\ImportRow;
 use App\Models\Task;
 use App\Models\User;
@@ -49,6 +50,9 @@ class SaveTask
             if (! $existing && ($account->status !== 'active' || $customer->status !== 'active' || ! $account->parties()->where('debtor_id', $customer->id)->where('valid_from', '<=', now()->format('Y-m-d H:i:s.uP'))->where(fn ($q) => $q->whereNull('valid_to')->orWhere('valid_to', '>', now()->format('Y-m-d H:i:s.uP')))->exists())) {
                 throw ValidationException::withMessages(['data.debt_account_id' => 'Select an active account with a current relationship to this customer.']);
             }
+            if (! $existing && ($input['import_batch_id'] ?? null) && ! ImportBatch::query()->whereKey($input['import_batch_id'])->where('assignment_batch_id', $batch->id)->where('kind', 'task')->exists()) {
+                throw ValidationException::withMessages(['data.import_id' => 'Choose an Excel file from this assignment.']);
+            }
             $taskId = trim((string) ($input['task_id'] ?? ''));
             $taskNumber = Task::numberFromId($taskId);
             if (! $existing) {
@@ -73,7 +77,7 @@ class SaveTask
             $from = $existing ? $task->work_status : null;
             $review = $existing ? $task->review_status : null;
             if (! $existing) {
-                $task->forceFill(['assignment_batch_id' => $batch->id, 'debt_account_id' => $account->id, 'customer_id' => $customer->id, 'source_task_id' => $taskId, 'source_task_number' => $taskNumber, 'type_code' => $batch->type_code, 'created_by' => $actor->id, 'origin_code' => $source ? 'import' : 'manual', 'source_import_row_id' => $source?->id, 'work_status' => 'unstarted', 'review_status' => 'none', 'lock_version' => 0, 'source_snapshot_ciphertext' => ['origin' => $source ? 'import' : 'manual', 'schema_version' => 1, 'task_id' => $taskId, 'customer_reference' => $customer->customer_reference, 'account_number' => $account->account_number, 'property' => $account->property?->address_lines_ciphertext, 'batch' => $batch->public_id, 'created_by' => $actor->public_id, 'created_at' => now()->toIso8601String()]]);
+                $task->forceFill(['assignment_batch_id' => $batch->id, 'debt_account_id' => $account->id, 'customer_id' => $customer->id, 'source_task_id' => $taskId, 'source_task_number' => $taskNumber, 'type_code' => $batch->type_code, 'created_by' => $actor->id, 'origin_code' => $source ? 'import' : 'manual', 'source_import_row_id' => $source?->id, 'import_batch_id' => $input['import_batch_id'] ?? null, 'work_status' => 'unstarted', 'review_status' => 'none', 'lock_version' => 0, 'source_snapshot_ciphertext' => ['origin' => $source ? 'import' : 'manual', 'schema_version' => 1, 'task_id' => $taskId, 'customer_reference' => $customer->customer_reference, 'account_number' => $account->account_number, 'property' => $account->property?->address_lines_ciphertext, 'batch' => $batch->public_id, 'created_by' => $actor->public_id, 'created_at' => now()->toIso8601String()]]);
             } else {
                 $task->lock_version++;
             }

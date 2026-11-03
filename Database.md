@@ -807,6 +807,7 @@ erDiagram
 | assignment_batch_id | bigint | Yes | — | FK → assignment_batches.id; indexed | Parent batch |
 | debt_account_id | bigint | Yes | — | FK → debt_accounts.id; indexed | Stable account |
 | source_import_row_id | bigint | No | NULL | FK → import_rows.id; indexed | Source row provenance |
+| import_batch_id | bigint | No | NULL | FK → import_batches.id; indexed | Excel file a manual task is grouped with; set by Create Task and fixed after creation |
 | source_task_id | varchar(100) | No | NULL | Partial unique with assignment_batch_id where not deleted | Task ID such as FG001; immutable |
 | source_task_number | bigint | No | NULL | Partial unique with assignment_batch_id where not deleted | Trailing digits of the task ID; used by Assign Task and Reports; immutable |
 | deleted_at | timestamptz | No | NULL | — | Set when an admin deletes a task with no work; the row and its history remain |

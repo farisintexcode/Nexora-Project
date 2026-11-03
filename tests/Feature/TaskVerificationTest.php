@@ -134,7 +134,7 @@ test('permission and signature changes invalidate a pending preview without deci
     $forged['reason'] = 'Changed after preview';
     expect(fn () => app(ReviewSubmission::class)->confirm($reviewer, $forged))->toThrow(ValidationException::class);
     $reviewer->syncRoles([]);
-    expect(fn () => app(ReviewSubmission::class)->confirm($reviewer, $preview))->toThrow(ValidationException::class);
+    expect(fn () => app(ReviewSubmission::class)->confirm($reviewer, $preview))->toThrow(AuthorizationException::class);
     expect(TaskReview::query()->count())->toBe(0);
 });
 

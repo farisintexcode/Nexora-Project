@@ -30,7 +30,12 @@ class Index extends Component
 
     public $file;
 
+    /** Statuses an upload can show in history; cancelled uploads are never listed. */
+    public const STATUSES = ['uploaded', 'scanning', 'mapping', 'validating', 'ready', 'processing', 'completed', 'failed'];
+
     public string $search = '';
+
+    public string $status = '';
 
     public string $from = '';
 
@@ -96,6 +101,7 @@ class Index extends Component
             $literal = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
             $query->whereHas('source', fn ($q) => $q->where('original_filename', 'ilike', $literal));
         }
+        $query->when($this->status !== '', fn ($q) => $q->where('status', $this->status));
         $dates = Validator::make(['from' => $this->from ?: null, 'until' => $this->until ?: null], ['from' => ['nullable', 'date_format:Y-m-d'], 'until' => ['nullable', 'date_format:Y-m-d']]);
         if ($dates->fails()) {
             $query->whereRaw('false');

@@ -258,14 +258,14 @@ test('outbox queue publication is durable and worker replay records one checkpoi
     expect(ProcessedEvent::query()->where('event_key', $event->event_key)->count())->toBe(1)->and($batch->refresh()->status)->toBe('mapping');
 });
 
-test('cancellation reconciles outstanding rows and redacted errors never expose sensitive source data', function (): void {
+test('cancellation reconciles outstanding rows and the review never exposes sensitive source data', function (): void {
     $actor = staffManager();
     $batch = readyImport($actor, [['external_reference', 'name', 'type_code', 'start_date', 'due_date'], ['000123', 'Sensitive Person', 'domestic_dr', '2026-10-01', '2026-10-31']]);
     app(ImportWorkflow::class)->confirm($actor, $batch, $batch->mapping_digest);
     app(ImportWorkflow::class)->cancel($actor, $batch);
     app(ImportWorkflow::class)->process($batch->id);
     expect($batch->refresh()->status)->toBe('cancelled')->and($batch->failed_count)->toBe(1);
-    Livewire::actingAs($actor)->test(Review::class, ['import' => $batch])->call('downloadErrors')->assertFileDownloaded('import-errors-'.$batch->public_id.'.csv');
+    Livewire::actingAs($actor)->test(Review::class, ['import' => $batch])->set('tab', 'rows')->assertSee('Cancelled')->assertDontSee('Sensitive Person')->assertDontSeeHtml('downloadErrors');
     $this->assertDatabaseCount('assignment_batches', 0);
     expect(AuditLog::query()->where('module', 'M04')->get()->toJson())->not->toContain('Sensitive Person', '000123');
 });
@@ -411,6 +411,20 @@ test('upload task history filters by the uploaded date calendar', function (): v
         ->assertDontSee('No imports yet');
 });
 
+test('upload task history filters by status and labels the column as status', function (): void {
+    $actor = staffManager();
+    stagedImport($actor, [['external_reference', 'name', 'type_code', 'start_date', 'due_date'], ['A1', 'Synthetic Batch', 'domestic_dr', '2026-10-01', '2026-10-31']]);
+
+    Livewire::actingAs($actor)->test(Index::class)
+        ->assertSeeInOrder(['File', 'Status', 'Reconciliation'])
+        ->assertSee('synthetic.xlsx')
+        ->assertSeeHtml('bg-violet-600')
+        ->set('status', 'completed')
+        ->assertDontSee('synthetic.xlsx')
+        ->set('status', 'mapping')
+        ->assertSee('synthetic.xlsx');
+});
+
 test('the upload page sends a workbook through to review', function (): void {
     config(['imports.disk' => 'local', 'imports.scan_required' => false]);
     Storage::fake('local');
@@ -504,6 +518,86 @@ test('import history searches file names and only lists successful uploads', fun
         ->assertSee('january_tasks.xlsx')->assertDontSee('february-tasks.xlsx')
         ->set('search', '%')
         ->assertDontSee('january_tasks.xlsx');
+});
+
+test('the review summary shows plain upload details without technical fingerprints', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG001', 'A1', 'C1', 'Synthetic Person']]), 'january_tasks.xlsx');
+    $batch = ImportBatch::query()->sole();
+
+    Livewire::actingAs($actor)->test(Review::class, ['import' => $batch])
+        ->set('tab', 'summary')
+        ->assertSeeInOrder(['Excel File Name', 'january_tasks.xlsx', 'Assignment', $batch->assignment->name, 'Uploaded by', $actor->name])
+        ->assertSee('Next step: open Column mapping')
+        ->assertDontSee('task-v1')
+        ->assertDontSee('fingerprint')
+        ->assertDontSee('Malware scan')
+        ->assertDontSee($batch->content_sha256);
+});
+
+test('the review explains suggestions and shows audit as a timeline without errors or remapping controls', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG001', 'A1', 'C1', 'Synthetic Person']]));
+    $batch = ImportBatch::query()->sole();
+    session()->flush();
+
+    Livewire::actingAs($actor)->test(Review::class, ['import' => $batch])
+        ->assertDontSeeHtml('Errors</button>')
+        ->assertSeeInOrder(['Exact name:', 'Known alias:', 'Chosen manually:', 'Choose a field:'])
+        ->assertDontSee('Auto-map columns')
+        ->assertDontSee('Worksheet')
+        ->assertDontSee('Each target can appear once')
+        ->set('tab', 'rows')
+        ->assertDontSee('Download redacted errors CSV')
+        ->set('tab', 'audit')
+        ->assertSee('Import uploaded')
+        ->assertSee($actor->name);
+});
+
+test('row preview lists key task fields on one line and keeps the rest masked behind view all', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name', 'postcode'], ['FG001', 'ACC-998877', 'CUST-123456', 'Synthetic Person', '40100']]));
+    $batch = ImportBatch::query()->sole();
+    app(ImportWorkflow::class)->preview($actor, $batch, mappedSelections($batch));
+
+    $page = Livewire::actingAs($actor)->test(Review::class, ['import' => $batch->refresh()])
+        ->set('tab', 'rows')
+        ->assertSeeInOrder(['Row', 'Status', 'Task ID', 'Account No', 'Customer', 'Outstanding', 'Validation', 'View all', 'Customer Reference', 'Postcode'])
+        ->assertDontSee('Masked before')
+        ->assertDontSee('ACC-998877')
+        ->assertDontSee('Synthetic Person')
+        ->assertDontSee('CUST-123456');
+
+    expect($page->html())->toContain('AC•••77', 'Sy•••on', 'CU•••56');
+});
+
+test('review actions use the app dialog instead of a browser confirm', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG001', 'A1', 'C1', 'Synthetic Person']]));
+    $batch = ImportBatch::query()->sole();
+    app(ImportWorkflow::class)->preview($actor, $batch, mappedSelections($batch));
+
+    Livewire::actingAs($actor)->test(Review::class, ['import' => $batch->refresh()])
+        ->assertSee('Commit accepted rows?')
+        ->assertSee('Cancel this import?')
+        ->assertDontSeeHtml('wire:confirm');
+});
+
+test('a commit with failed rows warns instead of reporting success and a retry confirms it was queued', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG001', 'A1', 'C1', 'Synthetic Person']]));
+    $batch = ImportBatch::query()->sole();
+    app(ImportWorkflow::class)->preview($actor, $batch, mappedSelections($batch));
+    Task::factory()->create(['assignment_batch_id' => $batch->assignment_batch_id, 'source_task_number' => 1]);
+    session()->flush();
+
+    Livewire::actingAs($actor)->test(Review::class, ['import' => $batch->refresh()])
+        ->call('confirm')
+        ->assertSee('Needs attention')
+        ->assertSee('0 tasks created. 1 row failed. See Row preview.')
+        ->assertDontSeeHtml('feedback-title')
+        ->call('retry')
+        ->assertSee('Retry queued with the same column mapping.');
 });
 
 test('committing on the sync queue creates the tasks and reports how many', function (): void {

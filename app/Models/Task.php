@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,6 +29,13 @@ class Task extends Model
     public function batch(): BelongsTo
     {
         return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id');
+    }
+
+    /** Tasks imported from one uploaded Excel file, or created manually and grouped with it. */
+    public function scopeFromImport(Builder $query, int $importBatchId): void
+    {
+        $query->where(fn (Builder $query) => $query->where('import_batch_id', $importBatchId)
+            ->orWhereIn('source_import_row_id', ImportRow::query()->where('import_batch_id', $importBatchId)->select('id')));
     }
 
     /** Task IDs are read by their last run of digits: FG001 is 1, DT2304 is 2304. */

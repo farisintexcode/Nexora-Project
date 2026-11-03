@@ -30,6 +30,7 @@ test('service authority review and frozen recipient exclusions remain explicit a
     await expect(page.getByText('Pending', { exact: true })).toBeVisible();
     await page.getByLabel('Review reason', { exact: true }).fill('Synthetic evidence reviewed');
     await page.getByRole('button', { name: 'Approve eligibility request', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Approve this request?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByText('Approved · Current', { exact: true })).toBeVisible();
     if (surface === 'rider-mobile') {
         for (const width of [320, 430]) {
@@ -56,6 +57,7 @@ test('service authority review and frozen recipient exclusions remain explicit a
     await expect(page.getByText('Required data was unavailable. No rendered message was created for this recipient.', { exact: true })).toBeVisible();
     await page.screenshot({ path: '.local-tools/m14-' + surface + '-recipients.png', fullPage: true });
     await page.getByRole('button', { name: 'Cancel unsent preview', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Cancel pending work?', exact: true }).getByRole('button', { name: 'Cancel work', exact: true }).click();
     await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();
     expect(errors).toEqual([]);
 });

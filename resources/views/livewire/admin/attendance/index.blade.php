@@ -3,7 +3,7 @@
 <x-slot:actions>@can('configure',\App\Models\Attendance::class)<a class="btn btn-primary" href="{{ route('admin.attendance.configuration') }}">Schedules & policies</a>@endcan</x-slot:actions>
 </x-page-header>
 <form wire:submit="$refresh" class="surface grid min-w-0 gap-4 p-5 md:grid-cols-3">
-<div class="grid min-w-0 gap-4 sm:grid-cols-2 md:col-span-2"><x-input name="from" type="date" label="Service date from" wire:model="from" class="min-w-0 max-w-full" /><x-input name="until" type="date" label="Through" wire:model="until" class="min-w-0 max-w-full" /></div>
+<div class="grid min-w-0 gap-4 sm:grid-cols-2 md:col-span-2"><x-date-range name="service-date" label="Service date" from="from" until="until" /></div>
 <x-select name="status" label="Attendance status" wire:model="status"><option value="">All statuses</option>@foreach(\App\Services\Attendance\AttendanceStatus::LABELS as $key=>$text)<option value="{{ $key }}">{{ $text }}</option>@endforeach</x-select>
 <x-input name="search" label="Rider name or staff number" wire:model="search" placeholder="Starts with…" />
 <x-select name="rider" label="Rider" wire:model="rider"><option value="">All accessible Riders</option>@foreach($riders as $option)<option value="{{ $option->public_id }}">{{ $option->staff_no }} · {{ $option->full_name }}</option>@endforeach</x-select>

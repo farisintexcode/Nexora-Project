@@ -16,8 +16,8 @@
         <x-sidebar-group label="Task Management" icon="clipboard" :active="request()->routeIs('admin.imports.*', 'admin.tasks.*', 'admin.verification.*', 'admin.reports.*')" keywords="Upload Task Excel imports Assign Task allocation Manage Task monitoring Task Verification Report">
             @can('imports.view')<x-sidebar-item label="Upload Task" icon="upload" parent="Task Management" :href="route('admin.imports.index')" :active="request()->routeIs('admin.imports.*')" />@endcan
             @can('tasks.monitor')
-            <x-sidebar-item label="Assign Task" icon="users" parent="Task Management" :href="route('admin.tasks.allocate')" :active="request()->routeIs('admin.tasks.allocate', 'admin.tasks.allocate-one', 'admin.tasks.operation')" />
-            <x-sidebar-item label="Manage Task" icon="clipboard" parent="Task Management" :href="route('admin.tasks.index')" :active="request()->routeIs('admin.tasks.*') && !request()->routeIs('admin.tasks.allocate', 'admin.tasks.allocate-one', 'admin.tasks.operation')" />
+            <x-sidebar-item label="Assign Task" icon="users" parent="Task Management" :href="route('admin.tasks.allocate')" :active="request()->routeIs('admin.tasks.allocate', 'admin.tasks.allocate-one')" />
+            <x-sidebar-item label="Manage Task" icon="clipboard" parent="Task Management" :href="route('admin.tasks.index')" :active="request()->routeIs('admin.tasks.*') && !request()->routeIs('admin.tasks.allocate', 'admin.tasks.allocate-one')" />
             @endcan
             @can('tasks.verify')<x-sidebar-item label="Task Verification" icon="shield" parent="Task Management" :href="route('admin.verification.index')" :active="request()->routeIs('admin.verification.*')" />@endcan
             @can('reports.view')<x-sidebar-item label="Report" icon="chart" parent="Task Management" :href="route('admin.reports.index')" :active="request()->routeIs('admin.reports.*')" />@endcan

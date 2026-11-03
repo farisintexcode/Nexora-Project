@@ -6,8 +6,13 @@ use App\Livewire\Admin\Tasks\Editor;
 use App\Livewire\Admin\Tasks\Index;
 use App\Models\AssignmentBatch;
 use App\Models\BulkOperation;
+use App\Models\Document;
+use App\Models\ImportBatch;
+use App\Models\ImportRow;
+use App\Models\ImportTemplate;
 use App\Models\Staff;
 use App\Models\Task;
+use App\Models\TaskAllocation;
 use App\Models\User;
 use App\Services\Reports\TaskReports;
 use App\Services\Tasks\TaskIdSelection;
@@ -15,7 +20,9 @@ use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
 uses(LazilyRefreshDatabase::class);
@@ -155,10 +162,10 @@ test('the task date in the panel filters by creation date and clear all resets e
         ->assertSee('Task ID FG001');
 });
 
-test('manage task cards each use their own colour', function (): void {
+test('manage task cards match the dashboard and each use their own colour', function (): void {
     $page = Livewire::actingAs(staffManager())->test(Index::class);
-    foreach (['blue' => 'Active work', 'orange' => 'Awaiting allocation', 'green' => 'Assigned work', 'yellow' => 'Pending verification'] as $tone => $label) {
-        $page->assertSeeHtmlInOrder(["task-metric-{$tone}", $label]);
+    foreach (['bg-blue-600' => 'Active work', 'bg-brand-accent' => 'Awaiting allocation', 'bg-green-600' => 'Assigned work', 'bg-brand-primary' => 'Pending verification'] as $tile => $label) {
+        $page->assertSeeHtmlInOrder(['metric-card', $tile, $label]);
     }
 });
 
@@ -265,10 +272,10 @@ test('assign task shows assignment type and date and previews typed ids without 
         ->set('rangeTo', 'FG002')
         ->set('riderId', (string) $rider->id)
         ->set('reason', 'Synthetic typed allocation')
-        ->call('preview')
+        ->call('assign')
         ->assertHasNoErrors();
     $operation = BulkOperation::query()->sole();
-    $page->assertRedirect(route('admin.tasks.operation', $operation));
+    $page->assertRedirect(route('admin.tasks.index'));
     expect($operation->selection_mode)->toBe('range')
         ->and($operation->items()->orderBy('task_id')->pluck('task_id')->all())->toBe([$first->id, $second->id]);
 });
@@ -289,7 +296,7 @@ test('range and selected combines the from and to boxes with other ids', functio
         ->set('rangeFrom', '1')->set('rangeTo', '2')->set('taskIds', '10')
         ->set('riderId', (string) $rider->id)
         ->set('reason', 'Synthetic combined allocation')
-        ->call('preview')
+        ->call('assign')
         ->assertHasNoErrors();
     $numbers = Task::query()->whereIn('id', BulkOperation::query()->sole()->items()->pluck('task_id'))->orderBy('source_task_number')->pluck('source_task_number')->all();
     expect($numbers)->toBe([1, 2, 10]);
@@ -302,7 +309,7 @@ test('the range boxes need one valid id each in the right order', function (arra
     foreach ($values as $property => $value) {
         $page->set($property, $value);
     }
-    $page->call('preview')->assertHasErrors($errors);
+    $page->call('assign')->assertHasErrors($errors);
     expect(BulkOperation::query()->count())->toBe(0);
 })->with([
     'both blank' => [[], ['rangeFrom', 'rangeTo']],
@@ -311,6 +318,338 @@ test('the range boxes need one valid id each in the right order', function (arra
     'range in to' => [['rangeFrom' => '1', 'rangeTo' => '2-5'], ['rangeTo']],
     'backwards' => [['rangeFrom' => '20', 'rangeTo' => '10'], ['taskIds']],
 ]);
+
+/** A completed task upload with its file name, as the assignment's Excel file list expects. */
+function uploadedFile(AssignmentBatch $assignment, string $name): ImportBatch
+{
+    $file = ImportBatch::factory()->create(['kind' => 'task', 'template_id' => ImportTemplate::query()->where('kind', 'task')->value('id'), 'assignment_batch_id' => $assignment->id, 'input_count' => 1, 'accepted_count' => 1, 'processed_count' => 1]);
+    $document = Document::factory()->create(['owner_type' => 'import', 'owner_id' => $file->id, 'original_filename' => $name]);
+    $file->forceFill(['source_document_id' => $document->id])->save();
+
+    return $file;
+}
+
+function taskFromFile(AssignmentBatch $assignment, ImportBatch $file, string $id): Task
+{
+    $row = ImportRow::factory()->create(['import_batch_id' => $file->id, 'row_number' => Task::numberFromId($id) + 1]);
+
+    return Task::factory()->create(['assignment_batch_id' => $assignment->id, 'source_task_id' => $id, 'source_task_number' => Task::numberFromId($id), 'origin_code' => 'import', 'source_import_row_id' => $row->id]);
+}
+
+test('assign task lists only the excel files in the chosen assignment and clears the choice when it changes', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $other = AssignmentBatch::factory()->create();
+    $january = uploadedFile($assignment, 'january.xlsx');
+    uploadedFile($assignment, 'february.xlsx');
+    uploadedFile($other, 'other-assignment.xlsx');
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->assertSee('Excel File Name')
+        ->assertSee('Choose an assignment first')
+        ->assertDontSee('january.xlsx')
+        ->set('batchId', (string) $assignment->id)
+        ->assertSee('All Excel files')
+        ->assertSee('january.xlsx')
+        ->assertSee('february.xlsx')
+        ->assertDontSee('other-assignment.xlsx')
+        ->set('importId', $january->public_id)
+        ->set('batchId', (string) $other->id)
+        ->assertSet('importId', '')
+        ->assertSee('other-assignment.xlsx')
+        ->assertDontSee('january.xlsx');
+});
+
+test('choosing an excel file limits the task list and typed ids to that file', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $january = uploadedFile($assignment, 'january.xlsx');
+    $february = uploadedFile($assignment, 'february.xlsx');
+    $first = taskFromFile($assignment, $january, 'JAN101');
+    taskFromFile($assignment, $february, 'FEB102');
+
+    $page = Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'selected')
+        ->assertSee('JAN101')->assertSee('FEB102')
+        ->set('importId', $february->public_id)
+        ->assertSee('FEB102')->assertDontSee('JAN101')
+        ->set('importId', $january->public_id)
+        ->assertSee('JAN101')->assertDontSee('FEB102');
+
+    expect(app(TaskIdSelection::class)->resolve($assignment->id, 'range', '101-102', $january->id))->toBe([$first->id])
+        ->and(fn () => app(TaskIdSelection::class)->resolve($assignment->id, 'single', '102', $january->id))->toThrow(ValidationException::class, 'Not found in this Excel file: 102.');
+
+    $page->set('operation', 'cancel')->set('reason', 'Synthetic reason')->set('taskIds', '102')->call('assign')->assertHasErrors(['taskIds']);
+    expect(BulkOperation::query()->count())->toBe(0);
+});
+
+test('select all ticks only the chosen file and clears on the second press', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $january = uploadedFile($assignment, 'january.xlsx');
+    $february = uploadedFile($assignment, 'february.xlsx');
+    $first = taskFromFile($assignment, $january, 'JAN101');
+    $second = taskFromFile($assignment, $january, 'JAN103');
+    taskFromFile($assignment, $february, 'FEB102');
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'selected')->set('importId', $january->public_id)
+        ->assertSee('Select all')
+        ->call('toggleAllTasks')
+        ->assertSet('taskIds', '101, 103')
+        ->assertSee('Clear all')
+        ->assertDontSee('Select all')
+        ->call('toggleAllTasks')
+        ->assertSet('taskIds', '')
+        ->assertSee('Select all')
+        ->call('toggleAllTasks')
+        ->set('operation', 'cancel')->set('reason', 'Synthetic reason')
+        ->call('assign')->assertHasNoErrors();
+
+    expect(BulkOperation::query()->sole()->items()->pluck('task_id')->sort()->values()->all())->toBe([$first->id, $second->id]);
+});
+
+test('select all is offered only when several tasks can be chosen and respects the operation limit', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    numberedTask($assignment, 'JAN101');
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'single')
+        ->assertDontSee('Select all')
+        ->call('toggleAllTasks')
+        ->assertSet('taskIds', '')
+        ->set('mode', 'range_selected')
+        ->assertDontSee('Select all')
+        ->call('toggleAllTasks')
+        ->assertSet('taskIds', '');
+
+    foreach (range(102, 301) as $number) {
+        numberedTask($assignment, 'JAN'.$number);
+    }
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'selected')
+        ->assertSee('Select first 200')
+        ->assertSee('One operation can include up to 200 tasks.')
+        ->call('toggleAllTasks')
+        ->assertSet('taskIds', implode(', ', range(101, 300)));
+});
+
+/** @return Testable the create task form filled in for one new task */
+function createTaskForm(AssignmentBatch $assignment, string $id)
+{
+    return Livewire::actingAs(staffManager())->test(Editor::class)
+        ->set('data.assignment_batch_id', (string) $assignment->id)
+        ->set('data.task_id', $id)
+        ->set('data.outstanding_balance', '100.00')
+        ->set('data.customer_reference', 'REF-'.$id)
+        ->set('data.customer_name', 'Synthetic Customer')
+        ->set('data.account_number', 'ACC-'.$id);
+}
+
+test('create task can group a task with an excel file from its assignment or leave it ungrouped', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = uploadedFile($assignment, 'january.xlsx');
+    uploadedFile(AssignmentBatch::factory()->create(), 'other-assignment.xlsx');
+
+    createTaskForm($assignment, 'JAN101')
+        ->assertSee('Excel File Name (optional)')
+        ->assertSee('january.xlsx')
+        ->assertDontSee('other-assignment.xlsx')
+        ->set('data.import_id', $file->public_id)
+        ->call('save')->assertHasNoErrors();
+    createTaskForm($assignment, 'JAN102')->call('save')->assertHasNoErrors();
+
+    $grouped = Task::query()->where('source_task_id', 'JAN101')->sole();
+    expect($grouped->import_batch_id)->toBe($file->id)
+        ->and($grouped->origin_code)->toBe('manual')
+        ->and(Task::query()->where('source_task_id', 'JAN102')->sole()->import_batch_id)->toBeNull()
+        ->and(Task::query()->fromImport($file->id)->pluck('id')->all())->toBe([$grouped->id]);
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'selected')->set('importId', $file->public_id)
+        ->assertSee('JAN101')->assertDontSee('JAN102');
+});
+
+test('create task clears the excel file when the assignment changes and refuses a file from elsewhere', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $other = AssignmentBatch::factory()->create();
+    $file = uploadedFile($assignment, 'january.xlsx');
+    $foreign = uploadedFile($other, 'other-assignment.xlsx');
+
+    createTaskForm($assignment, 'JAN101')
+        ->set('data.import_id', $file->public_id)
+        ->set('data.assignment_batch_id', (string) $other->id)
+        ->assertSet('data.import_id', '');
+
+    createTaskForm($assignment, 'JAN101')
+        ->set('data.import_id', $foreign->public_id)
+        ->call('save')->assertHasErrors(['data.import_id']);
+    expect(Task::query()->where('source_task_id', 'JAN101')->exists())->toBeFalse();
+});
+
+test('manage task shows ten tasks on each page', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    foreach (range(101, 111) as $number) {
+        numberedTask($assignment, 'JAN'.$number);
+    }
+
+    $tasks = Livewire::actingAs(staffManager())->test(Index::class)->viewData('tasks');
+
+    expect($tasks->perPage())->toBe(10)->and($tasks->count())->toBe(10)->and($tasks->total())->toBe(11)->and($tasks->lastPage())->toBe(2);
+});
+
+test('manage task shows bright work statuses, pastel priorities and an orange view button', function (): void {
+    $task = numberedTask(AssignmentBatch::factory()->create(), 'JAN101');
+    $task->forceFill(['priority_code' => 'urgent'])->save();
+
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->assertSeeHtml('bg-slate-500 text-white')
+        ->assertSeeHtml('bg-rose-200')
+        ->assertSeeHtml('class="btn btn-primary" href="'.route('admin.tasks.show', $task).'"');
+});
+
+test('admin hr communication and call centre pages use the shared calendars instead of browser date fields', function (): void {
+    foreach (['attendance/configuration', 'attendance/index', 'attendance/leave-management', 'attendance/show', 'calls/show', 'communications/preferences', 'communications/recipients', 'staff/editor', 'staff/index'] as $page) {
+        $view = file_get_contents(resource_path("views/livewire/admin/{$page}.blade.php"));
+
+        expect($view)->toContain('<x-date-')->and($view)->not->toMatch('/type="(date|datetime-local)"/');
+    }
+});
+
+test('the dashboard names assignments in the same id and name format', function (): void {
+    $assignment = AssignmentBatch::factory()->create(['name' => 'Dashboard work', 'external_reference' => 'HIDDEN-REF']);
+    numberedTask($assignment, 'JAN101');
+
+    Livewire::actingAs(staffManager())->test(Admin\Home::class)
+        ->assertSeeHtml('>'.$assignment->id.' - Dashboard work</option>')
+        ->assertSeeHtml('>'.$assignment->id.' - Dashboard work</p>')
+        ->assertDontSee('Assignment batch');
+});
+
+/** @return array{0: AssignmentBatch, 1: Staff} an assignment and an eligible Rider named Abdul */
+function assignmentAndRider(): array
+{
+    $rider = Staff::factory()->create(['is_rider' => true, 'first_name' => 'Abdul', 'last_name' => '']);
+    User::factory()->for($rider)->create()->assignRole('Rider');
+
+    return [AssignmentBatch::factory()->create(), $rider];
+}
+
+test('assign to rider applies straight away, reports success and shows the rider on manage task', function (): void {
+    [$assignment, $rider] = assignmentAndRider();
+    $task = numberedTask($assignment, 'JAN101');
+    numberedTask($assignment, 'JAN102');
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->assertSee('Assign to Rider')
+        ->assertDontSee('Prepare operation preview')
+        ->set('batchId', (string) $assignment->id)->set('mode', 'range')->set('rangeFrom', '101')->set('rangeTo', '102')
+        ->set('riderId', (string) $rider->id)->set('reason', 'Synthetic allocation')
+        ->call('assign')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('admin.tasks.index'));
+
+    expect(session('status'))->toBe('2 tasks assigned to Abdul.')
+        ->and($task->refresh()->currentAllocation->collector_id)->toBe($rider->id)
+        ->and(BulkOperation::query()->sole()->status)->toBe('completed');
+
+    session()->flush();
+    Livewire::actingAs(staffManager())->test(Index::class)->assertSeeHtml('<td>Abdul</td>')->assertDontSeeHtml('<td>Unassigned</td>');
+});
+
+test('assign to rider warns when some tasks could not be changed and says why', function (): void {
+    [$assignment, $rider] = assignmentAndRider();
+    $taken = numberedTask($assignment, 'JAN101');
+    TaskAllocation::factory()->create(['task_id' => $taken->id, 'collector_id' => Staff::factory()->create()->id]);
+    numberedTask($assignment, 'JAN102');
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'selected')->set('taskIds', '101, 102')
+        ->set('riderId', (string) $rider->id)->set('reason', 'Synthetic allocation')
+        ->call('assign')
+        ->assertRedirect(route('admin.tasks.index'));
+
+    expect(session('warning'))->toBe('1 task assigned to Abdul. Not changed: 1 already have a Rider.')
+        ->and(session('status'))->toBeNull();
+});
+
+test('assign to rider stays on the page with an error when no task can be changed', function (): void {
+    [$assignment, $rider] = assignmentAndRider();
+    $taken = numberedTask($assignment, 'JAN101');
+    TaskAllocation::factory()->create(['task_id' => $taken->id, 'collector_id' => Staff::factory()->create()->id]);
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'single')->set('taskIds', '101')
+        ->set('riderId', (string) $rider->id)->set('reason', 'Synthetic allocation')
+        ->call('assign')
+        ->assertHasErrors(['operation'])
+        ->assertNoRedirect()
+        ->assertSee('No tasks were changed. Not changed: 1 already have a Rider.');
+
+    expect(BulkOperation::query()->sole()->status)->toBe('cancelled');
+});
+
+test('task details reassigns a rider on unfinished work and shows both histories as timelines', function (string $workStatus): void {
+    [$assignment, $newRider] = assignmentAndRider();
+    $task = numberedTask($assignment, 'JAN101');
+    $first = Staff::factory()->create(['is_rider' => true, 'first_name' => 'Hakim', 'last_name' => '']);
+    TaskAllocation::factory()->create(['task_id' => $task->id, 'collector_id' => $first->id]);
+    $task->forceFill(['work_status' => $workStatus])->save();
+    $actor = staffManager();
+
+    $this->withoutVite()->actingAs($actor)->get(route('admin.tasks.show', $task))->assertOk()->assertSee('Reassign Rider')->assertDontSee('Assign Rider');
+
+    Livewire::actingAs($actor)->test(Allocation::class, ['task' => $task->refresh()])
+        ->assertSet('operation', 'reassign')
+        ->set('riderId', (string) $newRider->id)->set('reason', 'Synthetic reassignment')
+        ->call('assign')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('admin.tasks.index'));
+
+    expect(session('status'))->toBe('1 task assigned to Abdul.')
+        ->and($task->refresh()->currentAllocation->collector_id)->toBe($newRider->id);
+
+    session()->flush();
+    Livewire::actingAs($actor)->test(Admin\Tasks\Show::class, ['task' => $task])
+        ->assertSeeHtml('border-l-2 border-ink-200')
+        ->assertDontSeeHtml('rounded-xl border border-ink-200 p-4 text-sm')
+        ->assertSeeInOrder(['Rider allocation history', 'Abdul', 'Current', 'Hakim', 'Synthetic reassignment']);
+})->with(['unstarted', 'in_progress']);
+
+test('task details offers assign rider before anyone is assigned and nothing once work is finished', function (): void {
+    [$assignment] = assignmentAndRider();
+    $task = numberedTask($assignment, 'JAN101');
+    $done = numberedTask($assignment, 'JAN102');
+    $done->forceFill(['work_status' => 'completed', 'review_status' => 'approved'])->save();
+    $actor = staffManager();
+
+    $this->withoutVite()->actingAs($actor)->get(route('admin.tasks.show', $task))->assertOk()->assertSee('Assign Rider')->assertDontSee('Reassign Rider');
+    $this->get(route('admin.tasks.show', $done))->assertOk()->assertDontSee('Assign Rider')->assertDontSee('Reassign Rider');
+
+    Livewire::actingAs($actor)->test(Allocation::class, ['task' => $task])->assertSet('operation', 'new');
+});
+
+test('unassign and cancel keep their own label and ask for confirmation first', function (): void {
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('operation', 'cancel')
+        ->assertSee('Cancel this work?')
+        ->assertDontSee('Assign to Rider')
+        ->set('operation', 'unassign')
+        ->assertSee('Unassign the Rider?')
+        ->assertDontSee('Assign to Rider');
+    expect(Route::has('admin.tasks.operation'))->toBeFalse();
+});
+
+test('assign task refuses an excel file from another assignment', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    numberedTask($assignment, 'FG001');
+    $foreign = uploadedFile(AssignmentBatch::factory()->create(), 'other-assignment.xlsx');
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'single')
+        ->set('importId', $foreign->public_id)
+        ->set('taskIds', '1')->set('operation', 'cancel')->set('reason', 'Synthetic reason')
+        ->call('assign')->assertHasErrors(['importId']);
+    expect(BulkOperation::query()->count())->toBe(0);
+});
 
 test('changing the mode clears the range boxes', function (): void {
     $assignment = AssignmentBatch::factory()->create();
@@ -326,9 +665,9 @@ test('assign task requires a mode and reports ids it cannot find', function (): 
     Livewire::actingAs(staffManager())->test(Allocation::class)
         ->set('batchId', (string) $assignment->id)
         ->set('reason', 'Synthetic reason')
-        ->call('preview')->assertHasErrors(['mode'])
+        ->call('assign')->assertHasErrors(['mode'])
         ->set('mode', 'single')->set('taskIds', '7')
-        ->call('preview')->assertHasErrors(['taskIds']);
+        ->call('assign')->assertHasErrors(['taskIds']);
     expect(BulkOperation::query()->count())->toBe(0);
 });
 
@@ -361,7 +700,7 @@ test('tasks ticked on manage task go straight to assign task and stay usable', f
         ->assertDontSee('Selection mode')
         ->set('riderId', (string) $rider->id)
         ->set('reason', 'Synthetic ticked allocation')
-        ->call('preview')
+        ->call('assign')
         ->assertHasNoErrors();
     expect(BulkOperation::query()->sole()->items()->sole()->task_id)->toBe($task->id)
         ->and(session()->has('task_selection.'.$actor->id))->toBeFalse();

@@ -344,7 +344,7 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 | User role | Administrative / finance P |
 | Purpose | Excel upload for customer, debt_account, assignment_batch, task (assignment), payment_update or databank import; C automated mapping follows. |
 | Layout / header / sidebar / breadcrumb | Shared shell, intake form and instruction; common shell rules apply unless standalone/separate. |
-| Forms / fields / dropdowns / search / filters | Client/import kind; optional batch/type/date; workbook; sheet/header-row selection; reusable mapping profile/version. |
+| Forms / fields / dropdowns / search / filters | Client/import kind; optional batch/type/date; workbook. Headers are read from row 1 of the first sheet. |
 | Buttons / actions | Choose File; Upload |
 | Cards / tables / modals / tabs / status / empty state | No preview table observed. Template instruction, no visible template download. P template download/version and upload limits. |
 | Notifications / validation / pagination | Common contract; module rules in Module.md; actual DRMS enforcement U unless specifically observed above. |
@@ -361,8 +361,8 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 | Purpose | Import preview, errors and progress for the corresponding module workflow; evidence status above limits what is established. |
 | Layout / header / sidebar / breadcrumb | Shared shell, reconciliation cards, row preview and progress; common shell rules apply unless standalone/separate. |
 | Forms / fields / dropdowns / search / filters | Pinned mapping/template/profile; row filters valid/rejected/duplicate/processing failed; safe old/new preview; immutable confirmed selection. |
-| Buttons / actions | Commit; Cancel; download rejected rows; Retry failed rows |
-| Cards / tables / modals / tabs / status / empty state | Input/accepted/rejected/duplicates/committed/failed/unprocessed counts; row/source key/action/errors; Confirm exact accepted rows; persisted progress/result with Download error report. |
+| Buttons / actions | Commit; Cancel; Retry failed rows |
+| Cards / tables / modals / tabs / status / empty state | Input/accepted/rejected/duplicates/committed/failed/unprocessed counts; row/source key/action/errors; Confirm exact accepted rows; persisted progress/result. |
 | Notifications / validation / pagination | Common contract; module rules in Module.md; actual DRMS enforcement U unless specifically observed above. |
 | Expected interaction / previous-next navigation | UI57 → preview → confirm → queued processing → reconciliation/result → UI58 history or relevant customer/task/account list. Invalid mapping returns UI57 without writes. |
 
@@ -401,6 +401,8 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 <a id="ui18"></a>
 
 ## UI18 — Bulk operation preview and result
+
+> **November 2026:** The separate preview and results page was removed. Assign Task applies the operation straight away and reports the outcome in a popup. Each operation and its per-task outcome remain recorded in `bulk_operations` and `bulk_operation_items`.
 
 | Attribute / override | Specification |
 |---|---|
@@ -1012,8 +1014,8 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 |---|---|
 | Module / scope / role | M04; C; Authorized importer. |
 | Layout / components / mobile | Desktop source-to-target grid, sticky summary; mobile horizontally labelled field cards. Shared labels/focus/keyboard/320px rules apply; Admin tables become labelled cards where useful. |
-| Fields / filters | Sheet/header row/profile; source ordinal/header/masked samples; target canonical field; match method/ambiguity; approved transform; Ignore. |
-| Buttons / actions | Auto-map; correct dropdown; Save profile version; Continue; Back upload. |
+| Fields / filters | Numbered explanation of each suggestion above the table; source ordinal/header/masked samples; target canonical field; match method/ambiguity; approved transform; Ignore. |
+| Buttons / actions | Correct dropdown; Continue. Columns are mapped automatically on upload from row 1 of the first sheet. |
 | Validation / states | Required-target checklist, duplicate-target/ambiguous/unmapped warning; unique alias match auto-selected, fuzzy never silent; edits invalidate preview. |
 | Empty / loading / success / error | Unless detailed above: scoped empty-state explanation and allowed CTA; loading/progress disables duplicate submits; success confirms persisted state/reference; validation/permission/network/stale conflicts preserve safe input with retry or review. Never infer external delivery from queued/accepted. |
 | Navigation / expected interaction | UI14 → mapping → valid reviewed UI15; no header reordering required; loading detection, no headers and parser error states. |
@@ -1025,9 +1027,9 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 | Attribute | Specification |
 |---|---|
 | Module / scope / role | M04; C; Importer own/scoped Admin. |
-| Layout / components / mobile | Desktop history table + job detail tabs Summary/Mapping/Rows/Errors/Audit. Shared labels/focus/keyboard/320px rules apply; Admin tables become labelled cards where useful. |
+| Layout / components / mobile | Desktop history table + job detail tabs Summary/Mapping/Rows/Audit, with Audit as a timeline. Shared labels/focus/keyboard/320px rules apply; Admin tables become labelled cards where useful. |
 | Fields / filters | Date/kind/client/batch/uploader/state/profile; row outcome/error filters. |
-| Buttons / actions | View mapping; Download error report; open results; idempotent retry failed rows. |
+| Buttons / actions | View mapping; open results; idempotent retry failed rows. |
 | Validation / states | Counts input/committed/rejected/duplicate/failed/outstanding, queued/running/partial/terminal states; retained source permission checks. |
 | Empty / loading / success / error | Unless detailed above: scoped empty-state explanation and allowed CTA; loading/progress disables duplicate submits; success confirms persisted state/reference; validation/permission/network/stale conflicts preserve safe input with retry or review. Never infer external delivery from queued/accepted. |
 | Navigation / expected interaction | UI14/UI15 → history/detail → relevant target list; artifacts can expire with explanation, no false zero-row success. |

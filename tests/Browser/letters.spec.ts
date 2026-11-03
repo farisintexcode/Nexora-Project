@@ -43,6 +43,7 @@ test('authorized users review and queue private letters without substituting fin
     await expect(page.getByRole('heading', { name: 'Saved letter preview', exact: true })).toBeVisible();
     await expect(page.getByText('Dear Synthetic Field Customer ' + surface + ', please contact ' + (process.env.DCMS_COMPANY_NAME ?? 'Nexora') + '.', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Confirm and generate PDF', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Generate private PDF?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Letter queued for private PDF generation.' })).toBeVisible();
     await expect(page.getByText('PDF generation is queued.', { exact: false })).toBeVisible();
     if (surface === 'rider-mobile') {

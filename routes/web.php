@@ -97,7 +97,6 @@ Route::middleware(['auth', 'auth.session'])->group(function (): void {
         Route::livewire('/', App\Livewire\Admin\Tasks\Index::class)->name('index');
         Route::livewire('/create', Editor::class)->name('create');
         Route::livewire('/allocate', Allocation::class)->name('allocate');
-        Route::livewire('/operations/{operation}', Allocation::class)->whereUuid('operation')->name('operation');
         Route::livewire('/{task}/allocate', Allocation::class)->whereUuid('task')->name('allocate-one');
         Route::livewire('/{task}/edit', Editor::class)->whereUuid('task')->name('edit');
         Route::livewire('/{task}', App\Livewire\Admin\Tasks\Show::class)->whereUuid('task')->name('show');

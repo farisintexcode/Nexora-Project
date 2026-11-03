@@ -53,10 +53,12 @@ test('template manager previews approved defaults and reviews replacement histor
     }
     await page.screenshot({path:'.local-tools/m14-'+surface+'-studio.png',fullPage:true});
     await page.getByRole('button',{name:'Submit for approval',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Submit for approval?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Template submitted for approval.'})).toBeVisible();
     await expect(page.getByRole('heading',{name:'Saved wording',exact:true})).toBeVisible();
     await page.getByLabel('Rejection reason',{exact:true}).fill('Synthetic legal review '+surface);
     await page.getByRole('button',{name:'Reject submitted version',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Reject this wording?', exact: true }).getByRole('button', { name: 'Reject', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Template rejected.'})).toBeVisible();
     await page.getByRole('button',{name:'Create / open next draft',exact:true}).click();
     await expect(page.getByText('Version 3.0 · Draft',{exact:true})).toBeVisible();
@@ -65,11 +67,14 @@ test('template manager previews approved defaults and reviews replacement histor
     await page.getByRole('button',{name:'Save draft',exact:true}).click();
     await expect(page.getByRole('status').filter({hasText:'Draft saved.'})).toBeVisible();
     await page.getByRole('button',{name:'Submit for approval',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Submit for approval?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Template submitted for approval.'})).toBeVisible();
     await page.getByRole('button',{name:'Approve saved version',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Approve this version?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Saved template version approved.'})).toBeVisible();
     await expect(page.getByText('Archived',{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Archive approved version',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Archive this option?', exact: true }).getByRole('button', { name: 'Archive', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Template version archived.'})).toBeVisible();
     await page.screenshot({path:'.local-tools/m14-'+surface+'-history.png',fullPage:true});
     expect(errors).toEqual([]);

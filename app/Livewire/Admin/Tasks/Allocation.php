@@ -5,24 +5,37 @@ namespace App\Livewire\Admin\Tasks;
 use App\Actions\Tasks\TaskOperation;
 use App\Models\AssignmentBatch;
 use App\Models\BulkOperation;
+use App\Models\ImportBatch;
 use App\Models\Task;
-use App\Services\AuditWriter;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskIdSelection;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Locked;
 use Livewire\Component;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[Layout('layouts.admin')]
 class Allocation extends Component
 {
+    private const CHOICE_LIMIT = 200;
+
+    /** Plain reasons for tasks an operation left unchanged, keyed by their exclusion code. */
+    private const EXCLUSION_REASONS = [
+        'already_assigned' => 'already have a Rider',
+        'not_assigned' => 'have no Rider',
+        'same_rider' => 'are already with this Rider',
+        'protected_work' => 'are submitted, completed or cancelled',
+        'excluded_source' => 'are excluded from work',
+    ];
+
     public string $batchId = '';
+
+    public string $importId = '';
 
     public string $operation = 'new';
 
@@ -40,20 +53,12 @@ class Allocation extends Component
 
     public array $selected = [];
 
-    #[Locked]
-    public ?string $operationId = null;
+    /** Bumped by Select all so the browser redraws every tick box from the server's list. */
+    public int $choiceRevision = 0;
 
-    #[Locked]
-    public string $digest = '';
-
-    public function mount(?Task $task = null, ?BulkOperation $operation = null): void
+    public function mount(?Task $task = null): void
     {
         Gate::authorize('viewAny', Task::class);
-        if ($operation) {
-            $this->operationId = $operation->public_id;
-
-            return;
-        }
         $selected = $task ? [$task->public_id] : session()->pull('task_selection.'.Auth::id(), []);
         $this->selected = array_values(array_filter($selected, fn ($id) => is_string($id) && Str::isUuid($id)));
         $tasks = Task::query()->whereIn('public_id', $this->selected)->with('batch')->get();
@@ -63,9 +68,18 @@ class Allocation extends Component
         if ($tasks->pluck('assignment_batch_id')->unique()->count() === 1) {
             $this->batchId = (string) $tasks->first()->assignment_batch_id;
         }
+        if ($task?->currentAllocation) {
+            $this->operation = 'reassign';
+        }
     }
 
     public function updatedBatchId(): void
+    {
+        $this->reset('importId');
+        $this->resetIds();
+    }
+
+    public function updatedImportId(): void
     {
         $this->resetIds();
     }
@@ -97,19 +111,44 @@ class Allocation extends Component
         $this->taskIds = implode(', ', count($remaining) === count($parts) ? [...$parts, (string) $number] : $remaining);
     }
 
-    private function operationRecord(): ?BulkOperation
+    /**
+     * Tasks offered as tick boxes for the chosen assignment and, when one is chosen, its Excel file.
+     */
+    private function choiceQuery(AssignmentBatch $assignment): Builder
     {
-        if (! $this->operationId) {
-            return null;
-        }
-        $record = BulkOperation::query()->with(['batch', 'collector'])->where('public_id', $this->operationId)->firstOrFail();
-        abort_unless(Auth::user()->isActive(), 404);
-        Gate::authorize('viewAny', Task::class);
+        $file = $this->importId === '' ? null : ImportBatch::query()->taskFilesFor($assignment->id)->where('public_id', $this->importId)->first();
 
-        return $record;
+        return Task::query()->where('assignment_batch_id', $assignment->id)->whereNotNull('source_task_number')->when($file, fn ($query) => $query->fromImport($file->id))->orderBy('source_task_number');
     }
 
-    public function preview(TaskOperation $actions, TaskIdSelection $selection): void
+    /**
+     * Ticks every task on offer, up to the limit for one operation, or clears them all when they are already ticked.
+     */
+    public function toggleAllTasks(): void
+    {
+        $assignment = ctype_digit($this->batchId) ? AssignmentBatch::query()->where('status', 'active')->find((int) $this->batchId) : null;
+        if (! $assignment || $this->mode !== 'selected') {
+            return;
+        }
+        $numbers = $this->choiceQuery($assignment)->limit(self::CHOICE_LIMIT)->pluck('source_task_number')->all();
+        $this->taskIds = $this->allTyped($numbers) ? '' : implode(', ', $numbers);
+        $this->choiceRevision++;
+    }
+
+    /**
+     * @param  array<int, int>  $numbers
+     */
+    private function allTyped(array $numbers): bool
+    {
+        $typed = array_map(fn (string $part): ?int => Task::numberFromId(trim($part)), explode(',', $this->taskIds));
+
+        return $numbers !== [] && array_diff($numbers, $typed) === [];
+    }
+
+    /**
+     * Applies the chosen operation straight away, then reports the outcome in a popup and returns to Manage Task.
+     */
+    public function assign(TaskOperation $actions, TaskIdSelection $selection): void
     {
         if ($this->selected !== []) {
             $tasks = Task::query()->whereIn('public_id', array_filter($this->selected, fn ($id) => is_string($id) && Str::isUuid($id)))->pluck('id')->all();
@@ -120,63 +159,89 @@ class Allocation extends Component
         } else {
             $hasRange = in_array($this->mode, ['range', 'range_selected'], true);
             $singleId = [Rule::requiredIf($hasRange), 'nullable', 'string', 'max:100', 'regex:/^[A-Za-z]*\d+$/'];
-            $this->validate(['batchId' => ['required', 'integer'], 'mode' => ['required', Rule::in(array_keys(TaskIdSelection::MODES))], 'rangeFrom' => $singleId, 'rangeTo' => $singleId, 'taskIds' => [Rule::requiredIf($this->mode !== 'range'), 'nullable', 'string', 'max:2000']], attributes: ['batchId' => 'assignment', 'mode' => 'selection mode', 'rangeFrom' => 'Task ID (From)', 'rangeTo' => 'Task ID (To)', 'taskIds' => 'task IDs']);
+            $this->validate(['batchId' => ['required', 'integer'], 'mode' => ['required', Rule::in(array_keys(TaskIdSelection::MODES))], 'rangeFrom' => $singleId, 'rangeTo' => $singleId, 'taskIds' => [Rule::requiredIf($this->mode !== 'range'), 'nullable', 'string', 'max:5000']], attributes: ['batchId' => 'assignment', 'mode' => 'selection mode', 'rangeFrom' => 'Task ID (From)', 'rangeTo' => 'Task ID (To)', 'taskIds' => 'task IDs']);
             $range = $hasRange ? "{$this->rangeFrom}-{$this->rangeTo}" : '';
+            $file = $this->importId === '' ? null : ImportBatch::query()->where('public_id', $this->importId)->where('assignment_batch_id', (int) $this->batchId)->where('kind', 'task')->first();
+            if ($this->importId !== '' && ! $file) {
+                throw ValidationException::withMessages(['importId' => 'Choose an Excel file from this assignment.']);
+            }
             $tasks = $selection->resolve((int) $this->batchId, $this->mode, match ($this->mode) {
                 'range' => $range,
                 'range_selected' => "{$range}, {$this->taskIds}",
                 default => $this->taskIds,
-            });
+            }, $file?->id);
             $mode = $this->mode;
         }
         $operation = $actions->prepare(Auth::user(), ['assignment_batch_id' => $this->batchId, 'operation_code' => $this->operation, 'selection_mode' => $mode, 'task_ids' => $tasks, 'target_collector_id' => $this->riderId ?: null, 'reason' => $this->reason]);
-        $this->operationId = $operation->public_id;
-        $this->digest = $operation->preview_digest;
-        $this->redirectRoute('admin.tasks.operation', ['operation' => $operation]);
+        $unchanged = $this->unchangedReasons($operation);
+        if ($operation->result_counts['outstanding'] === 0) {
+            $actions->cancel(Auth::user(), $operation);
+            $this->addError('operation', 'No tasks were changed. '.$unchanged);
+
+            return;
+        }
+        $actions->confirm(Auth::user(), $operation, $operation->preview_digest);
+        if (config('queue.default') !== 'sync') {
+            session()->flash('status', 'The selected tasks are being updated in the background.');
+            $this->redirectRoute('admin.tasks.index');
+
+            return;
+        }
+        $actions->process($operation->id);
+        $operation->refresh();
+        $unchanged = $this->unchangedReasons($operation);
+        $applied = $operation->result_counts['applied'];
+        if ($applied === 0) {
+            $this->addError('operation', 'No tasks were changed. '.$unchanged);
+
+            return;
+        }
+        $outcome = $this->outcome($operation, $applied);
+        if ($unchanged === '') {
+            session()->flash('status', $outcome);
+        } else {
+            session()->flash('warning', $outcome.' '.$unchanged);
+        }
+        $this->redirectRoute('admin.tasks.index');
     }
 
-    public function confirm(TaskOperation $actions): void
+    private function outcome(BulkOperation $operation, int $applied): string
     {
-        $record = $this->operationRecord();
-        abort_unless($record, 404);
-        $actions->confirm(Auth::user(), $record, $this->digest);
-        session()->flash('status', 'Operation queued. Processing starts when the default queue worker receives it.');
+        $tasks = $applied.' '.Str::plural('task', $applied);
+
+        return match ($operation->operation_code) {
+            'unassign' => "{$tasks} unassigned.",
+            'cancel' => "{$tasks} cancelled.",
+            default => "{$tasks} assigned to {$operation->collector?->full_name}.",
+        };
     }
 
-    public function cancel(TaskOperation $actions): void
+    /**
+     * Explains which tasks an operation left unchanged and why, or returns an empty string when none were.
+     */
+    private function unchangedReasons(BulkOperation $operation): string
     {
-        $record = $this->operationRecord();
-        abort_unless($record, 404);
-        $actions->cancel(Auth::user(), $record);
-        session()->flash('status', 'Outstanding items cancelled. Applied records and history remain.');
-    }
+        $reasons = [];
+        foreach ($operation->items()->where('state', 'excluded')->pluck('result_code')->countBy() as $code => $count) {
+            $reasons[] = $count.' '.(self::EXCLUSION_REASONS[$code] ?? 'could not be changed');
+        }
+        $failed = $operation->items()->where('state', 'failed')->count();
+        if ($failed > 0) {
+            $reasons[] = $failed.' could not be processed';
+        }
 
-    public function downloadResults(): StreamedResponse
-    {
-        $record = $this->operationRecord();
-        abort_unless($record, 404);
-        app(AuditWriter::class)->record(Auth::user(), 'task_operation_results_downloaded', $record->public_id, module: 'M05', entityType: 'bulk_operation');
-
-        return response()->streamDownload(function () use ($record): void {
-            $out = fopen('php://output', 'w');
-            fputcsv($out, ['Task public ID', 'State', 'Result']);
-            foreach ($record->items()->with('task')->lazyById(100) as $item) {
-                fputcsv($out, [$item->task->public_id, $item->state, $item->result_code]);
-            } fclose($out);
-        }, 'task-operation-'.$record->public_id.'.csv', ['Content-Type' => 'text/csv', 'Cache-Control' => 'no-store']);
+        return $reasons === [] ? '' : 'Not changed: '.implode(', ', $reasons).'.';
     }
 
     public function render(TaskAccess $tasks): View
     {
         Gate::authorize('viewAny', Task::class);
-        $record = $this->operationRecord();
-        if ($record) {
-            $this->digest = $record->preview_digest;
-        }
         $batches = AssignmentBatch::query()->with('type')->where('status', 'active')->latest('id')->limit(200)->get();
         $batch = ctype_digit($this->batchId) ? $batches->firstWhere('id', (int) $this->batchId) : null;
         $choosable = $batch && $this->selected === [] && $this->mode !== '' && $this->mode !== 'range';
+        $excelFiles = $batch ? ImportBatch::query()->taskFilesFor($batch->id)->get() : collect();
+        $choices = $choosable ? $this->choiceQuery($batch)->with('customer')->limit(self::CHOICE_LIMIT)->get() : collect();
 
-        return view('livewire.admin.tasks.allocation', ['record' => $record, 'batches' => $batches, 'selectedAssignment' => $batch, 'riders' => $batch ? $tasks->riders()->orderBy('first_name')->get() : collect(), 'items' => $record ? $record->items()->with(['task.customer', 'task.account', 'task.currentAllocation.collector'])->orderBy('id')->get() : collect(), 'selection' => Task::query()->whereIn('public_id', array_filter($this->selected, fn ($id) => is_string($id) && Str::isUuid($id)))->with(['customer', 'account'])->get(), 'choices' => $choosable ? Task::query()->where('assignment_batch_id', $batch->id)->whereNotNull('source_task_number')->with('customer')->orderBy('source_task_number')->limit(200)->get() : collect()]);
+        return view('livewire.admin.tasks.allocation', ['batches' => $batches, 'selectedAssignment' => $batch, 'excelFiles' => $excelFiles, 'riders' => $batch ? $tasks->riders()->orderBy('first_name')->get() : collect(), 'selection' => Task::query()->whereIn('public_id', array_filter($this->selected, fn ($id) => is_string($id) && Str::isUuid($id)))->with(['customer', 'account'])->get(), 'choices' => $choices, 'choiceTotal' => $choosable ? $this->choiceQuery($batch)->count() : 0, 'choiceLimit' => self::CHOICE_LIMIT, 'allChoicesTicked' => $this->allTyped($choices->pluck('source_task_number')->all())]);
     }
 }
