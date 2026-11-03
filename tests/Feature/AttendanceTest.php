@@ -320,3 +320,12 @@ test('a stale staff identity cannot write a punch for the previously linked staf
     expect(fn () => app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7()))->toThrow(ValidationException::class, 'Your staff identity changed.');
     expect(Attendance::query()->count())->toBe(0);
 });
+
+test('Rider history is a protected separate screen while main attendance remains compact', function (): void {
+    [$admin,$rider,$schedule] = attendanceFixture();
+    $this->get(route('rider.attendance.history'))->assertRedirect(route('rider.login'));
+    $this->actingAs($rider)->get(route('rider.attendance'))->assertOk()->assertSee(route('rider.attendance.history'))->assertDontSee('label="History from"', false)->assertDontSee('id="from"', false)->assertDontSee('id="attendance-history"', false);
+    $this->get(route('rider.attendance.history'))->assertOk()->assertSee('Attendance History')->assertSee('History from')->assertSee('History through')->assertSee('View history')->assertSee('Back to Attendance')->assertDontSee('Shift remark (optional)');
+    $rider->syncRoles([]);
+    $this->get(route('rider.attendance.history'))->assertForbidden();
+});

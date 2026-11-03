@@ -3,6 +3,7 @@
 use App\Http\Controllers\AttendanceExportController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\SessionController;
+use App\Http\Controllers\LeaveDocumentController;
 use App\Http\Controllers\LetterDownloadController;
 use App\Http\Controllers\ProfilePhotoController;
 use App\Http\Controllers\ReportDownloadController;
@@ -12,6 +13,7 @@ use App\Livewire\Account\Settings;
 use App\Livewire\Admin\Assignments\Editor as AssignmentEditor;
 use App\Livewire\Admin\Assignments\Index as AssignmentIndex;
 use App\Livewire\Admin\Attendance\Configuration;
+use App\Livewire\Admin\Attendance\LeaveManagement;
 use App\Livewire\Admin\Calls\FollowUps;
 use App\Livewire\Admin\Communications\Letters;
 use App\Livewire\Admin\Communications\Preferences;
@@ -30,6 +32,7 @@ use App\Livewire\Admin\Staff\Show as StaffShow;
 use App\Livewire\Admin\Tasks\Allocation;
 use App\Livewire\Rider\Attendance;
 use App\Livewire\Rider\Home as RiderHome;
+use App\Livewire\Rider\LeaveRequests;
 use App\Livewire\Rider\Notifications;
 use App\Livewire\Rider\Profile;
 use App\Livewire\Rider\Tasks\Manage;
@@ -136,6 +139,17 @@ Route::middleware(['auth', 'auth.session'])->group(function (): void {
     });
     Route::livewire('/rider/notifications', Notifications::class)->middleware('can:use-rider-interface')->name('rider.notifications');
     Route::livewire('/rider/attendance', Attendance::class)->middleware(['can:use-rider-interface', 'can:attendance.view_own'])->name('rider.attendance');
+    Route::livewire('/rider/attendance/history', Attendance::class)->middleware(['can:use-rider-interface', 'can:attendance.view_own'])->name('rider.attendance.history');
+    Route::middleware(['can:use-rider-interface', 'can:attendance.view_own'])->prefix('rider/attendance/leave')->name('rider.leave.')->group(function (): void {
+        Route::livewire('/', LeaveRequests::class)->name('index');
+        Route::livewire('/apply', LeaveRequests::class)->name('apply');
+        Route::livewire('/{leave}', LeaveRequests::class)->whereUuid('leave')->name('show');
+    });
+    Route::middleware(['can:admin.access', 'can:attendance.view_all'])->prefix('admin/leave')->name('admin.leave.')->group(function (): void {
+        Route::livewire('/', LeaveManagement::class)->name('index');
+        Route::livewire('/{leave}', LeaveManagement::class)->whereUuid('leave')->name('show');
+    });
+    Route::get('/leave/{leave}/document', LeaveDocumentController::class)->whereUuid('leave')->middleware('throttle:30,1')->name('leave.document');
     Route::livewire('/attendance', Attendance::class)->middleware('can:attendance.view_own')->name('attendance.own');
     Route::middleware(['can:use-rider-interface', 'can:tasks.view'])->prefix('rider/tasks')->name('rider.tasks.')->group(function (): void {
         Route::livewire('/manage', Manage::class)->middleware('can:tasks.submit')->name('manage');
