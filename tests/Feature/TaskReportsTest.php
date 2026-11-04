@@ -101,7 +101,8 @@ test('CSV export freezes values encrypts storage and handles duplicate queue del
     $job->refresh();
     expect($job->status)->toBe('completed')->and(Document::query()->where('owner_type', 'export')->count())->toBe(1);
     $snapshot = $job->snapshot_ciphertext;
-    expect($snapshot['rows'][0]['batch'])->toBe($oldBatch);
+    expect($snapshot['rows'][0]['batch'])->toBe($oldBatch)->and($snapshot['rows'][0]['assignment_id'])->toBe($task->batch->refresh()->assignment_code)
+        ->and($snapshot['columns']['assignment_id'])->toBe('Assignment ID');
     $doc = $job->artifact;
     expect(Storage::disk('s3')->get($doc->object_key))->not->toContain($task->public_id);
     expect($manage->bytes($doc))->toContain($task->public_id);

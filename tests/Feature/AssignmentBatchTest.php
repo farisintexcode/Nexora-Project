@@ -177,7 +177,7 @@ test('register applies draft filters on demand combines them with search and cou
         ->assertViewHas('batches', fn ($batches): bool => $batches->firstWhere('id', $counted->id)->only(['upload_count', 'assigned_count', 'completed_count', 'payment_update_count']) === ['upload_count' => 3, 'assigned_count' => 1, 'completed_count' => 0, 'payment_update_count' => 1])
         ->set('draft.from', '2026-11-01')->assertSet('from', '')->assertSee('Counted package')
         ->call('applyFilters')->assertSet('from', '2026-11-01')->assertSee('Later package')->assertDontSee('Counted package')
-        ->set('query', (string) $counted->refresh()->register_no)->assertSee('No assignments found')
+        ->set('query', $counted->refresh()->assignment_code)->assertSee('No assignments found')
         ->call('resetAdvancedFilters')->assertSet('draft.from', '')->assertSee('Counted package')->assertDontSee('Later package')
         ->call('resetFilters')->assertSet('query', '')->assertSee('Later package')
         ->set('sort', 'oldest')->assertSeeInOrder(['Counted package', 'Later package'])
@@ -185,7 +185,8 @@ test('register applies draft filters on demand combines them with search and cou
         ->set('perPage', '10')->assertViewHas('batches', fn ($batches): bool => $batches->perPage() === 10);
 });
 
-test('register numbers run per status and change only when the status changes', function (): void {
+test('assignment codes run in one sequence across active and archived and never change through the lifecycle', function (): void {
+    $this->travelTo('2026-11-04 04:00:00');
     $user = staffManager();
     $user->givePermissionTo('assignments.reopen');
     $save = app(SaveAssignmentBatch::class);
@@ -195,34 +196,83 @@ test('register numbers run per status and change only when the status changes', 
     $first = $create('First package');
     $archivedOnCreate = $create('Archived package', 'archived');
     $alpha = $create('Alpha package');
-    $beta = $create('Beta package');
-    expect([$first->register_no, $archivedOnCreate->register_no, $alpha->register_no, $beta->register_no])->toBe([1, 1, 2, 3]);
+    expect([$first->assignment_code, $archivedOnCreate->assignment_code, $alpha->assignment_code])->toBe(['ASG-26-0001', 'ASG-26-0002', 'ASG-26-0003']);
 
-    $this->actingAs($user)->get(route('admin.assignments.edit', $alpha))->assertOk();
+    $this->actingAs($user)->get(route('admin.assignments.edit', $alpha))->assertOk()->assertSee('ASG-26-0003');
     $alpha = $save->handle($user, batchInput(['name' => 'Renamed package', 'external_reference' => '']), $alpha, $alpha->lock_version);
-    expect($alpha->register_no)->toBe(2);
+    expect($alpha->assignment_code)->toBe('ASG-26-0003');
 
+    $before = $alpha->getRawOriginal();
     $alpha = $change->handle($user, $alpha, 'archived', 'Work package finished', $alpha->lock_version);
-    expect($alpha->register_no)->toBe(2)->and($beta->fresh()->register_no)->toBe(3);
-    expect($create('Gamma package')->register_no)->toBe(4);
+    expect($alpha->assignment_code)->toBe('ASG-26-0003')->and($alpha->archived_at)->not->toBeNull()->and($alpha->name)->toBe('Renamed package')
+        ->and(array_keys(array_diff_assoc($alpha->getRawOriginal(), $before)))->toEqualCanonicalizing(['status', 'archived_at', 'lock_version']);
+    expect($create('Gamma package')->assignment_code)->toBe('ASG-26-0004');
 
     $alpha = $change->handle($user, $alpha, 'active', 'Approved reopening for new work', $alpha->lock_version);
-    expect($alpha->register_no)->toBe(5);
-    expect($change->handle($user, $alpha, 'archived', 'Finished again', $alpha->lock_version)->register_no)->toBe(3);
+    expect($alpha->assignment_code)->toBe('ASG-26-0003')->and($alpha->archived_at)->toBeNull();
 });
 
-test('register numbers cannot be overwritten and archived numbers repeat without clashing in the register', function (): void {
+test('assignment codes restart each year and are not reused after a deletion', function (): void {
+    $this->travelTo('2026-12-31 15:59:00');
+    $lastOf2026 = AssignmentBatch::factory()->create()->refresh();
+    $this->travelTo('2026-12-31 16:01:00');
+    $firstOf2027 = AssignmentBatch::factory()->create()->refresh();
+    $secondOf2027 = AssignmentBatch::factory()->create()->refresh();
+    expect([$lastOf2026->assignment_code, $firstOf2027->assignment_code, $secondOf2027->assignment_code])->toBe(['ASG-26-0001', 'ASG-27-0001', 'ASG-27-0002']);
+
+    DB::table('assignment_batches')->where('id', $secondOf2027->id)->delete();
+    expect(AssignmentBatch::factory()->create()->refresh()->assignment_code)->toBe('ASG-27-0003');
+});
+
+test('only the database issues assignment codes and an issued code cannot be changed', function (): void {
+    $this->travelTo('2026-11-04 04:00:00');
+    $batch = AssignmentBatch::factory()->create(['assignment_code' => 'ASG-99-9999'])->refresh();
+    expect($batch->assignment_code)->toBe('ASG-26-0001');
+
+    expect(fn () => DB::transaction(fn () => DB::table('assignment_batches')->where('id', $batch->id)->update(['assignment_code' => 'ASG-26-0099'])))->toThrow(QueryException::class);
+    expect(fn () => DB::transaction(fn () => $batch->forceFill(['assignment_code' => 'ASG-26-0099'])->save()))->toThrow(QueryException::class);
+    expect($batch->refresh()->assignment_code)->toBe('ASG-26-0001');
+});
+
+test('a rolled back assignment issues no code and numbers keep their full width past 9999', function (): void {
+    $this->travelTo('2026-11-04 04:00:00');
+    AssignmentBatch::factory()->create();
+    try {
+        DB::transaction(function (): void {
+            AssignmentBatch::factory()->create();
+            throw new RuntimeException('Synthetic failure');
+        });
+    } catch (RuntimeException) {
+    }
+    expect(AssignmentBatch::factory()->create()->refresh()->assignment_code)->toBe('ASG-26-0002');
+
+    DB::table('assignment_code_counters')->where('year', 2026)->update(['last_no' => 9999]);
+    expect(AssignmentBatch::factory()->create()->refresh()->assignment_code)->toBe('ASG-26-10000');
+});
+
+test('admin screens show the assignment code instead of the primary key', function (): void {
     $user = staffManager();
-    $active = AssignmentBatch::factory()->create(['name' => 'Active package', 'external_reference' => null]);
-    AssignmentBatch::factory()->create(['name' => 'Other active package', 'external_reference' => null]);
+    $batch = AssignmentBatch::factory()->create(['name' => 'Labelled package'])->refresh();
+    $task = Task::factory()->create(['assignment_batch_id' => $batch->id, 'debt_account_id' => DebtAccount::factory()->create()->id]);
+    $label = $batch->assignment_code.' - Labelled package';
+
+    foreach ([route('admin.tasks.index'), route('admin.tasks.show', $task), route('admin.tasks.create'), route('admin.tasks.allocate'), route('admin.imports.index'), route('admin.reports.index'), route('admin.verification.index')] as $screen) {
+        $this->actingAs($user)->get($screen)->assertOk()->assertSee($label)->assertDontSee($batch->id.' - Labelled package');
+    }
+});
+
+test('both register tabs show the permanent code and search finds it in full or in part', function (): void {
+    $this->travelTo('2026-11-04 04:00:00');
+    $user = staffManager();
+    AssignmentBatch::factory()->create(['name' => 'Active package', 'external_reference' => null]);
+    AssignmentBatch::factory()->create(['name' => 'Other package', 'external_reference' => null]);
     AssignmentBatch::factory()->create(['name' => 'Archived package', 'external_reference' => null, 'status' => 'archived', 'archived_at' => now()]);
 
-    DB::table('assignment_batches')->where('id', $active->id)->update(['register_no' => 99]);
-    expect($active->refresh()->register_no)->toBe(1);
-
     Livewire::actingAs($user)->test(Index::class)
-        ->set('query', '1')->assertSee('Active package')->assertDontSee('Other active package')->assertDontSee('Archived package')
-        ->set('status', 'archived')->assertSee('Archived package')->assertDontSee('Active package')
+        ->assertSee('ASG-26-0001')->assertSee('ASG-26-0002')->assertDontSee('ASG-26-0003')
+        ->set('query', 'asg-26-0001')->assertSee('Active package')->assertDontSee('Other package')
+        ->set('query', '0002')->assertSee('Other package')->assertDontSee('Active package')
+        ->set('query', '')->set('status', 'archived')->assertSee('ASG-26-0003')->assertSee('Archived package')->assertDontSee('ASG-26-0001')
         ->set('query', '99999999999999999999')->assertSee('No assignments found');
 });
 

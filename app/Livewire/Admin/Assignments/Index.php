@@ -143,13 +143,13 @@ class Index extends Component
             $batches->whereRaw('false');
         } elseif ($term !== '') {
             $literal = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term).'%';
-            $batches->where(fn ($q) => $q->where('name', 'ilike', $literal)->orWhere('external_reference', 'ilike', $literal)->when(ctype_digit($term) && strlen($term) < 10, fn ($q) => $q->orWhere('register_no', (int) $term)));
+            $batches->where(fn ($q) => $q->where('name', 'ilike', $literal)->orWhere('external_reference', 'ilike', $literal)->orWhere('assignment_code', 'ilike', $literal));
         }
         match ($this->sort) {
-            'oldest' => $batches->orderBy('register_no'),
+            'oldest' => $batches->orderBy('id'),
             'name', 'name_asc' => $batches->orderBy('name')->orderBy('id'),
             'name_desc' => $batches->orderByDesc('name')->orderByDesc('id'),
-            default => $batches->orderByDesc('register_no'),
+            default => $batches->orderByDesc('id'),
         };
         $batches->withCount([
             'tasks as upload_count',

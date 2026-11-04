@@ -36,7 +36,7 @@ class Home extends Component
 
         $progress = $taskProgress->forUser(Auth::user());
         $assignments = $progress === null ? collect() : AssignmentBatch::query()->where('status', 'active')
-            ->orderByDesc('id')->get(['id', 'public_id', 'name', 'external_reference']);
+            ->orderByDesc('id')->get(['id', 'public_id', 'assignment_code', 'name', 'external_reference']);
         $selectedAssignment = $assignments->firstWhere('public_id', $this->assignment);
         $report = $selectedAssignment === null ? $progress : $taskProgress->forUser(Auth::user(), $selectedAssignment->id, null);
 

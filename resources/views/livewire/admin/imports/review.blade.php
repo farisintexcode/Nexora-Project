@@ -21,7 +21,7 @@
         @endphp
         <section aria-label="Upload details" class="grid gap-4">
             @if($nextStep !== '')<p role="status" class="rounded-xl bg-brand-soft p-4 text-sm">{{ $nextStep }}</p>@endif
-            <dl class="divide-y divide-ink-200 border-y border-ink-200 text-sm">@foreach(['Excel File Name'=>$batch->source?->original_filename,'Assignment'=>$batch->assignment?->name,'Uploaded by'=>$batch->uploader?->name,'Uploaded on'=>$batch->created_at->timezone('Asia/Kuala_Lumpur')->format('d M Y, H:i')] as $detail=>$value)<div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4"><dt class="text-ink-500">{{ $detail }}</dt><dd class="break-words font-semibold">{{ $value ?? '—' }}</dd></div>@endforeach</dl>
+            <dl class="divide-y divide-ink-200 border-y border-ink-200 text-sm">@foreach(['Excel File Name'=>$batch->source?->original_filename,'Assignment'=>$batch->assignment ? $batch->assignment->assignment_code.' - '.$batch->assignment->name : null,'Uploaded by'=>$batch->uploader?->name,'Uploaded on'=>$batch->created_at->timezone('Asia/Kuala_Lumpur')->format('d M Y, H:i')] as $detail=>$value)<div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4"><dt class="text-ink-500">{{ $detail }}</dt><dd class="break-words font-semibold">{{ $value ?? '—' }}</dd></div>@endforeach</dl>
         </section>
     @elseif($tab==='mapping')
         @if($mappings->isEmpty())<x-empty-state icon="upload" title="No mapping prepared" message="The columns appear here once this file has been prepared." />@else

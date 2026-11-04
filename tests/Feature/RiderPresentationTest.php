@@ -46,6 +46,18 @@ test('Rider assignment summaries count only currently allocated tasks and detail
     $this->get(route('rider.assignments.show', $task->batch->public_id))->assertOk()->assertSee($task->customer->display_name_ciphertext)->assertDontSee($other->customer->display_name_ciphertext);
 });
 
+test('Rider screens show the assignment code with the assignment name', function (): void {
+    [$rider,$task] = riderPresentationFixture();
+    $code = $task->batch->refresh()->assignment_code;
+    $label = $code.' - '.$task->batch->name;
+    $this->actingAs($rider)->get(route('rider.home'))->assertOk()->assertSee($label);
+    $this->get(route('rider.tasks.index'))->assertOk()->assertSee($label);
+    $this->get(route('rider.tasks.show', $task))->assertOk()->assertSee($label);
+    $this->get(route('rider.tasks.manage'))->assertOk()->assertSee($label);
+    $this->get(route('rider.assignments.index'))->assertOk()->assertSee($code);
+    $this->get(route('rider.assignments.show', $task->batch->public_id))->assertOk()->assertSee($code);
+});
+
 test('Rider cannot open a foreign or unallocated assignment', function (): void {
     [$rider,$task] = riderPresentationFixture();
     $foreign = Task::factory()->create();

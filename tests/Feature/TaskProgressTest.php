@@ -117,6 +117,16 @@ test('assignment progress lists active assignments with unfinished work, soonest
     Livewire::actingAs($user)->test(Home::class)->assertSee('Assignment progress')->assertSee('Past due')->assertDontSee('Finished batch');
 });
 
+test('the dashboard shows the assignment code instead of the primary key', function (): void {
+    $user = staffManager();
+    $batch = AssignmentBatch::factory()->create(['name' => 'Labelled batch'])->refresh();
+    progressTask($batch);
+    $label = $batch->assignment_code.' - Labelled batch';
+
+    Livewire::actingAs($user)->test(Home::class)->assertSeeInOrder([$label, 'Assignment summary report', $label])->assertDontSee($batch->id.' - Labelled batch')
+        ->set('assignment', $batch->public_id)->assertSeeInOrder(['Assignment summary report', $label, $label]);
+});
+
 test('admin access without task permission does not show task progress', function (): void {
     $user = User::factory()->create();
     $user->givePermissionTo('admin.access');
