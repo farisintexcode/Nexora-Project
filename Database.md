@@ -90,7 +90,7 @@ Debtors represent parties; owner, tenant, billing customer and occupier are acco
 | financial_updates | FinancialUpdate | M08 | E11 Payment Update; review P |
 | financial_snapshots | FinancialSnapshot | M08 | E14 monetary fields |
 | documents | Document | M04/M06/M09/M01 | E14 photos/E16 categories/E21 avatar; metadata P |
-| export_jobs | ExportJob | M09 | E16 export controls; async structure P |
+| export_jobs | ExportJob | — | Removed November 2026; reports download directly |
 | bulk_operations | BulkOperation | M05 | E12/E13 controls; durable job P |
 | bulk_operation_items | BulkOperationItem | M05 | P |
 | databank_sources | DatabankSource | M11 | E20; source contract U/P |
@@ -1137,6 +1137,8 @@ erDiagram
 <a id="table-export_jobs"></a>
 
 ## Table: export_jobs
+
+> **Removed (November 2026).** This table no longer exists. Reports download immediately and are not stored. The text below is kept as history only.
 
 - **Purpose / description:** Authorized report/image snapshot request and artifact state.
 - **Module / evidence:** M09; E16 export controls; async structure P. Physical design P.
@@ -2302,6 +2304,8 @@ Private-letter implementation note: communications.requested_by is a nullable FK
 Nexora branding amendment (27 October 2026): The official product name is Nexora, using the supplied full wordmark and icon artwork with white #FFFFFF, navy #023047 and orange #FB8500. Earlier DCMS/DebtOps product-name references are historical. This presentation-only amendment does not rename schema, routes, permission keys, integration tags, approved legal notices, or existing records.
 
 M09 operational task-report increment (27 October 2026): implement UI27/UI41 for task, rider_assignment, rider_performance, completed_task and verification families using canonical TaskAccess portfolio scope plus reports.view/tasks.view/tasks.monitor; verification additionally requires tasks.verify. CSV/PDF require reports.export. Filters: task-created MYT date range, client, assignment batch, current Rider staff number, work status and exact IWK reference. Approved initial columns are operational identifiers/status/dates/flags, masked account reference and staff number, without names, contacts, addresses, financial amounts or source workbook contents. Rider performance counts currently allocated tasks and verified/completed tasks only, never submissions as completed or balances as receipts. Full customer/attendance/visit/communication/import families, historical allocation performance, legacy 88-column parity, image bundles and presets remain explicit follow-on scope, not fabricated outputs.
+> **November 2026:** Reports now download immediately from the Report page. `export_jobs`, its queue, stored report files and signed download links were removed; the text below is kept as history only.
+
 Freeze bounded (maximum 5,000 tasks) source IDs and projected values together in a repeatable-read transaction; exports create a new clearly timed snapshot. Store encrypted snapshot data in canonical export_jobs, publish via durable outbox to Redis exports, generate escaped CSV or trusted Dompdf PDF, and store encrypted private S3 artifacts through documents. Recheck current requester permissions and every source task's portfolio at execution and signed user-bound download. Artifact expiry is 24 hours, configurable, with five-minute links and audited request/generation/download. Denied or changed scope cancels output; lost storage/retries never report success or replace completed files. No role grants or existing workflow changes.
 
 M09 export_jobs materialization: add encrypted snapshot_ciphertext (task public IDs, allowlisted columns, rows and same-snapshot totals) and snapshot_digest (SHA-256 of canonical encoded snapshot), without parallel per-family tables. Criteria JSON contains only validated identifiers/enums/dates/columns. artifact_document_id references documents; owner_type=export is registered in the existing morph map. status/format/family/count checks, requester/batch/document FKs and requester/status/created indexes enforce the documented lifecycle.

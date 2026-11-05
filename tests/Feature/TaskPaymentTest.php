@@ -245,16 +245,25 @@ test('a tampered preview cannot switch on the payment confirmation', function ()
     expect($task->refresh()->work_status)->toBe('submitted');
 });
 
-test('payment claims cannot be approved in bulk from the queue', function (): void {
+test('the verification queue only lists submissions and each one is reviewed on its own page', function (): void {
     [$task, $rider, $admin] = paymentTask();
     $submission = paymentSubmission($rider, $task, '1000.00');
 
     Livewire::actingAs($admin)->test(VerificationQueue::class)
         ->assertSee('Payment claim RM 1,000.00')
-        ->set('selected', [$submission->public_id])
-        ->call('prepareReview')
-        ->assertSee('Open this submission on its own');
-    expect($task->refresh()->work_status)->toBe('submitted');
+        ->assertSeeHtml(route('admin.verification.show', $submission))
+        ->assertSee('Review submission')
+        ->assertDontSee('Review selected submissions')
+        ->assertDontSee('Prepare review preview')
+        ->assertDontSee('Select submission')
+        ->assertDontSeeHtml('wire:submit="prepareReview"');
+
+    expect(method_exists(VerificationQueue::class, 'prepareReview'))->toBeFalse()
+        ->and(method_exists(VerificationQueue::class, 'confirmReview'))->toBeFalse()
+        ->and($task->refresh()->work_status)->toBe('submitted');
+
+    Livewire::actingAs($admin)->test(VerificationShow::class, ['submission' => $submission])
+        ->assertSeeHtml('Approve / Verify & complete');
 });
 
 test('the review page shows all three figures and applies the decision', function (): void {

@@ -3,7 +3,8 @@
 /** Plan.md M04: bounded intake defaults, reviewed mappings, private storage and fail-closed scanning. */
 return [
     'disk' => env('IMPORT_DISK', 'local'),
-    'scan_required' => (bool) env('IMPORT_SCAN_REQUIRED', true),
+    // Fail closed everywhere except a local development computer, which usually has no ClamAV. Production always scans.
+    'scan_required' => (bool) env('IMPORT_SCAN_REQUIRED', env('APP_ENV', 'production') !== 'local'),
     'max_kilobytes' => (int) env('IMPORT_MAX_KILOBYTES', 10240),
     'max_rows' => (int) env('IMPORT_MAX_ROWS', 2000),
     'max_columns' => 100,

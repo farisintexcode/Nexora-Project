@@ -242,7 +242,7 @@ test('reassignment denies editing and proof while retaining only own masked subm
     $submission = executionSubmit($rider, $task);
     $task->currentAllocation->released_at = now();
     $task->currentAllocation->save();
-    $this->get(route('proof.show', $document))->assertNotFound();
+    $this->actingAs($rider)->get(route('proof.show', $document))->assertNotFound();
     $this->get(route('rider.tasks.history', $submission))->assertOk()->assertDontSee('Synthetic inspection performed')->assertDontSee($task->account->account_number);
     [$other] = executionFixture();
     $this->actingAs($other)->get(route('rider.tasks.history', $submission))->assertNotFound();

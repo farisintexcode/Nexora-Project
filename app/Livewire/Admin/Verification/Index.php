@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Admin\Verification;
 
-use App\Actions\Tasks\ReviewSubmission;
 use App\Models\AssignmentBatch;
 use App\Models\Staff;
 use App\Models\TaskSubmission;
@@ -13,7 +12,6 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -42,24 +40,12 @@ class Index extends Component
 
     public string $query = '';
 
-    public array $selected = [];
-
-    public string $decision = 'approved';
-
-    public string $reason = '';
-
     /**
      * Unapplied filter panel values; they reach the query only through applyFilters().
      *
      * @var array{rider: string, from: string, until: string}
      */
     public array $draft = ['rider' => '', 'from' => '', 'until' => ''];
-
-    #[Locked]
-    public array $preview = [];
-
-    #[Locked]
-    public array $results = [];
 
     public function mount(): void
     {
@@ -72,12 +58,7 @@ class Index extends Component
         if (str_starts_with($property, 'draft')) {
             return;
         }
-        $this->preview = [];
-        $this->results = [];
-        if (! in_array($property, ['selected', 'reason', 'decision']) && ! str_starts_with($property, 'selected.')) {
-            $this->selected = [];
-            $this->resetPage();
-        }
+        $this->resetPage();
         if ($property === 'query') {
             session()->put('verification_search.'.Auth::id(), mb_substr($this->query, 0, 100));
         }
@@ -93,9 +74,6 @@ class Index extends Component
     private function filtersChanged(): void
     {
         $this->syncDraft();
-        $this->preview = [];
-        $this->results = [];
-        $this->selected = [];
         $this->resetPage();
     }
 
@@ -119,22 +97,6 @@ class Index extends Component
         $this->reset([...self::ADVANCED_FILTERS, 'query', 'status', 'batch']);
         session()->forget('verification_search.'.Auth::id());
         $this->filtersChanged();
-    }
-
-    public function prepareReview(ReviewSubmission $review): void
-    {
-        $this->preview = $review->prepare(Auth::user(), $this->selected, $this->decision, $this->reason);
-        $this->results = [];
-        $this->resetErrorBag();
-    }
-
-    public function confirmReview(ReviewSubmission $review): void
-    {
-        $this->results = $review->confirm(Auth::user(), $this->preview);
-        $this->preview = [];
-        $this->selected = [];
-        $this->reason = '';
-        session()->flash('status', 'Verification committed for '.count($this->results).' selected submission(s).');
     }
 
     public function render(): View

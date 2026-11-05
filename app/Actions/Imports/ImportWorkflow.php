@@ -24,6 +24,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -144,13 +145,32 @@ class ImportWorkflow
             } catch (\Throwable $error) {
                 $batch->source()->update(['scan_status' => $error->getMessage() === 'malware_detected' ? 'rejected' : 'error']);
                 $batch->status = 'failed';
-                $batch->error_summary = 'Source scan or workbook validation failed. No records were imported.';
+                $batch->error_summary = $this->scanFailureReason($error);
+                Log::warning('Import scan failed.', ['import_id' => $batch->public_id, 'exception_type' => $error::class, 'reason' => preg_match('/^[a-z_]+$/', $error->getMessage()) ? $error->getMessage() : 'other']);
                 $batch->completed_at = now();
             }
             $batch->save();
             $this->audit->record($actor, 'import_scan_finished', $batch->public_id, ['status' => $batch->status], module: 'M04', entityType: 'import');
         });
         $this->proposeMapping($id);
+    }
+
+    /** Says what actually stopped the file, so a setup problem is not mistaken for a bad workbook. */
+    private function scanFailureReason(\Throwable $error): string
+    {
+        if ($error->getMessage() === 'malware_detected') {
+            return 'This file failed the malware scan.';
+        }
+        if (str_starts_with($error->getMessage(), 'scan')) {
+            return app()->isProduction()
+                ? 'The malware scanner is not reachable. Contact your administrator.'
+                : 'The malware scanner is not reachable. Start ClamAV, or on a development computer set IMPORT_SCAN_REQUIRED=false in .env and run php artisan config:clear.';
+        }
+        if (! class_exists(\ZipArchive::class)) {
+            return 'The PHP zip extension is not enabled, so Excel files cannot be read. Enable zip in php.ini and restart the web server.';
+        }
+
+        return 'This workbook could not be read. Use a valid XLSX or XLS file with no macros, formulas, external links or password.';
     }
 
     /** Detects mappings for the first sheet straight after the scan; a workbook that cannot be mapped yet stays on the sheet and header form. */

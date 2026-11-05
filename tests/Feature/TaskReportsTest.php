@@ -1,36 +1,32 @@
 <?php
 
 use App\Actions\Reports\ManageReports;
-use App\Jobs\GenerateReport;
 use App\Livewire\Admin\Reports\Index;
 use App\Models\AssignmentBatch;
 use App\Models\AuditLog;
 use App\Models\DebtAccount;
 use App\Models\Document;
-use App\Models\OutboxEvent;
 use App\Models\Task;
 use App\Models\TaskAllocation;
 use App\Models\User;
 use App\Services\Reports\ReportRenderer;
 use App\Services\Reports\TaskReports;
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
-use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(LazilyRefreshDatabase::class);
 beforeEach(function (): void {
     $this->withoutVite();
     $this->seed(DatabaseSeeder::class);
-    Storage::fake('s3');
-    config(['filesystems.disks.s3.bucket' => 'synthetic-reports']);
 });
 function reportFixture(): array
 {
@@ -87,58 +83,6 @@ test('Rider assignment and performance reports use only currently allocated task
     expect($reports->snapshot($actor, reportCriteria(['family' => 'rider_assignment']))['rows'])->toBe([]);
 });
 
-test('CSV export freezes values encrypts storage and handles duplicate queue delivery once', function () {
-    [$actor,$task] = reportFixture();
-    $manage = app(ManageReports::class);
-    $job = $manage->request($actor, reportCriteria(), 'csv');
-    $event = OutboxEvent::query()->where('event_type', 'report.generate')->sole();
-    expect(DB::table('export_jobs')->value('snapshot_ciphertext'))->not->toContain($task->public_id);
-    $oldBatch = $task->batch->name;
-    $task->batch->forceFill(['name' => 'New mutable assignment name'])->save();
-    $worker = new GenerateReport($event->id);
-    $worker->handle($manage);
-    $worker->handle($manage);
-    $job->refresh();
-    expect($job->status)->toBe('completed')->and(Document::query()->where('owner_type', 'export')->count())->toBe(1);
-    $snapshot = $job->snapshot_ciphertext;
-    expect($snapshot['rows'][0]['batch'])->toBe($oldBatch);
-    $doc = $job->artifact;
-    expect(Storage::disk('s3')->get($doc->object_key))->not->toContain($task->public_id);
-    expect($manage->bytes($doc))->toContain($task->public_id);
-});
-
-test('private downloads require signature owner and expiry and detect tampering', function () {
-    [$actor] = reportFixture();
-    $manage = app(ManageReports::class);
-    $job = $manage->request($actor, reportCriteria(), 'csv');
-    $manage->generate($job->id);
-    $job->refresh();
-    $url = URL::temporarySignedRoute('admin.reports.download', now()->addMinutes(5), ['exportJob' => $job->public_id, 'user' => $actor->id]);
-    $this->actingAs($actor)->get($url)->assertOk()->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
-    $this->get(route('admin.reports.download', $job))->assertForbidden();
-    $other = staffManager();
-    $this->actingAs($other)->get($url)->assertForbidden();
-    $this->actingAs($actor);
-    Storage::disk('s3')->put($job->artifact->object_key, Crypt::encryptString('tampered'));
-    $this->get($url)->assertStatus(503);
-    $this->travel(25)->hours();
-    $url = URL::temporarySignedRoute('admin.reports.download', now()->addMinutes(5), ['exportJob' => $job->public_id, 'user' => $actor->id]);
-    $this->get($url)->assertGone();
-});
-
-test('queued exports cancel after permission revocation and failed exports require explicit authorized retry', function () {
-    [$actor] = reportFixture();
-    $manage = app(ManageReports::class);
-    $job = $manage->request($actor, reportCriteria(), 'csv');
-    $manage->failed($job->id);
-    expect($job->refresh()->status)->toBe('failed');
-    $manage->retry($actor, $job);
-    expect($job->refresh()->status)->toBe('queued')->and(OutboxEvent::query()->where('event_type', 'report.generate')->count())->toBe(2);
-    $actor->syncRoles([]);
-    $manage->generate($job->id);
-    expect($job->refresh()->status)->toBe('cancelled')->and(Document::query()->where('owner_type', 'export')->count())->toBe(0);
-});
-
 test('renderer escapes spreadsheet formula injection and produces trusted PDF', function () {
     [$actor] = reportFixture();
     $snapshot = app(TaskReports::class)->snapshot($actor, reportCriteria());
@@ -147,40 +91,55 @@ test('renderer escapes spreadsheet formula injection and produces trusted PDF', 
     expect($renderer->render($snapshot, 'csv'))->toContain("' =HYPERLINK")->and($renderer->render($snapshot, 'pdf'))->toStartWith('%PDF-');
 });
 
-test('outbox publishes exports on Redis and Livewire cannot bypass export authorization', function () {
+test('livewire cannot bypass export authorization', function () {
     [$actor] = reportFixture();
-    $this->actingAs($actor);
-    $manage = app(ManageReports::class);
-    $manage->request($actor, reportCriteria(), 'csv');
-    Queue::fake();
-    $this->artisan('reports:dispatch')->assertSuccessful();
-    Queue::assertPushedOn('exports', GenerateReport::class);
     $actor->syncRoles([]);
     $actor->givePermissionTo(['admin.access', 'tasks.view', 'tasks.monitor', 'reports.view']);
-    Livewire::actingAs($actor)->test(Index::class)->call('preview')->assertSee('Matching tasks')->call('requestExport', 'csv')->assertForbidden();
+    Livewire::actingAs($actor)->test(Index::class)->call('preview')->assertSee('Matching tasks')->call('downloadReport', 'csv')->assertForbidden();
 });
 
-test('PDF export uses the canonical artifact pipeline and database rejects snapshot rewrites', function () {
+test('report page downloads csv and pdf immediately without queueing or storing anything', function (string $kind): void {
     [$actor] = reportFixture();
-    $manage = app(ManageReports::class);
-    $job = $manage->request($actor, reportCriteria(), 'pdf');
-    expect(fn () => DB::transaction(fn () => DB::table('export_jobs')->where('id', $job->id)->update(['row_count' => 99])))->toThrow(QueryException::class);
-    $manage->generate($job->id);
-    $job->refresh();
-    expect($job->status)->toBe('completed')->and($manage->bytes($job->artifact))->toStartWith('%PDF-');
-    expect(fn () => DB::transaction(fn () => DB::table('export_jobs')->where('id', $job->id)->update(['status' => 'queued'])))->toThrow(QueryException::class);
+    Queue::fake();
+
+    Livewire::actingAs($actor)->test(Index::class)
+        ->call('preview')
+        ->assertSee('Download CSV')->assertSee('Download PDF')
+        ->assertDontSee('Queue CSV')->assertDontSee('Your report exports')
+        ->call('downloadReport', $kind)
+        ->assertHasNoErrors()
+        ->assertFileDownloaded();
+
+    Queue::assertNothingPushed();
+    expect(AuditLog::query()->where('action', 'report.downloaded')->count())->toBe(1);
+})->with(['csv', 'pdf']);
+
+test('downloaded report files contain the filtered rows and escape spreadsheet formulas', function (): void {
+    [$actor, $task] = reportFixture();
+    $task->batch->forceFill(['name' => '=Formula batch'])->save();
+
+    $csv = app(ManageReports::class)->download($actor, reportCriteria(), 'csv');
+    $pdf = app(ManageReports::class)->download($actor, reportCriteria(), 'pdf');
+
+    expect($csv['mime'])->toBe('text/csv')
+        ->and($csv['name'])->toEndWith('.csv')
+        ->and($csv['bytes'])->toContain($task->public_id)->toContain("'=Formula batch")
+        ->and($pdf['mime'])->toBe('application/pdf')
+        ->and($pdf['bytes'])->toStartWith('%PDF-');
+    expect(fn () => app(ManageReports::class)->download($actor, reportCriteria(), 'exe'))->toThrow(HttpException::class);
 });
 
-test('storage failure never creates a completed report and terminal failure is auditable', function (): void {
+test('the verification report cannot be downloaded without verification permission', function (): void {
     [$actor] = reportFixture();
-    $manage = app(ManageReports::class);
-    $job = $manage->request($actor, reportCriteria(), 'csv');
-    $disk = Mockery::mock(FilesystemAdapter::class);
-    $disk->shouldReceive('put')->once()->andReturn(false);
-    $disk->shouldReceive('delete')->once()->andReturn(true);
-    Storage::shouldReceive('disk')->with('s3')->andReturn($disk);
-    expect(fn () => $manage->generate($job->id))->toThrow(RuntimeException::class);
-    expect($job->refresh()->status)->toBe('queued')->and($job->artifact_document_id)->toBeNull();
-    $manage->failed($job->id);
-    expect($job->refresh()->status)->toBe('failed')->and(AuditLog::query()->where('action', 'report.failed')->where('entity_id', $job->public_id)->exists())->toBeTrue();
+    $actor->syncRoles([]);
+    $actor->givePermissionTo(['admin.access', 'tasks.view', 'tasks.monitor', 'reports.view', 'reports.export']);
+
+    expect(fn () => app(ManageReports::class)->download($actor, reportCriteria(['family' => 'verification']), 'csv'))->toThrow(AuthorizationException::class);
+});
+
+test('the old background export system is gone', function (): void {
+    expect(Schema::hasTable('export_jobs'))->toBeFalse()
+        ->and(Route::has('admin.reports.download'))->toBeFalse()
+        ->and(DB::table('reference_values')->whereIn('code', ['report_csv', 'report_pdf'])->exists())->toBeFalse()
+        ->and(fn () => Document::factory()->create(['owner_type' => 'export', 'owner_id' => 1]))->toThrow(QueryException::class);
 });

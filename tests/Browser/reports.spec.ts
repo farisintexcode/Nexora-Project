@@ -11,7 +11,7 @@ test('Admin previews scoped report families filters and queues a frozen export',
  await page.getByLabel('Report family',{exact:true}).selectOption('rider_performance');await page.getByRole('button',{name:'Preview report',exact:true}).click();await expect(page.getByRole('heading',{name:'Rider Performance preview',exact:true})).toBeVisible();await expect(page.getByRole('columnheader',{name:'Verified/completed tasks',exact:true})).toBeVisible();
  await page.getByRole('textbox',{name:'Task ID',exact:true}).fill('99999');await page.getByRole('button',{name:'Preview report',exact:true}).click();await expect(page.getByText('No matching tasks',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Reset filters',exact:true}).click();await page.getByRole('button',{name:'Preview report',exact:true}).click();
- await page.getByRole('button',{name:'Queue CSV',exact:true}).click();await page.getByRole('dialog',{name:'Queue CSV report?',exact:true}).getByRole('button',{name:'Confirm',exact:true}).click();await expect(page.getByText('Queued',{exact:true}).first()).toBeVisible();
+ const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download CSV',exact:true}).click();expect((await download).suggestedFilename()).toMatch(/^nexora-task-.*\.csv$/);
  for(const width of [320,430,768,1280]){await page.setViewportSize({width,height:850});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
  expect(errors).toEqual([]);await page.screenshot({path:'.local-tools/reports-'+test.info().project.name+'.png',fullPage:true});
 });

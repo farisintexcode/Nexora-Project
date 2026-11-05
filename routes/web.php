@@ -6,7 +6,6 @@ use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\LeaveDocumentController;
 use App\Http\Controllers\LetterDownloadController;
 use App\Http\Controllers\ProfilePhotoController;
-use App\Http\Controllers\ReportDownloadController;
 use App\Http\Controllers\SesNotificationController;
 use App\Http\Controllers\TaskProofController;
 use App\Livewire\Account\Settings;
@@ -87,7 +86,6 @@ Route::middleware(['auth', 'auth.session'])->group(function (): void {
     });
     Route::middleware(['can:admin.access', 'can:reports.view', 'can:tasks.view', 'can:tasks.monitor'])->group(function (): void {
         Route::livewire('/admin/reports', App\Livewire\Admin\Reports\Index::class)->name('admin.reports.index');
-        Route::get('/admin/reports/{exportJob}/download', ReportDownloadController::class)->whereUuid('exportJob')->middleware(['can:reports.export', 'signed', 'throttle:10,1'])->name('admin.reports.download');
     });
     Route::middleware(['can:admin.access', 'can:tasks.verify'])->prefix('admin/verification')->name('admin.verification.')->group(function (): void {
         Route::livewire('/', App\Livewire\Admin\Verification\Index::class)->name('index');

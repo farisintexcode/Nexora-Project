@@ -14,6 +14,7 @@ use App\Models\TaskAllocation;
 use App\Models\User;
 use App\Services\Tasks\CompletionChecklist;
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -85,7 +86,7 @@ test('a stale task or revoked permission blocks the entire batch', function (str
     try {
         $updates->apply($actor, $preview);
         $this->fail('An invalidated preview must not be applied.');
-    } catch (ValidationException|HttpException) {
+    } catch (ValidationException|HttpException|AuthorizationException) {
         expect(PropertyInspection::query()->count())->toBe(0);
     }
 })->with(['permission', 'version']);

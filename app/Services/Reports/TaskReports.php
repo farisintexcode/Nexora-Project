@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Services\Tasks\TaskIdSelection;
 use App\Support\Money;
 use Carbon\CarbonImmutable;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -15,7 +14,6 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /** M09/UI27: explicit operational projections; no financial or contact-data inference. */
 class TaskReports
@@ -135,23 +133,5 @@ class TaskReports
     private function collected(Task $task): int
     {
         return $task->balances->where('source_code', 'payment')->sum(fn ($entry) => $entry->paidCents() ?? 0);
-    }
-
-    public function stillAccessible(User $actor, array $snapshot): bool
-    {
-        $actor = User::query()->find($actor->id);
-        if (! $actor) {
-            return false;
-        }
-        try {
-            $this->authorize($actor, true);
-            if ($snapshot['criteria']['family'] === 'verification') {
-                Gate::forUser($actor)->authorize('tasks.verify');
-            }
-
-            return Task::query()->whereIn('public_id', $snapshot['task_ids'])->count() === count($snapshot['task_ids']);
-        } catch (AuthorizationException|HttpException) {
-            return false;
-        }
     }
 }

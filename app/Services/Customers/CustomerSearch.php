@@ -8,6 +8,13 @@ use LogicException;
 /** Database.md debtors.search_tokens: keyed prefixes, exact identifier/contact lookup. */
 class CustomerSearch
 {
+    public static function isConfigured(): bool
+    {
+        $key = base64_decode((string) config('dcms.search_key'), true);
+
+        return $key !== false && strlen($key) >= 32;
+    }
+
     public function token(string $kind, string $value): string
     {
         $key = base64_decode((string) config('dcms.search_key'), true);
