@@ -35,7 +35,7 @@ Derived tracking index only; Database.md remains authoritative for every field, 
 | [financial_updates](../Database.md#table-financial_updates) | FinancialUpdate | M08 | Not built |
 | [financial_snapshots](../Database.md#table-financial_snapshots) | FinancialSnapshot | M08 | Implemented |
 | [documents](../Database.md#table-documents) | Document | M04/M06/M09/M01/M14 | Private source/proof/letter artifacts implemented; reporting targets remain gated |
-| [export_jobs](../Database.md#table-export_jobs) | ExportJob | M09 | Planned |
+| [export_jobs](../Database.md#table-export_jobs) | ExportJob | — | Removed; reports download directly |
 | [bulk_operations](../Database.md#table-bulk_operations) | BulkOperation | M05 | M05 implemented; execution/review extensions follow in M06/M07 |
 | [bulk_operation_items](../Database.md#table-bulk_operation_items) | BulkOperationItem | M05 | M05 implemented; execution/review extensions follow in M06/M07 |
 | [databank_sources](../Database.md#table-databank_sources) | DatabankSource | M11 | Planned; G05 approval required |

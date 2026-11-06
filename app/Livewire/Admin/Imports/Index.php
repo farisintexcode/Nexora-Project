@@ -7,6 +7,7 @@ use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
 use App\Models\ImportBatch;
 use App\Models\ImportTemplate;
+use App\Services\Customers\CustomerSearch;
 use App\Services\Imports\TaskUploadTemplate;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -52,6 +53,11 @@ class Index extends Component
             'data.assignment_batch_id' => ['required', 'integer', Rule::exists('assignment_batches', 'id')->where('status', BatchStatus::Active->value)],
             'file' => ['required', 'file', 'max:'.config('imports.max_kilobytes')],
         ], attributes: ['data.assignment_batch_id' => 'assignment']);
+        if (! CustomerSearch::isConfigured()) {
+            $this->addError('file', 'Excel uploads are unavailable because DCMS_SEARCH_KEY is not set in .env. Run php artisan dcms:doctor for the steps to fix this.');
+
+            return;
+        }
         $template = ImportTemplate::query()->where('is_active', true)->where('kind', 'task')->orderByDesc('version')->first();
         if (! $template) {
             $this->addError('file', 'Task uploads are unavailable because no task template is published.');

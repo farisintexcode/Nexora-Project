@@ -31,7 +31,7 @@ Testing accompanies each step. Audit, authorization and durable processing begin
 | M06 Rider execution | UI19–24, UI42–44, UI48–52 | activities, inspections, observations, follow-ups, documents, submissions | task contracts |
 | M07 Verification | UI25–26, UI42, UI51–52 | submissions/proof manifest/reviews/history; independent reviewer | task contracts |
 | M08 Financial updates | UI14, UI19, UI28 | financial_updates/snapshots; source row/account | §7; G04 |
-| M09 Reports | UI27, UI29, UI41 | export_jobs/documents; ten scoped report projections | §9 |
+| M09 Reports | UI27, UI29, UI41 | ten scoped report projections, downloaded directly | §9 |
 | M10 Rider/attendance | UI30–33, UI53–54, UI59 | staff/users, policies/schedules/attendances/adjustments | attendance contracts |
 | M11 Call Centre/databank | UI34–35, UI60, UI64 | activities(call), follow-ups, contacts; provisional databank entities | §5; G05 |
 | M12 Administration | UI36–41, UI43–45, UI70 | roles/permissions/scopes, settings, audit, notifications, outbox/processed_events | §4, §10 |

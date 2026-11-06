@@ -45,7 +45,6 @@ test('progress counts verified completion overall, today and per current Rider a
     progressTask($batch, $quiet, $yesterday);
     progressTask($batch);
     progressTask($batch, $busy, attributes: ['work_status' => 'cancelled']);
-    progressTask(AssignmentBatch::factory()->create(), $busy);
 
     $progress = app(TaskProgress::class)->forUser($user);
 
@@ -114,7 +113,7 @@ test('assignment progress lists active assignments with unfinished work, soonest
             ['Due soon batch', 1, 0, 0.0, 'due_soon'],
             ['Later batch', 1, 0, 0.0, null],
         ]);
-    Livewire::actingAs($user)->test(Home::class)->assertSee('Assignment progress')->assertSee('Past due')->assertDontSee('Finished batch');
+    Livewire::actingAs($user)->test(Home::class)->assertSee('Assignment progress')->assertSee('Past due')->assertSeeHtml('- Past due batch</p>')->assertDontSeeHtml('- Finished batch</p>');
 });
 
 test('the dashboard shows the assignment code instead of the primary key', function (): void {

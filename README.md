@@ -114,6 +114,62 @@ docker run --rm -u "$(id -u):$(id -g)" \
 ./vendor/bin/sail artisan dcms:bootstrap-admin you@example.test --name="Your name"
 ```
 
+### Setting up on Laragon (no Docker)
+
+These settings work on a development computer without Redis, S3 or ClamAV. They differ from `.env.example`, which targets Sail.
+
+```bash
+cp .env.example .env
+composer install
+php artisan key:generate
+php -r "echo base64_encode(random_bytes(32)), PHP_EOL;"   # put the result in DCMS_SEARCH_KEY
+```
+
+Then set these in `.env`:
+
+```dotenv
+APP_ENV=local
+DB_HOST=127.0.0.1
+SESSION_DRIVER=file
+CACHE_STORE=file
+QUEUE_CONNECTION=sync
+FILESYSTEM_DISK=local
+MAIL_MAILER=array
+IMPORT_DISK=local
+IMPORT_SCAN_REQUIRED=false
+PROOF_DISK=local
+PROOF_SCAN_REQUIRED=false
+```
+
+Enable `pdo_pgsql`, `zip`, `gd`, `intl` and the `xml` extensions in `php.ini`, and set `upload_max_filesize` and `post_max_size` to at least `10M`. Then finish the setup:
+
+```bash
+php artisan config:clear
+php artisan migrate --seed
+npm ci --ignore-scripts
+npm run build
+php artisan dcms:doctor
+```
+
+**After every `git pull`,** run `composer install`, `php artisan migrate`, `npm run build`, `php artisan config:clear` and `php artisan dcms:doctor`. `.env` is not shared through git, so a teammate's computer can behave differently even with the same code.
+
+### If something does not work, run `php artisan dcms:doctor`
+
+The doctor checks PHP and its extensions, the secret keys, database, migrations, reference data, role permissions, file storage, the malware scanner, Redis, the queue and page styles. It lists each problem with what to do, without printing secret values. `php artisan dcms:doctor --fix` grants any baseline permissions missing from the Admin and Rider roles, which happens when a role was created before those permissions existed.
+
+| What you see | Cause | Fix |
+|---|---|---|
+| Upload fails: "The malware scanner is not reachable" | Scanning is on but ClamAV is not running | Start ClamAV, or set `IMPORT_SCAN_REQUIRED=false` and `PROOF_SCAN_REQUIRED=false` on a development computer |
+| Upload fails: "DCMS_SEARCH_KEY is not set" | The key is empty in `.env` | Generate a key as shown above |
+| "Mapping permission is required to upload workbooks" | The Admin role is missing `imports.map` | `php artisan dcms:doctor --fix`, then sign in again |
+| Upload fails: "PHP zip extension is not enabled" | `zip` is off in `php.ini` | Enable it and restart the web server |
+| The file picker fails on larger files | PHP upload limit is too low | Raise `upload_max_filesize` and `post_max_size` |
+| Column or table "does not exist" errors | Migrations have not been run | `php artisan migrate` |
+| Commit or assign stays waiting | A real queue is configured with no worker | Run a worker and `php artisan schedule:work`, or use `QUEUE_CONNECTION=sync` on a development computer |
+| The page has no styling | Assets have not been built | `npm ci --ignore-scripts` and `npm run build` |
+
+If `IMPORT_SCAN_REQUIRED`, `PROOF_SCAN_REQUIRED` or `PROOF_DISK` is missing from `.env`, a computer with `APP_ENV=local` skips scanning and stores proof locally. Every other environment scans and uses S3 by default, and production always scans whatever the setting says.
+
 The bootstrap command prompts for a strong password and only runs in `local` before the first user exists. It creates Admin plus explicit roles.manage/users.invite grants, with audit. No accounts or passwords are seeded by the normal DatabaseSeeder. It grants no client portfolio access. Existing accounts and role bundles do not acquire these reserved grants automatically.
 
 The Riders & staff workspace requires `admin.access` and `riders.manage`. Employment records do not create login accounts or grant roles. A separate invitation action requires `users.invite`; selecting Admin also requires `roles.manage`. Invitations never merge existing identities or add client scopes. Staff contact changes leave active account login emails unchanged. Disabling staff or removing Rider eligibility requires a reason and checks outstanding current allocations; self-removal is refused. Existing sessions enforce staff status on their next request.
@@ -230,7 +286,7 @@ Open **Verification** at /admin/verification. Active Admin access, tasks.view/ta
 
 Prepare **Approve / Verify** or **Reject / Return** with required return remarks. The submitter cannot be the reviewer, including dual-role users. Confirmation locks client → batch → task → submission, verifies the current pending version and records an immutable TaskReview. Approval requires the complete frozen policy/clean manifest and sets completed/approved with completed_at. Return can request correction for deficient evidence, sets in_progress/returned, and leaves every previous visit/photo/submission unchanged. Remarks are encrypted; audit events are redacted. In-app database notifications commit atomically, with no external email/WhatsApp delivery.
 
-Bulk review takes only explicit selected submission UUIDs, up to 50, with a signed 20-minute preview. It lists each row's eligibility. Confirmation rechecks permissions/scopes/versions. Any invalid row aborts all new decisions with per-row errors; valid work is never silently partially applied. Retrying the same accepted preview returns the existing review receipt. New correction submissions append reviews linked to the preceding cycle; accepted decisions are never overwritten. Completed work remains read-only; broader reopen/correction authorization is separate policy work.
+Each submission is reviewed on its own page, opened with **Review submission** from Task Verification; the bulk review on the list page was removed in November 2026. The review uses a signed 20-minute preview. Confirmation rechecks permissions/scopes/versions, and an invalid submission applies no decision. Retrying the same accepted preview returns the existing review receipt. New correction submissions append reviews linked to the preceding cycle; accepted decisions are never overwritten. Completed work remains read-only; broader reopen/correction authorization is separate policy work.
 
 Riders see verification notices on Home and full correction instructions on their currently assigned task. Starting correction clears the current returned projection while retaining decisions and frozen proof. Dashboard task counts now distinguish active, pending verification, verified completed and returned work; links use the same scope/status. Exports follow M09, and historical DRMS numeric ranges remain gated by G02/G03 source semantics.
 
@@ -342,8 +398,6 @@ Open **Task Management → Report** (`/admin/reports`). Available families: Task
 
 Choose the task-created date range in Asia/Kuala_Lumpur, client, batch, current Rider staff number, status, exact task ID and an operational column set. Preview totals and rows come from one bounded PostgreSQL snapshot. Performance uses current allocations and verified completion, not historical allocation/visit rates or money collected. Accounts are masked, and contact details, source workbooks and financial amounts are excluded. Exports create a **new**, explicitly timed immutable snapshot, up to 5,000 source tasks.
 
-CSV/PDF requests create canonical encrypted `export_jobs` plus durable outbox records. Run the new migration with the project's normal `artisan migrate`/Sail command. Existing Redis and private S3 configuration are required for actual artifacts. Use the existing scheduler (`schedule:work` locally), or publish with `php artisan reports:dispatch`; process using `php artisan queue:work redis --queue=exports --timeout=120 --tries=3`. The configured Redis retry interval is 180 seconds and must exceed worker/job timeout. A queue request is not a generated file. Queue outages retain confirmed work; exhausted failures support an explicit authorized retry.
-
-Files are application-encrypted on private S3, SHA-256 checked and served through authenticated, owner-bound five-minute signed URLs. Snapshot availability expires after `config/reports.php`'s 24-hour setting. Current permissions and all source task scopes are rechecked during generation and download. Expiry blocks access; automatic physical retention/purge remains a deployment policy and is not claimed here. Request, generation, failure, retry and download events are audited without row contents. Public direct S3 links are never used. Existing immutable generated documents remain retained.
+The Report page downloads CSV and PDF files immediately with **Download CSV** and **Download PDF**. Nothing is queued or stored. Each download rechecks the user's permissions, including verification access for the Verification family, escapes spreadsheet formulas and is recorded in the audit log without row content. Very large PDFs are built during the request, so narrow the filters if one fails.
 
 Follow-on M09 scope: Customer/Attendance/Collection-Visit/Communication/Import report families, historical Rider performance, legacy 88-column parity, presets and proof-image bundles. These are not represented by fabricated data or placeholder exports. Real Redis/S3, large-PDF load checks and production deployment remain acceptance gates; local tests use synthetic data and fake private storage.
