@@ -2,9 +2,12 @@
 
 namespace App\Livewire\Admin\Staff;
 
+use App\Actions\Staff\SaveStaff;
 use App\Models\ReferenceValue;
 use App\Models\Staff;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
@@ -29,6 +32,12 @@ class Index extends Component
     public string $position = '';
 
     #[Url]
+    public string $role = '';
+
+    #[Url]
+    public string $accountStatus = '';
+
+    #[Url]
     public string $from = '';
 
     #[Url]
@@ -41,6 +50,24 @@ class Index extends Component
     public string $perPage = '25';
 
     public string $query = '';
+
+    public string $reason = '';
+
+    public function changeAvailability(string $publicId, bool $active, SaveStaff $save): void
+    {
+        DB::transaction(function () use ($publicId, $active, $save): void {
+            DB::select("select pg_advisory_xact_lock(hashtext('dcms.staff.availability'))");
+            $staff = Staff::query()->where('public_id', $publicId)->lockForUpdate()->firstOrFail();
+            Gate::authorize('update', $staff);
+            $data = $staff->only(['staff_no', 'first_name', 'last_name', 'email', 'gender_code', 'position_code', 'is_rider']);
+            foreach (['phone', 'home_phone', 'address'] as $field) {
+                $data[$field] = $staff->{$field.'_ciphertext'};
+            }
+            $save->handle(Auth::user(), [...$data, 'is_active' => $active, 'reason' => $this->reason], $staff, $staff->revision());
+        }, 3);
+        $this->reason = '';
+        session()->flash('status', 'Staff availability updated. Account activation still requires password setup.');
+    }
 
     public function mount(): void
     {
@@ -57,7 +84,7 @@ class Index extends Component
 
     public function resetFilters(): void
     {
-        $this->reset('kind', 'status', 'position', 'from', 'until', 'sort', 'perPage', 'query');
+        $this->reset('kind', 'status', 'position', 'role', 'accountStatus', 'from', 'until', 'sort', 'perPage', 'query');
         session()->forget('staff_search.'.Auth::id());
         $this->resetPage();
     }
@@ -65,7 +92,29 @@ class Index extends Component
     public function render(): View
     {
         Gate::authorize('viewAny', Staff::class);
-        $query = Staff::query()->with(['position', 'user:id,staff_id,status']);
+        $query = Staff::query()->with(['position', 'user.roles']);
+        if ($this->role !== '') {
+            if (in_array($this->role, config('dcms.staff_roles'), true)) {
+                $query->whereHas('user', function ($q): void {
+                    $q->where(function ($q): void {
+                        $q->whereHas('roles', fn ($q) => $q->where('name', $this->role));
+                        if ($this->role !== 'Rider') {
+                            $q->orWhere(function ($q): void {
+                                $q->role('Admin');
+                                $this->role === 'System Admin' ? $q->permission('roles.manage') : $q->withoutPermission('roles.manage');
+                            });
+                        }
+                    });
+                });
+            } else {
+                $query->whereRaw('false');
+            }
+        }
+        if ($this->accountStatus === 'none') {
+            $query->whereDoesntHave('user');
+        } elseif ($this->accountStatus !== '') {
+            $query->whereHas('user', fn ($q) => $q->where('status', $this->accountStatus));
+        }
         if (in_array($this->kind, ['rider', 'office'], true)) {
             $query->where('is_rider', $this->kind === 'rider');
         } elseif ($this->kind !== 'all') {
@@ -79,8 +128,8 @@ class Index extends Component
         if ($dates->fails()) {
             $query->whereRaw('false');
         } else {
-            $query->when($this->from !== '', fn ($q) => $q->where('appointment_date', '>=', $this->from))
-                ->when($this->until !== '', fn ($q) => $q->where('appointment_date', '<=', $this->until));
+            $query->when($this->from !== '', fn ($q) => $q->where('created_at', '>=', CarbonImmutable::parse($this->from, 'Asia/Kuala_Lumpur')->startOfDay()->utc()))
+                ->when($this->until !== '', fn ($q) => $q->where('created_at', '<', CarbonImmutable::parse($this->until, 'Asia/Kuala_Lumpur')->addDay()->startOfDay()->utc()));
         }
         $term = trim($this->query);
         if (mb_strlen($term) > 200) {
@@ -91,13 +140,13 @@ class Index extends Component
         }
         match ($this->sort) {
             'name' => $query->orderBy('first_name')->orderBy('last_name')->orderBy('id'),
-            'appointment' => $query->orderByRaw('appointment_date desc nulls last')->orderByDesc('id'),
+            'created' => $query->orderByDesc('created_at')->orderByDesc('id'),
             default => $query->orderBy('staff_no')->orderBy('id'),
         };
         $size = in_array($this->perPage, ['25', '50', '100'], true) ? (int) $this->perPage : 25;
 
         return view('livewire.admin.staff.index', [
-            'staffMembers' => $query->paginate($size, ['id', 'public_id', 'staff_no', 'first_name', 'last_name', 'appointment_date', 'position_code', 'is_active', 'is_rider']),
+            'staffMembers' => $query->paginate($size, ['id', 'public_id', 'staff_no', 'first_name', 'last_name', 'email', 'created_at', 'position_code', 'is_active', 'is_rider']),
             'positions' => ReferenceValue::query()->where('category', 'position')->orderBy('sort_order')->get(),
             'filterError' => $dates->fails() ? $dates->errors()->first() : null,
         ]);

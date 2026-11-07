@@ -105,6 +105,14 @@ Spatie roles bundle granular permissions; Laravel policies enforce current clien
 
 The baseline uses time-bound user_client_scopes plus action permissions; Riders additionally require current allocation for active work. Their own historical submissions/attendance remain accessible with masked customer detail after reassignment. Employment position and Rider eligibility remain staff attributes, separate from permissions. Preserve DRMS position codes 01 Staff, 02 Administrative, 03 Supervisor, 04 Manager, 05 Director, 99 System Admin and 06 Call Center as reference data; do not seed them as mandatory DebtOps roles. Admin must not verify their own submission; correction approval and template approval use separate grants. Scope/role changes invalidate caches and are audited. Team/branch hierarchy and SaaS tenancy remain future organizational decisions.
 
+### Confirmed Administration and HR rebuild (7 November 2026)
+
+M01/M10/M12 use three selectable access bundles: System Admin, Administrative and Rider. Granular permissions and effective client scope remain authoritative. System Admin includes roles.manage/users.invite and authorized system settings; Administrative excludes reserved grants, attendance configuration, monitoring and audit access; Rider keeps own allocated work/attendance only. Existing Admin identities and custom grants remain compatible and are not silently rewritten. Legacy Admin is never offered for new staff accounts. Employment position remains separate.
+
+UI31 registers staff and optionally provisions users.staff_id atomically, with account creation enabled by default and separately authorized by users.invite. System Admin grants and role changes require roles.manage. The last active permission administrator is protected. Invitations require approved terms/privacy configuration; users set and confirm a personal password before any application access. Successful activation signs in and redirects by existing access permissions. No temporary password is disclosed, no scope is automatically granted and no external provider is activated.
+
+UI30/31/32/54 display read-only created_at in Asia/Kuala_Lumpur; UTC persistence and historical appointment_date remain intact. Deactivation retains history and checks outstanding allocations. Attendance calculations and independent task verification are unchanged.
+
 ## 5. Functional scope and modules
 
 | Module | Baseline scope | Evidence |

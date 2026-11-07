@@ -369,6 +369,8 @@ erDiagram
 
 ## Table: staff
 
+**Confirmed 7 November 2026 M01/M10/M12 contract:** no new tables or columns are required for the HR rebuild. Keep the existing unique users.staff_id link, canonical unique login email and staff number, Spatie pivots, broker token storage and append-only audit. created_at remains automatic UTC persistence and read-only Asia/Kuala_Lumpur display. appointment_date is retained for historical compatibility but removed from HR interfaces. New linked accounts remain invited until personal password setup; inactive staff blocks activation independently of account state. System Admin/Administrative/Rider are the three selectable bundles; legacy Admin memberships and custom grants are preserved. Explicit authorized role changes are audited and replace role/direct grants. Account provisioning and staff registration share one transaction.
+
 - **Purpose / description:** Employment identity and allocation eligibility.
 - **Module / evidence:** M10; E17/E18. Physical design P.
 - **Model:** Staff.

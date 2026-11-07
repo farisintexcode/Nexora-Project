@@ -49,7 +49,8 @@ test('authorized Rider invitation creates only the selected role and a single-us
     expect(DB::table('password_reset_tokens')->where('email', $account->email)->value('token') === $token)->toBeFalse();
     expect(AuditLog::query()->where('action', 'account_invitation_prepared')->first()->toJson())->not->toContain($token, $account->email);
     $payload = ['email' => $account->email, 'token' => $token, 'password' => 'A-new-secure-123!', 'password_confirmation' => 'A-new-secure-123!', 'name' => 'Invited Rider', 'terms' => '1'];
-    $this->post(route('activation.update'), $payload)->assertRedirect(route('login'));
+    $this->post(route('activation.update'), $payload)->assertRedirect(route('rider.home'));
+    $this->post(route('logout'));
     expect($account->fresh()->status)->toBe(AccountStatus::Active);
     $this->post(route('activation.update'), $payload)->assertSessionHasErrors('email');
 });
@@ -59,7 +60,7 @@ test('staff management alone cannot issue invitations or escalate the requested 
     $staff = app(SaveStaff::class)->handle($actor, staffInput());
     expect(fn () => app(InviteStaffAccount::class)->handle($actor, $staff, 'Rider', $staff->revision()))->toThrow(AuthorizationException::class);
     $actor->givePermissionTo('users.invite');
-    expect(fn () => app(InviteStaffAccount::class)->handle($actor, $staff, 'Admin', $staff->revision()))->toThrow(AuthorizationException::class);
+    expect(fn () => app(InviteStaffAccount::class)->handle($actor, $staff, 'System Admin', $staff->revision()))->toThrow(AuthorizationException::class);
     $this->assertDatabaseCount('users', 1);
     Notification::assertNothingSent();
 });
@@ -69,10 +70,10 @@ test('explicit Admin invitation requires role authority and never infers access 
     $actor->givePermissionTo(['users.invite', 'roles.manage']);
     $staff = app(SaveStaff::class)->handle($actor, staffInput(['is_rider' => false, 'position_code' => '01']));
 
-    app(InviteStaffAccount::class)->handle($actor, $staff, 'Admin', $staff->revision());
+    app(InviteStaffAccount::class)->handle($actor, $staff, 'System Admin', $staff->revision());
 
     $account = $staff->user()->firstOrFail();
-    expect($account->hasRole('Admin'))->toBeTrue()->and($account->can('roles.manage'))->toBeFalse();
+    expect($account->hasRole('System Admin'))->toBeTrue()->and($account->can('roles.manage'))->toBeTrue();
 });
 
 test('inactive staff missing email and ineligible Rider cannot be invited', function (array $changes): void {
@@ -83,7 +84,7 @@ test('inactive staff missing email and ineligible Rider cannot be invited', func
     expect(fn () => app(InviteStaffAccount::class)->handle($actor, $staff, 'Rider', $staff->revision()))->toThrow(ValidationException::class);
     expect($staff->user()->exists())->toBeFalse();
     Notification::assertNothingSent();
-})->with([[['is_active' => false]], [['email' => '']], [['is_rider' => false]]]);
+})->with([[['email' => '']], [['is_rider' => false]]]);
 
 test('invitation requires approved terms configuration before any account is written', function (): void {
     $actor = staffManager();

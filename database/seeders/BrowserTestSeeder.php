@@ -40,6 +40,8 @@ class BrowserTestSeeder extends Seeder
             throw new \LogicException('Browser fixtures require a local/test *_e2e database and a runtime secret.');
         }
         $this->call(DatabaseSeeder::class);
+        $hrAdmin = User::factory()->create(['name' => 'Synthetic HR Admin', 'email' => 'hr-admin@example.test', 'password' => config('dcms.e2e_password')]);
+        $hrAdmin->assignRole('System Admin');
         $admin = User::factory()->create(['name' => 'Synthetic Admin', 'email' => 'admin@example.test', 'password' => config('dcms.e2e_password')]);
         $admin->assignRole('Admin');
         $admin->givePermissionTo('users.invite');

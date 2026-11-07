@@ -20,7 +20,7 @@ Customer means `debtors` / `Debtor`, created automatically from tasks; Rider mea
 - Official Laravel 13 skeleton and included Composer/npm lockfiles.
 - Sail PHP 8.4, PostgreSQL 17, Redis 7.4 and a local Mailpit sink configuration.
 - Session login/logout, throttling, password broker/recovery/reset, invitation-only activation endpoint and own password changes. Approved terms/privacy configuration is required for activation. Public registration is absent.
-- Admin/Rider role bundles, granular permissions, active account/staff checks, No role-name bypass. Employment positions are separate reference values.
+- System Admin/Administrative/Rider selectable role bundles, legacy Admin compatibility, granular permissions, active account/staff checks, no role-name bypass. Employment positions are separate reference values.
 - Dependency-ordered identity/reference migrations; UUID v7 public references, PostgreSQL checks/partial indexes/FKs; encrypted staff contact casts.
 - Append-only audit, outbox/deduplication persistence and notification schema. M04 now publishes only import events through its durable outbox dispatcher.
 - Responsive Admin and mobile Rider layouts, reusable Blade inputs/buttons/feedback, Livewire account settings and real customer/task KPIs. Navigation labels remaining modules.
@@ -35,6 +35,35 @@ Customer Management (M13) has been removed. `debtors` remains the internal custo
 Assignment batches are available at `/admin/assignments` to active `admin.access` + `assignments.view` users, restricted to current active client scopes. Creation/editing/archival require `assignments.manage`; reopening additionally requires `assignments.reopen`, a reserved grant excluded from ordinary Admin bundles. Archived assignments are read-only and retain their external-reference uniqueness and history. Client identity cannot change. Types cannot change once task/import history exists. Batch status changes check the locked record version and work disposition; terminal imports with unreconciled accepted rows block archival. No tasks, upload results or operational totals are fabricated. Traceability and future writer lock requirements are recorded in [architecture](docs/architecture.md) and [module disposition](docs/foundation-review.md).
 
 - M05 Task Management & Allocation: customer account/property/party foundations, manual task intake/editing, scoped monitoring, immutable source/history, exact single/selected operation previews, queued allocation/reassignment/unassignment/cancellation, reconciliation and redacted result downloads. M06 field execution and M07 independent review are implemented.
+
+## Administration and Human Resources
+
+M01/M10/M12 and UI30/31/32/54 now use three selectable roles: **System Admin**, **Administrative**, **Rider**. Run `php artisan db:seed --class=RolePermissionSeeder` after the normal migration step to add the new bundles. Seeding preserves existing roles, memberships and custom grants. Legacy Admin accounts retain access and are never offered for new registrations; editing their equivalent role selection preserves those grants. No database migration or new identity table is needed.
+
+| Bundle | Access |
+|---|---|
+| System Admin | Operational baseline plus roles.manage, users.invite and integrations.manage; existing policies/scopes still apply. Other reserved grants remain explicit. |
+| Administrative | Operational baseline excluding reserved grants, Rider-only grants, attendance.configure, monitoring.view and audit.view. No permission-management authority. |
+| Rider | rider.access, tasks.view, tasks.submit, attendance.clock, attendance.view_own; staff eligibility and task ownership still apply. |
+
+**Add New Staff** has Staff Information, System Account Setup and Record Information. Required staff ID, first/last name, email, role and staff status are validated. Login creation defaults on and requires users.invite. System Admin grants and explicit role changes require roles.manage. Staff registration, linked invited account, role assignment and audit are transactional. Staff status and account status are separate; no scopes are granted automatically. Explicit role changes replace the role and clear direct grants with audit, while equivalent legacy selections preserve existing access.
+
+Users choose and confirm a personal password through the existing expiring single-use invitation, with approved terms acceptance. Invited accounts cannot sign in, use direct dashboards/Livewire actions or be manually enabled. Successful activation regenerates the session and opens the authorized Admin/Rider dashboard. Recovery and Account Settings continue to use existing mechanisms. No temporary password is displayed. Inactive staff may be provisioned but must be enabled and reinvited before activation. The array mailer does not deliver invitations; local Mailpit or an approved transport is needed. Log transports remain blocked.
+
+The directory shows email, role, separate staff/account status and automatic Created At. Search and role/status/creation-date filters retain pagination. Created At/Updated At are read-only in Asia/Kuala_Lumpur; UTC storage and historical appointment_date are preserved. Availability actions require a deactivation reason and resolved outstanding allocations. Account state is managed separately in Edit Staff. Own access reduction and removal of the last active permission administrator are refused; history is retained.
+
+Manual verification: sign in with authorized grants, open Human Resources → Add New Staff, choose each role and save; inspect linked invited account and audit. Follow the captured invitation, check password confirmation and dashboard redirect, then confirm the link cannot be reused. Try the same privileged grant as Administrative/Rider. Test list filters, creation-date boundaries, status changes and outstanding-task refusal. Verify attendance, assignment and independent task review using existing fixtures. Never use production records for this check.
+
+Validation for this rebuild: 184 relevant regression tests / 970 assertions against PostgreSQL 17; 79 HR/authentication tests / 349 assertions in PHP 8.4 Docker; six desktop/mobile Playwright cases. Pint, Blade compilation and the Vite production build passed. Test runs used isolated disposable databases, synthetic identities and runtime secrets.
+
+Focused HR/account checks use the configured disposable PostgreSQL test database:
+
+```bash
+php artisan test --compact tests/Feature/AdminHrAccountTest.php tests/Feature/StaffManagementTest.php tests/Feature/StaffInvitationTest.php tests/Feature/Foundation
+npx playwright test tests/Browser/admin-hr.spec.ts
+```
+
+Browser checks require the existing guarded `BrowserTestSeeder` against a disposable `*_e2e` database, a runtime `DCMS_E2E_PASSWORD`, and `PLAYWRIGHT_BASE_URL`. No passwords are committed or provisioned by normal seeding.
 
 ## M04 Excel imports and mapping
 
@@ -170,9 +199,9 @@ The doctor checks PHP and its extensions, the secret keys, database, migrations,
 
 If `IMPORT_SCAN_REQUIRED`, `PROOF_SCAN_REQUIRED` or `PROOF_DISK` is missing from `.env`, a computer with `APP_ENV=local` skips scanning and stores proof locally. Every other environment scans and uses S3 by default, and production always scans whatever the setting says.
 
-The bootstrap command prompts for a strong password and only runs in `local` before the first user exists. It creates Admin plus explicit roles.manage/users.invite grants, with audit. No accounts or passwords are seeded by the normal DatabaseSeeder. It grants no client portfolio access. Existing accounts and role bundles do not acquire these reserved grants automatically.
+The bootstrap command prompts for a strong password and only runs in `local` before the first user exists. It creates System Admin plus explicit roles.manage/users.invite grants, with audit. No accounts or passwords are seeded by the normal DatabaseSeeder. It grants no client portfolio access. Existing accounts and role bundles do not acquire these reserved grants automatically.
 
-The Riders & staff workspace requires `admin.access` and `riders.manage`. Employment records do not create login accounts or grant roles. A separate invitation action requires `users.invite`; selecting Admin also requires `roles.manage`. Invitations never merge existing identities or add client scopes. Staff contact changes leave active account login emails unchanged. Disabling staff or removing Rider eligibility requires a reason and checks outstanding current allocations; self-removal is refused. Existing sessions enforce staff status on their next request.
+The Staff Management workspace requires admin.access and riders.manage. The Administration and Human Resources section above supersedes the earlier separate-invitation-only flow. New account creation additionally requires users.invite; System Admin grants require roles.manage. Existing account login emails and client scopes remain independent of employment metadata.
 
 The approved policy configuration supplied by the project owner is `DCMS Staff Terms v1.0` and `https://dcms.intexcode.com/privacy-policy`. The URL's live availability was not verified. Invitations use expiring, single-use password-broker tokens and send after the account transaction commits. The native preview uses the array mail transport: preparation is explicitly reported as local capture, not delivery. Configure Mailpit or an approved SMTP transport to receive messages; `MAIL_TIMEOUT` defaults to 15 seconds. Log mail transports, including failover to logs, are blocked for invitations to avoid recording activation secrets. Transport acceptance is not proof of inbox delivery.
 

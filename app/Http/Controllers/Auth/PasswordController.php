@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\AuditWriter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -76,6 +77,14 @@ class PasswordController extends Controller
         });
         if ($status !== Password::PasswordReset) {
             throw ValidationException::withMessages(['email' => 'This recovery link is invalid or has expired.']);
+        }
+
+        if ($activation) {
+            $user = User::query()->where('email', $credentials['email'])->firstOrFail();
+            Auth::login($user);
+            $request->session()->regenerate();
+
+            return redirect()->route($user->can('admin.access') ? 'admin.home' : 'rider.home');
         }
 
         return redirect()->route('login')->with('status', 'Your password has been saved. You can now sign in.');

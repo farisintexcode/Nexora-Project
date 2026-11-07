@@ -25,7 +25,7 @@ class Editor extends Component
     #[Locked]
     public ?string $revision = null;
 
-    public array $data = ['staff_no' => '', 'first_name' => '', 'last_name' => '', 'email' => '', 'gender_code' => '', 'position_code' => '', 'appointment_date' => '', 'phone' => '', 'home_phone' => '', 'address' => '', 'is_active' => true, 'is_rider' => true, 'reason' => ''];
+    public array $data = ['staff_no' => '', 'first_name' => '', 'last_name' => '', 'email' => '', 'gender_code' => '', 'position_code' => '', 'system_role' => 'Rider', 'create_account' => true, 'phone' => '', 'home_phone' => '', 'address' => '', 'is_active' => true, 'is_rider' => true, 'reason' => ''];
 
     public function mount(?Staff $staff = null): void
     {
@@ -39,7 +39,11 @@ class Editor extends Component
         foreach (['staff_no', 'first_name', 'last_name', 'email', 'gender_code', 'position_code'] as $field) {
             $this->data[$field] = $staff->{$field} ?? '';
         }
-        $this->data['appointment_date'] = $staff->appointment_date?->format('Y-m-d') ?? '';
+        $this->data['system_role'] = $staff->user?->getRoleNames()->first() ?? ($staff->is_rider ? 'Rider' : 'Administrative');
+        if ($this->data['system_role'] === 'Admin') {
+            $this->data['system_role'] = $staff->user->can('roles.manage') ? 'System Admin' : 'Administrative';
+        }
+        $this->data['account_status'] = $staff->user?->status->value ?? 'invited';
         foreach (['phone', 'home_phone', 'address'] as $field) {
             $this->data[$field] = $staff->{$field.'_ciphertext'} ?? '';
         }
@@ -50,9 +54,19 @@ class Editor extends Component
     public function save(SaveStaff $save): void
     {
         $existing = $this->staffId ? Staff::query()->findOrFail($this->staffId) : null;
-        $staff = $save->handle(Auth::user(), $this->data, $existing, $this->revision);
+        $input = $this->data;
+        $input['system_role'] ??= '';
+        $input['create_account'] ??= true;
+        $staff = $save->handle(Auth::user(), $input, $existing, $this->revision);
         $this->reset('data');
-        session()->flash('status', 'Staff record saved. Account permissions are unchanged.');
+        session()->flash('status', 'Staff record saved. '.match ($save->invitationDelivery) {
+            'local_capture' => 'Account invited, but the array mailer captures locally and does not deliver email. Configure Mailpit or an approved transport, then reissue.',
+            'mail_accepted' => 'Activation invitation accepted by the mail transport. Inbox delivery is not confirmed.',
+            'delivery_failed' => 'Account invited, but email delivery failed. Reissue the invitation after the resend interval.',
+            'unsafe_transport' => 'Account invited, but log mailers cannot receive activation secrets. Configure a safe transport and reissue.',
+            'inactive_staff' => 'Account provisioned. Activate staff and reissue the invitation before password setup.',
+            default => 'Invited accounts require personal password setup before access.',
+        });
         $this->redirectRoute('admin.staff.show', ['staff' => $staff->public_id]);
     }
 

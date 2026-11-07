@@ -37,6 +37,9 @@ class Show extends Component
         $this->staffId = $staff->id;
         $this->revision = $staff->revision();
         $this->invitationRole = $staff->user?->getRoleNames()->first() ?? '';
+        if ($this->invitationRole === 'Admin') {
+            $this->invitationRole = $staff->user->can('roles.manage') ? 'System Admin' : 'Administrative';
+        }
     }
 
     public function invite(InviteStaffAccount $invite): void
@@ -49,6 +52,7 @@ class Show extends Component
             'local_capture' => 'Invitation prepared for local capture only. No email was delivered; configure Mailpit or an approved transport for activation.',
             'delivery_failed' => 'The account invitation is prepared, but mail transport failed. Wait for the resend interval, then reissue the invitation.',
             'unsafe_transport' => 'Invitation prepared, but this mail configuration includes a log transport. Activation secrets cannot be logged. Configure a safe transport and reissue.',
+            'inactive_staff' => 'Account provisioned. Activate the staff record and reissue the invitation before password setup.',
             default => 'Invitation prepared. Mail is waiting for transaction commit.',
         });
     }

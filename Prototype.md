@@ -615,6 +615,8 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 
 ## UI31 — Create Rider / Staff
 
+**Confirmed 7 November 2026 override (M01/M10/M12, also UI30/UI32/UI54):** three sections: Staff Information (required staff ID, first/last name, email, System Role and Staff Status, plus existing employment/contact fields), System Account Setup (create login on by default, invitation-based password setup) and Record Information (automatic read-only Created At/Updated At in Asia/Kuala_Lumpur). System Role has exactly System Admin, Administrative and Rider. Permission checks run on the server; employment position grants no role. Appointment Date is removed from current HR forms/list/details while the historical column is retained. UI30 adds email, role, separate account state and creation-date filters, plus authorized availability actions. Edit Staff manages account state separately and cannot activate an invited account before password setup. Legacy Admin access remains compatible. The historical observations below remain evidence, not the current UI contract.
+
 | Attribute / override | Specification |
 |---|---|
 | Module / evidence | M10 · O E18 |

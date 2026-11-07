@@ -17,7 +17,7 @@ class AuditWriter
         $audit->action = $action;
         $audit->entity_type = $entityType;
         $audit->entity_id = $entityId ?? $actor?->public_id;
-        $allowed = array_flip(['basis', 'customer_id', 'evidence_fingerprint', 'status', 'portal', 'login_fingerprint', 'terms_version', 'role', 'changed_fields', 'party_type', 'category_ids', 'duplicate_reviewed', 'is_active', 'is_rider']);
+        $allowed = array_flip(['basis', 'customer_id', 'evidence_fingerprint', 'status', 'portal', 'login_fingerprint', 'terms_version', 'role', 'roles', 'permissions', 'changed_fields', 'party_type', 'category_ids', 'duplicate_reviewed', 'is_active', 'is_rider']);
         $audit->new_values_redacted = array_intersect_key($metadata, $allowed);
         $audit->previous_values_redacted = $previous === [] ? null : array_intersect_key($previous, $allowed);
         $audit->ip_address = app()->runningInConsole() ? null : request()->ip();

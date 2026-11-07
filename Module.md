@@ -381,6 +381,14 @@ Historical reference requirements, not built: payment-update workbooks, the fee 
 | Dependencies / related | M01 accounts, M05 allocation, M09 reports, M12 permissions/audit. |
 | Input → processing → output | Staff metadata → validated identity/status update → directory entry, controlled invitation and audit. Attendance uses the confirmed policy/schedule/clock/correction contract below; G08 now concerns policy values, not feature inclusion. |
 
+### Confirmed Administration and HR rebuild (7 November 2026)
+
+M01/M10/M12 supersede the historical appointment-date and separate-invitation UI descriptions above: UI31 has Staff Information, System Account Setup and Record Information. Required staff number, first/last name, email, system role and staff status use server-side validation. Account creation defaults on for all three roles and requires users.invite; System Admin additionally requires roles.manage. Staff and invited account creation, role assignment and audit writes commit together. Staff Status and Account Status remain separate. Inactive staff can have an invited account but cannot activate or receive the invitation until staff is enabled and the link reissued.
+
+Only System Admin, Administrative and Rider are selectable. Existing Admin grants are retained for compatibility; equivalent legacy selections preserve existing roles and direct grants. Explicit role changes require roles.manage, replace the role bundle and clear direct grants, with audit. Administrative receives operational permissions excluding reserved/system grants; Rider retains allocated-work ownership checks. No client scope is inferred from a role. Privileged staff changes require roles.manage, own access reduction is refused, and the last active permission administrator is protected.
+
+UI30 lists staff ID, full name, email, system role, staff/account status, Created At and View/Edit/Activate/Deactivate. Search, role/status/account filters and Kuala Lumpur creation-date bounds preserve pagination and sorting. Activation/deactivation in the directory controls staff availability; login account status is managed separately in Edit Staff. Invited accounts cannot be enabled manually; personal password setup and confirmation use the existing expiring single-use broker token. Activation redirects to the existing authorized dashboard. Existing recovery, attendance and task workflows remain in place.
+
 ### Rider management (C)
 
 UI30/31/32 become Rider list/create/edit filters over existing staff; UI54 Rider profile adds contact/employment/status, assigned/completed/returned tasks, attendance/history, activity timeline and scoped performance. Rider eligibility staff.is_rider and active state are independent from Spatie permissions; activation/invitation does not grant Admin. Deactivation requires outstanding task disposition and prevents sign-in/new assignments according to account policy. Additional office staff continue to use the same records/forms.
