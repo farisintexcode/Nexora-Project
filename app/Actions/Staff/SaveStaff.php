@@ -47,7 +47,7 @@ class SaveStaff
                     'first_name' => ['required', 'string', 'max:100'], 'last_name' => ['nullable', 'string', 'max:100'],
                     'email' => ['nullable', 'email', 'max:254'],
                     'gender_code' => ['nullable', 'string', Rule::exists('reference_values', 'code')->where('category', 'gender')->where(fn ($q) => $q->when(! $staff->exists || ($input['gender_code'] ?? null) !== $staff->gender_code, fn ($q) => $q->where('is_active', true)))],
-                    'position_code' => ['required', 'string', Rule::exists('reference_values', 'code')->where('category', 'position')->where(fn ($q) => $q->when(! $staff->exists || ($input['position_code'] ?? null) !== $staff->position_code, fn ($q) => $q->where('is_active', true)))],
+                    'position_code' => ['nullable', 'string', Rule::exists('reference_values', 'code')->where('category', 'position')->where(fn ($q) => $q->when(! $staff->exists || ($input['position_code'] ?? null) !== $staff->position_code, fn ($q) => $q->where('is_active', true)))],
                     'appointment_date' => ['nullable', 'date_format:Y-m-d'],
                     'phone' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9][0-9 ()\-.]{4,39}$/'],
                     'home_phone' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9][0-9 ()\-.]{4,39}$/'],
@@ -101,7 +101,7 @@ class SaveStaff
                     }
                 }
                 foreach (['staff_no', 'first_name', 'last_name', 'email', 'gender_code', 'position_code', 'appointment_date'] as $field) {
-                    if ($existing && $field === 'appointment_date' && ! array_key_exists($field, $input)) {
+                    if ($existing && in_array($field, ['appointment_date', 'position_code'], true) && ! array_key_exists($field, $input)) {
                         continue;
                     }
                     $staff->{$field} = ($data[$field] ?? null) === '' ? null : ($data[$field] ?? null);

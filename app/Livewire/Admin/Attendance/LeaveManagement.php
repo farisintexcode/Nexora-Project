@@ -41,24 +41,6 @@ class LeaveManagement extends Component
 
     public string $remarks = '';
 
-    #[Locked]
-    public string $typeId = '';
-
-    #[Locked]
-    public int $typeVersion = 0;
-
-    public string $name = '';
-
-    public int $max_calendar_days = 1;
-
-    public bool $requires_document = false;
-
-    public bool $allow_past_dates = false;
-
-    public bool $allow_pending_cancel = false;
-
-    public bool $is_active = true;
-
     public function mount(?LeaveRequest $leave = null): void
     {
         $access = app(LeaveAccess::class);
@@ -76,30 +58,6 @@ class LeaveManagement extends Component
         $workflow->decide(auth()->user(), $request, $this->decision, $this->remarks, $this->requestVersion);
         session()->flash('status', 'The leave decision has been saved.');
         $this->redirectRoute('admin.leave.show', ['leave' => $request->public_id]);
-    }
-
-    public function editType(string $id, LeaveAccess $access): void
-    {
-        abort_unless($access->configure(auth()->user()), 403);
-        $type = LeaveType::query()->where('public_id', $id)->firstOrFail();
-        $this->typeId = $type->public_id;
-        $this->typeVersion = $type->lock_version;
-        foreach (['name', 'max_calendar_days', 'requires_document', 'allow_past_dates', 'allow_pending_cancel', 'is_active'] as $field) {
-            $this->$field = $type->$field;
-        }
-    }
-
-    public function newType(): void
-    {
-        $this->reset('typeId', 'typeVersion', 'name', 'max_calendar_days', 'requires_document', 'allow_past_dates', 'allow_pending_cancel', 'is_active');
-        $this->resetValidation();
-    }
-
-    public function saveType(ManageLeave $workflow): void
-    {
-        $workflow->configure(auth()->user(), $this->only(['name', 'max_calendar_days', 'requires_document', 'allow_past_dates', 'allow_pending_cancel', 'is_active']), $this->typeId ?: null, $this->typeVersion);
-        $this->newType();
-        session()->flash('status', 'Leave type saved. Existing applications keep their submitted rules.');
     }
 
     public function filterRequests(): void

@@ -38,7 +38,7 @@ Assignment batches are available at `/admin/assignments` to active `admin.access
 
 ## Administration and Human Resources
 
-M01/M10/M12 and UI30/31/32/54 now use three selectable roles: **System Admin**, **Administrative**, **Rider**. Run `php artisan db:seed --class=RolePermissionSeeder` after the normal migration step to add the new bundles. Seeding preserves existing roles, memberships and custom grants. Legacy Admin accounts retain access and are never offered for new registrations; editing their equivalent role selection preserves those grants. No database migration or new identity table is needed.
+M01/M10/M12 and UI30/31/32/54 now use three selectable roles: **System Admin**, **Administrative**, **Rider**. Run `php artisan db:seed --class=RolePermissionSeeder` after the normal migration step to add the new bundles. Seeding preserves existing roles, memberships and custom grants. Legacy Admin accounts retain access and are never offered for new registrations; editing their equivalent role selection preserves those grants. The current forward migration makes the historical staff position optional; identity tables and links are unchanged.
 
 | Bundle | Access |
 |---|---|
@@ -64,6 +64,20 @@ npx playwright test tests/Browser/admin-hr.spec.ts
 ```
 
 Browser checks require the existing guarded `BrowserTestSeeder` against a disposable `*_e2e` database, a runtime `DCMS_E2E_PASSWORD`, and `PLAYWRIGHT_BASE_URL`. No passwords are committed or provisioned by normal seeding.
+
+## HR and Leave Management (8 November 2026)
+
+Employment Position is no longer selectable, required or displayed in staff HR screens. The three System Roles remain authoritative. Historical positions are retained; the forward migration makes position_code nullable without dropping data. Apply with `php artisan migrate --no-interaction`; never reset a populated preview to install this change.
+
+Human Resources → **Leave Types** is the configuration entry point (`/admin/leave/types`). It reuses existing tables/actions and requires attendance.configure plus the existing admin/attendance visibility grants. Leave approval separately requires attendance.approve_correction; Administrative does not acquire approval by role name. Normal seeding intentionally supplies no organization's leave policy. For labelled local examples, run `php artisan dcms:seed-leave-samples <authorized-email> --no-interaction`; examples start inactive, with optional explicit `--activate`. Existing configurations are not overwritten and production/staging is refused. These are not statutory leave entitlements.
+
+Active types appear in Apply for Leave. Without active types, the page provides actionable guidance instead of an unusable form. The workflow retains explicit calendars, full working-day duration, validation, exact review, idempotent submission, own history, independent immutable decisions and policy-controlled pending cancellation. Approved leave appears in attendance without creating punches or rewriting schedules; overlapping clock-in and correction of the approved calendar are blocked. Annual balances/accrual/carry-forward, half-day requests and approved withdrawal are unsupported. Private supporting documents retain S3/scanner requirements. Leave notifications are in-app; invitations and password recovery retain their existing email flows.
+
+Panduan Bahasa Melayu: [System Admin](docs/manual-system-admin-ms.md), [Administrative](docs/manual-administrative-ms.md), [Rider](docs/manual-rider-ms.md), [Pembangun, Mailpit dan senarai semak ujian](docs/manual-pembangun-ms.md).
+
+Validation on 8 November 2026: the focused PostgreSQL/Docker run passed 104 tests / 444 assertions (leave policies, requests, staff, linked accounts and invitations). Related authentication, authorization, identity, attendance, task assignment, Rider access, verification and task-flow regressions passed 134 tests / 738 assertions; one existing optional EXIF test was skipped because its decoder is unavailable in the test image. Tests use disposable databases; the populated preview received only the forward nullable-position migration and explicitly activated labelled local sample leave policies.
+
+Browser verification covers desktop/mobile staff creation for all three roles, legacy staff editing, leave-type availability, Rider apply/review/cancel/history, independent approval and rejection, dark mode and responsive overflow. The final combined invocation produced 13 passes and one desktop calendar-interaction timeout; after the helper correction, that desktop rejection journey passed its focused rerun (1/1), leaving all 14 journeys verified. Test helpers wait for Livewire edit state, distinguish the calendar month from its live help text, and select the date range before changing status to avoid racing filter updates. Pint, Blade compilation, migration status, whitespace checks and the Vite production build passed.
 
 ## M04 Excel imports and mapping
 

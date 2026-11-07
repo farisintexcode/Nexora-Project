@@ -42,6 +42,8 @@ class BrowserTestSeeder extends Seeder
         $this->call(DatabaseSeeder::class);
         $hrAdmin = User::factory()->create(['name' => 'Synthetic HR Admin', 'email' => 'hr-admin@example.test', 'password' => config('dcms.e2e_password')]);
         $hrAdmin->assignRole('System Admin');
+        $administrative = User::factory()->for(Staff::factory())->create(['name' => 'Synthetic Administrative', 'email' => 'administrative@example.test', 'password' => config('dcms.e2e_password')]);
+        $administrative->assignRole('Administrative');
         $admin = User::factory()->create(['name' => 'Synthetic Admin', 'email' => 'admin@example.test', 'password' => config('dcms.e2e_password')]);
         $admin->assignRole('Admin');
         $admin->givePermissionTo('users.invite');

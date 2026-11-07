@@ -6,7 +6,6 @@
         <x-select name="kind" label="Personnel" wire:model.live="kind"><option value="rider">Riders</option><option value="office">Office staff</option><option value="all">All staff</option></x-select>
         <x-select name="role" label="System Role" wire:model.live="role"><option value="">All roles</option>@foreach(config('dcms.staff_roles') as $role)<option value="{{ $role }}">{{ $role }}</option>@endforeach</x-select>
         <x-select name="status" label="Staff Status" wire:model.live="status"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></x-select>
-        <x-select name="position" label="Employment Position" wire:model.live="position"><option value="">All positions</option>@foreach($positions as $position)<option value="{{ $position->code }}">{{ $position->label }}</option>@endforeach</x-select>
         <x-select name="accountStatus" label="Account Status" wire:model.live="accountStatus"><option value="">All accounts</option>@foreach(['invited','active','disabled','locked','none'] as $state)<option value="{{ $state }}">{{ ucfirst($state) }}</option>@endforeach</x-select>
         <x-date-range name="created-date" label="Created date" from="from" until="until" :live="true" />
         <x-select name="sort" label="Sort" wire:model.live="sort"><option value="staff_no">Staff ID</option><option value="name">Name</option><option value="created">Latest created</option></x-select>
@@ -21,7 +20,7 @@
     <div class="surface overflow-x-auto"><table class="data-table"><caption class="sr-only">Staff directory</caption><thead><tr>@foreach(['Staff ID','Full Name','Email','System Role','Staff Status','Account Status','Created At','Actions'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
         <tbody>@foreach($staffMembers as $member)<tr wire:key="staff-{{ $member->public_id }}">
             <td>{{ $member->staff_no }}</td><td>{{ $member->full_name }}</td><td>{{ $member->email }}</td>
-            <td>{{ $member->user?->getRoleNames()->join(', ') ?: 'Not provisioned' }}</td>
+            <td>{{ $member->user?->systemRoleLabel() ?: 'Not provisioned' }}</td>
             <td><x-badge :tone="$member->is_active ? 'success' : 'neutral'">{{ $member->is_active ? 'Active' : 'Inactive' }}</x-badge></td>
             <td>{{ $member->user ? ucfirst($member->user->status->value) : 'Not provisioned' }}</td>
             <td>{{ $member->created_at->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') }}</td>

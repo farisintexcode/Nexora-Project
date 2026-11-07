@@ -113,6 +113,12 @@ UI31 registers staff and optionally provisions users.staff_id atomically, with a
 
 UI30/31/32/54 display read-only created_at in Asia/Kuala_Lumpur; UTC persistence and historical appointment_date remain intact. Deactivation retains history and checks outstanding allocations. Attendance calculations and independent task verification are unchanged.
 
+### Confirmed HR/leave completion (8 November 2026)
+
+M10/UI30–32 no longer exposes Employment Position in create/edit/filter/details. System Role remains the sole selectable access role (System Admin, Administrative, Rider). The historical staff.position_code is nullable, retains existing values and its composite FK, and does not authorize access. Invitations and first-time password setup are unchanged.
+
+M10/UI59 leave-policy configuration is discoverable at Human Resources → Leave Types (`/admin/leave/types`) using existing attendance.configure plus admin/attendance visibility grants. Organization policies are explicit; normal seeding assumes no statutory categories or entitlements. An additive local-only sample command supplies clearly labelled examples on request. Whole working days derive from explicit calendars. Annual balances/accrual/carry-forward/half-day requests are outside the current domain. Approved leave projects into attendance as Leave without rewriting schedules or punches, blocks overlapping clock-in and protects its calendar from correction. Pending cancellation uses the submitted policy snapshot; approved withdrawal is unsupported.
+
 ## 5. Functional scope and modules
 
 | Module | Baseline scope | Evidence |

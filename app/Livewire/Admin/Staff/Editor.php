@@ -25,7 +25,7 @@ class Editor extends Component
     #[Locked]
     public ?string $revision = null;
 
-    public array $data = ['staff_no' => '', 'first_name' => '', 'last_name' => '', 'email' => '', 'gender_code' => '', 'position_code' => '', 'system_role' => 'Rider', 'create_account' => true, 'phone' => '', 'home_phone' => '', 'address' => '', 'is_active' => true, 'is_rider' => true, 'reason' => ''];
+    public array $data = ['staff_no' => '', 'first_name' => '', 'last_name' => '', 'email' => '', 'gender_code' => '', 'system_role' => 'Rider', 'create_account' => true, 'phone' => '', 'home_phone' => '', 'address' => '', 'is_active' => true, 'is_rider' => true, 'reason' => ''];
 
     public function mount(?Staff $staff = null): void
     {
@@ -36,7 +36,7 @@ class Editor extends Component
         $this->staffId = $staff->id;
         $this->staffPublicId = $staff->public_id;
         $this->revision = $staff->revision();
-        foreach (['staff_no', 'first_name', 'last_name', 'email', 'gender_code', 'position_code'] as $field) {
+        foreach (['staff_no', 'first_name', 'last_name', 'email', 'gender_code'] as $field) {
             $this->data[$field] = $staff->{$field} ?? '';
         }
         $this->data['system_role'] = $staff->user?->getRoleNames()->first() ?? ($staff->is_rider ? 'Rider' : 'Administrative');
@@ -55,6 +55,7 @@ class Editor extends Component
     {
         $existing = $this->staffId ? Staff::query()->findOrFail($this->staffId) : null;
         $input = $this->data;
+        unset($input['position_code']);
         $input['system_role'] ??= '';
         $input['create_account'] ??= true;
         $staff = $save->handle(Auth::user(), $input, $existing, $this->revision);
@@ -78,7 +79,6 @@ class Editor extends Component
         return view('livewire.admin.staff.editor', [
             'staff' => $staff,
             'outstanding' => $staff ? $assignments->outstanding($staff) : null,
-            'positions' => ReferenceValue::query()->where('category', 'position')->where(fn ($q) => $q->where('is_active', true)->orWhere('code', $staff?->position_code))->orderBy('sort_order')->get(),
             'genders' => ReferenceValue::query()->where('category', 'gender')->where(fn ($q) => $q->where('is_active', true)->orWhere('code', $staff?->gender_code))->orderBy('sort_order')->get(),
         ]);
     }

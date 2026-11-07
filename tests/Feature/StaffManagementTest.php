@@ -42,7 +42,7 @@ test('staff validation rejects invalid fields without partial persistence', func
     $this->assertDatabaseCount('audit_logs', $audits);
 })->with([
     [['staff_no' => ''], 'staff_no'], [['first_name' => []], 'first_name'], [['email' => 'invalid'], 'email'],
-    [['position_code' => 'male'], 'position_code'], [['gender_code' => '99'], 'gender_code'],
+    [['system_role' => 'Unknown'], 'system_role'], [['gender_code' => '99'], 'gender_code'],
     [['appointment_date' => '2026-02-30'], 'appointment_date'], [['phone' => 'letters'], 'phone'], [['is_rider' => 'wrong'], 'is_rider'],
 ]);
 

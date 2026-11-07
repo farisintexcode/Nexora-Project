@@ -235,3 +235,31 @@ test('directory filters linked roles account states and Kuala Lumpur creation da
         ->set('accountStatus', 'active')->assertDontSee('Boundary Person')->set('accountStatus', 'invited')
         ->set('from', '2026-11-08')->assertDontSee('Boundary Person');
 });
+
+test('staff form provisions each system role without an employment position', function (string $role): void {
+    Notification::fake();
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $input = staffInput(['system_role' => $role, 'create_account' => true]);
+    unset($input['position_code']);
+
+    Livewire::actingAs($actor)->test(Editor::class)->assertDontSee('Employment Position')->set('data', $input)->call('save')->assertHasNoErrors();
+
+    $staff = Staff::query()->sole();
+    expect($staff->position_code)->toBeNull()->and($staff->user->getRoleNames()->all())->toBe([$role])->and($staff->user->status)->toBe(AccountStatus::Invited);
+    Notification::assertSentTo($staff->user, StaffInvitation::class);
+})->with(['System Admin', 'Administrative', 'Rider']);
+
+test('authorized role changes preserve historical position values without exposing a position editor', function (): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['position_code' => '99']);
+    $account = User::factory()->for($staff)->create();
+    $account->assignRole('Rider');
+
+    Livewire::actingAs($actor)->test(Editor::class, ['staff' => $staff])->assertDontSee('Employment Position')
+        ->set('data.system_role', 'Administrative')->set('data.reason', 'Authorized office access transition')->call('save')->assertHasNoErrors();
+
+    expect($staff->fresh()->position_code)->toBe('99')->and($account->fresh()->getRoleNames()->all())->toBe(['Administrative']);
+    $this->actingAs($actor)->get(route('admin.staff.show', $staff))->assertOk()->assertSee('Administrative')->assertDontSee('Employment Position');
+});

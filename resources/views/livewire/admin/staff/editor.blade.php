@@ -12,12 +12,11 @@
                 @foreach(config('dcms.staff_roles') as $role)<option value="{{ $role }}">{{ $role }}</option>@endforeach
             </x-select>
             <x-select name="data.is_active" label="Staff Status" wire:model="data.is_active" required><option value="1">Active</option><option value="0">Inactive</option></x-select>
-            <x-select name="data.position_code" label="Employment Position" wire:model="data.position_code" required><option value="">Choose position</option>@foreach($positions as $position)<option value="{{ $position->code }}">{{ $position->label }}</option>@endforeach</x-select>
             <x-select name="data.gender_code" label="Gender (optional)" wire:model="data.gender_code"><option value="">Not specified</option>@foreach($genders as $gender)<option value="{{ $gender->code }}">{{ $gender->label }}</option>@endforeach</x-select>
             <x-input name="data.phone" label="Work / mobile phone (optional)" wire:model="data.phone" maxlength="40" />
             <x-input name="data.home_phone" label="Home phone (optional)" wire:model="data.home_phone" maxlength="40" />
             <div class="sm:col-span-2"><x-textarea name="data.address" label="Address (optional)" wire:model="data.address" maxlength="2000" /></div>
-            <p class="field-help sm:col-span-2">Employment position is separate from system access. Rider access also sets staff Rider eligibility. System Admin grants require roles.manage.</p>
+            <p class="field-help sm:col-span-2">System Role controls the login permission bundle. Rider access also sets staff Rider eligibility. System Admin grants require roles.manage.</p>
         </fieldset>
         <fieldset class="form-section grid gap-5">
             <legend>System Account Setup</legend>

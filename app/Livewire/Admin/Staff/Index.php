@@ -3,7 +3,6 @@
 namespace App\Livewire\Admin\Staff;
 
 use App\Actions\Staff\SaveStaff;
-use App\Models\ReferenceValue;
 use App\Models\Staff;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
@@ -27,9 +26,6 @@ class Index extends Component
 
     #[Url]
     public string $status = '';
-
-    #[Url]
-    public string $position = '';
 
     #[Url]
     public string $role = '';
@@ -84,7 +80,7 @@ class Index extends Component
 
     public function resetFilters(): void
     {
-        $this->reset('kind', 'status', 'position', 'role', 'accountStatus', 'from', 'until', 'sort', 'perPage', 'query');
+        $this->reset('kind', 'status', 'role', 'accountStatus', 'from', 'until', 'sort', 'perPage', 'query');
         session()->forget('staff_search.'.Auth::id());
         $this->resetPage();
     }
@@ -92,7 +88,7 @@ class Index extends Component
     public function render(): View
     {
         Gate::authorize('viewAny', Staff::class);
-        $query = Staff::query()->with(['position', 'user.roles']);
+        $query = Staff::query()->with('user.roles');
         if ($this->role !== '') {
             if (in_array($this->role, config('dcms.staff_roles'), true)) {
                 $query->whereHas('user', function ($q): void {
@@ -123,7 +119,6 @@ class Index extends Component
         if ($this->status !== '') {
             in_array($this->status, ['active', 'inactive'], true) ? $query->where('is_active', $this->status === 'active') : $query->whereRaw('false');
         }
-        $query->when($this->position !== '', fn ($q) => $q->where('position_code', $this->position));
         $dates = Validator::make(['from' => $this->from ?: null, 'until' => $this->until ?: null], ['from' => ['nullable', 'date_format:Y-m-d'], 'until' => ['nullable', 'date_format:Y-m-d', ...($this->from !== '' ? ['after_or_equal:from'] : [])]]);
         if ($dates->fails()) {
             $query->whereRaw('false');
@@ -147,7 +142,6 @@ class Index extends Component
 
         return view('livewire.admin.staff.index', [
             'staffMembers' => $query->paginate($size, ['id', 'public_id', 'staff_no', 'first_name', 'last_name', 'email', 'created_at', 'position_code', 'is_active', 'is_rider']),
-            'positions' => ReferenceValue::query()->where('category', 'position')->orderBy('sort_order')->get(),
             'filterError' => $dates->fails() ? $dates->errors()->first() : null,
         ]);
     }

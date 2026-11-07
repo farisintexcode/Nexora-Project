@@ -20,7 +20,7 @@ for (const role of ['System Admin', 'Administrative', 'Rider']) {
         await page.getByLabel('First Name', { exact: true }).fill('Browser');
         await page.getByLabel('Last Name', { exact: true }).fill(suffix);
         await page.getByLabel('System Role', { exact: true }).selectOption(role);
-        await page.getByLabel('Employment Position', { exact: true }).selectOption('01');
+        await expect(page.getByLabel('Employment Position', { exact: true })).toHaveCount(0);
         await page.getByRole('button', { name: 'Save staff', exact: true }).click();
         await expect(page).toHaveURL(/\/admin\/staff\/[0-9a-f-]+$/);
         await expect(page.getByText('Invited', { exact: true })).toBeVisible();

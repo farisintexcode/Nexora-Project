@@ -31,7 +31,8 @@ class ManageLeave
     {
         abort_unless($this->access->own($actor->fresh()), 403);
         Validator::make($data, ['type' => ['required', 'uuid'], 'start_date' => ['required', 'date_format:Y-m-d'], 'end_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:start_date']])->validate();
-        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->firstOrFail();
+        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->first()
+            ?? throw ValidationException::withMessages(['type' => 'Choose an active leave type.']);
 
         return count(array_filter($this->calendar($actor->staff_id, $data, $type), fn ($day) => $day['day_type'] === 'scheduled'));
     }
@@ -68,7 +69,8 @@ class ManageLeave
         $actor = $actor->fresh();
         abort_unless($this->access->own($actor), 403);
         $data = $this->validate($data);
-        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->firstOrFail();
+        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->first()
+            ?? throw ValidationException::withMessages(['type' => 'Choose an active leave type.']);
         $this->validateSupport($type, $support);
         $calendar = $this->calendar($actor->staff_id, $data, $type);
         $this->overlap($actor->staff_id, $data);
@@ -98,7 +100,8 @@ class ManageLeave
                 if ($existing) {
                     return $existing;
                 }
-                $type = LeaveType::query()->whereKey($preview['type'])->where('is_active', true)->lockForUpdate()->firstOrFail();
+                $type = LeaveType::query()->whereKey($preview['type'])->where('is_active', true)->lockForUpdate()->first()
+                    ?? throw ValidationException::withMessages(['type' => 'This leave type is no longer available. Choose an active leave type and review again.']);
                 $calendar = $this->calendar($actor->staff_id, $data, $type, true);
                 if ($type->lock_version !== $preview['type_version'] || $calendar !== $preview['calendar']) {
                     throw ValidationException::withMessages(['review' => 'The leave policy or calendar changed. Review the application again.']);

@@ -30,7 +30,8 @@
             <x-sidebar-item label="Add New Staff" icon="plus" parent="Human Resources" :href="route('admin.staff.create')" :active="request()->routeIs('admin.staff.create')" />
             @endcan
             @can('attendance.view_all')<x-sidebar-item label="Attendance" icon="clock" parent="Human Resources" :href="route('admin.attendance.index')" :active="request()->routeIs('admin.attendance.*')" />@endcan
-            @can('attendance.view_all')<x-sidebar-item label="Leave Management" icon="calendar" parent="Human Resources" :href="route('admin.leave.index')" :active="request()->routeIs('admin.leave.*')" />@endcan
+            @can('attendance.configure')<x-sidebar-item label="Leave Types" icon="settings" parent="Human Resources" :href="route('admin.leave.types')" :active="request()->routeIs('admin.leave.types')" />@endcan
+            @can('attendance.view_all')<x-sidebar-item label="Leave Management" icon="calendar" parent="Human Resources" :href="route('admin.leave.index')" :active="request()->routeIs('admin.leave.index', 'admin.leave.show')" />@endcan
             @can('attendance.view_own')<x-sidebar-item label="My attendance" icon="clock" parent="Human Resources" :href="route('attendance.own')" :active="request()->routeIs('attendance.own')" />@endcan
         </x-sidebar-group>
         @endcanany
