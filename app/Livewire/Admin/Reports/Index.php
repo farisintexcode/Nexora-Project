@@ -61,7 +61,7 @@ class Index extends Component
         $reports->authorize(auth()->user());
         $snapshot = $this->previewed ? $reports->snapshot(auth()->user(), $this->filters) : null;
         $rows = $snapshot ? new LengthAwarePaginator(array_slice($snapshot['rows'], ($this->getPage() - 1) * 20, 20), count($snapshot['rows']), 20, $this->getPage(), ['path' => request()->url()]) : null;
-        $batches = AssignmentBatch::query()->latest('id')->limit(200)->get();
+        $batches = AssignmentBatch::query()->where('status', 'active')->latest('id')->limit(200)->get();
         $riders = Staff::query()->where('is_rider', true)->orderBy('first_name')->limit(200)->get();
 
         return view('livewire.admin.reports.index', compact('snapshot', 'rows', 'batches', 'riders'));

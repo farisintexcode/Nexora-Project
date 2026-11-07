@@ -1,7 +1,7 @@
 <section class="grid gap-6">
     <x-feedback />
     <x-page-header title="Assignment" eyebrow="Recovery work packages" description="Organize assignments, schedules and routing metadata before importing tasks."><x-slot:actions>@can('create', \App\Models\AssignmentBatch::class)<a class="btn btn-primary" href="{{ route('admin.assignments.create') }}"><x-icon name="plus" class="size-4" />New assignment</a>@endcan</x-slot:actions></x-page-header>
-    <nav aria-label="Assignment register" class="segment-tabs"><a class="segment-tab" href="{{ route('admin.assignments.index') }}" @if($status === 'active') aria-current="page" @endif>Active assignments</a><a class="segment-tab" href="{{ route('admin.assignments.index', ['status'=>'archived']) }}" @if($status === 'archived') aria-current="page" @endif>Archived assignments</a></nav>
+    <nav aria-label="Assignment register" class="segment-tabs"><a class="segment-tab" href="{{ route('admin.assignments.index') }}" @if($status === 'active') aria-current="page" @endif>Active assignments</a><a class="segment-tab" href="{{ route('admin.assignments.index', ['status'=>'overdue']) }}" @if($status === 'overdue') aria-current="page" @endif>Overdue assignments</a><a class="segment-tab" href="{{ route('admin.assignments.index', ['status'=>'archived']) }}" @if($status === 'archived') aria-current="page" @endif>Archived assignments</a></nav>
     <div class="assignment-register grid min-w-0 gap-4">
         <form class="surface grid gap-5 p-4 sm:p-5" wire:submit="applyFilters" data-start-open="{{ $activeFilterCount > 0 ? '1' : '0' }}" x-data="{ filtersOpen: $el.dataset.startOpen === '1' }">
             <div class="flex flex-col gap-3 sm:flex-row">
@@ -76,7 +76,8 @@
                                 @foreach(['upload_count', 'assigned_count', 'completed_count', 'payment_update_count'] as $count)
                                     <td class="text-right tabular-nums">{{ $batch->{$count} ?: '-' }}</td>
                                 @endforeach
-                                <td><x-badge :tone="$batch->status->value === 'active' ? 'success' : 'neutral'">{{ ucfirst($batch->status->value) }}</x-badge></td>
+                                @php($isOverdue = $batch->status->value === 'active' && $batch->due_date->toDateString() < $today)
+                                <td><x-badge :tone="$isOverdue ? 'danger' : ($batch->status->value === 'active' ? 'success' : 'neutral')">{{ $isOverdue ? 'Overdue' : ucfirst($batch->status->value) }}</x-badge></td>
                                 <td class="text-right">
                                     <div x-data="{ open: false }" x-on:keydown.escape="open = false">
                                         <button type="button" x-ref="trigger" class="assignment-menu-trigger" x-on:click="open = !open" x-bind:aria-expanded="open" aria-haspopup="menu" aria-label="Actions for {{ $batch->name }}"><x-icon name="more" class="size-4" /></button>

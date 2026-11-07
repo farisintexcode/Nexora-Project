@@ -134,7 +134,7 @@ class Index extends Component
 
         return view('livewire.admin.verification.index', [
             'submissions' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'dateError' => $dates->fails() ? 'Choose a valid submission date range (MYT).' : null, 'activeFilterCount' => count(array_filter([$this->rider, $this->from.$this->until], fn (string $value): bool => $value !== '')),
-            'batches' => AssignmentBatch::query()->orderByDesc('id')->limit(200)->get(),
+            'batches' => AssignmentBatch::query()->where('status', 'active')->orderByDesc('id')->limit(200)->get(),
             'riders' => Staff::query()->whereHas('user', fn ($u) => $u->whereIn('id', TaskSubmission::query()->select('submitted_by')))->orderBy('first_name')->limit(200)->get(),
         ]);
     }

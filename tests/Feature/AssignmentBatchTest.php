@@ -26,6 +26,8 @@ uses(LazilyRefreshDatabase::class);
 beforeEach(function (): void {
     $this->withoutVite();
     $this->seed(DatabaseSeeder::class);
+    // Factory batches fall due on 31 Oct 2026; a fixed earlier clock keeps them on the Active tab rather than Overdue.
+    $this->travelTo('2026-10-15 04:00:00');
 });
 
 function batchInput(array $overrides = []): array
@@ -261,8 +263,50 @@ test('admin screens show the assignment code instead of the primary key', functi
     }
 });
 
+test('reopening from the assignment page returns it to the active tab with the same ID', function (): void {
+    $user = staffManager();
+    $user->givePermissionTo('assignments.reopen');
+    $archived = AssignmentBatch::factory()->create(['name' => 'Returning package', 'external_reference' => null, 'status' => 'archived', 'archived_at' => now()])->refresh();
+
+    Livewire::actingAs($user)->test(Index::class)->set('status', 'archived')->assertSee('Returning package')->assertDontSee('Move to active');
+    Livewire::actingAs($user)->test(Editor::class, ['batch' => $archived])->set('reason', 'Client sent more accounts')->call('changeStatus', 'active')->assertHasNoErrors();
+
+    expect($archived->refresh()->status)->toBe(BatchStatus::Active)->and($archived->assignment_code)->toBe($archived->getOriginal('assignment_code'));
+    Livewire::actingAs($user)->test(Index::class)->assertSee($archived->assignment_code)->assertSee('Returning package');
+});
+
+test('each assignment appears in exactly one of the active overdue and archived tabs', function (): void {
+    $this->travelTo('2026-11-08 15:00:00');
+    $user = staffManager();
+    AssignmentBatch::factory()->create(['name' => 'Future package', 'external_reference' => null, 'start_date' => '2026-11-01', 'due_date' => '2026-11-20']);
+    AssignmentBatch::factory()->create(['name' => 'Due today package', 'external_reference' => null, 'start_date' => '2026-11-01', 'due_date' => '2026-11-08']);
+    AssignmentBatch::factory()->create(['name' => 'Late package', 'external_reference' => null, 'start_date' => '2026-10-01', 'due_date' => '2026-11-07']);
+    AssignmentBatch::factory()->create(['name' => 'Closed package', 'external_reference' => null, 'start_date' => '2026-09-01', 'due_date' => '2026-09-30', 'status' => 'archived', 'archived_at' => now()]);
+
+    Livewire::actingAs($user)->test(Index::class)
+        ->assertSee('Overdue assignments')
+        ->assertSee('Future package')->assertSee('Due today package')->assertDontSee('Late package')->assertDontSee('Closed package')
+        ->set('status', 'overdue')->assertSee('Late package')->assertSee('Overdue')->assertDontSee('Future package')->assertDontSee('Due today package')->assertDontSee('Closed package')
+        ->set('status', 'archived')->assertSee('Closed package')->assertDontSee('Late package')->assertDontSee('Future package');
+
+    $this->travelTo('2026-11-08 16:01:00');
+    Livewire::actingAs($user)->test(Index::class)->set('status', 'overdue')->assertSee('Due today package')->assertSee('Late package');
+    expect(AssignmentBatch::query()->where('name', 'Late package')->sole()->status)->toBe(BatchStatus::Active);
+});
+
+test('task management assignment lists offer active assignments only', function (): void {
+    $user = staffManager();
+    $active = AssignmentBatch::factory()->create(['name' => 'Open package'])->refresh();
+    $archived = AssignmentBatch::factory()->create(['name' => 'Closed package', 'status' => 'archived', 'archived_at' => now()])->refresh();
+
+    foreach (['Upload Task' => route('admin.imports.index'), 'Assign Task' => route('admin.tasks.allocate'), 'Create Task' => route('admin.tasks.create'), 'Manage Task' => route('admin.tasks.index'), 'Task Verification' => route('admin.verification.index'), 'Report' => route('admin.reports.index')] as $page => $screen) {
+        $this->actingAs($user)->get($screen)->assertOk()
+            ->assertSee($active->assignment_code.' - Open package')
+            ->assertDontSee($archived->assignment_code.' - Closed package');
+    }
+});
+
 test('both register tabs show the permanent code and search finds it in full or in part', function (): void {
-    $this->travelTo('2026-11-04 04:00:00');
     $user = staffManager();
     AssignmentBatch::factory()->create(['name' => 'Active package', 'external_reference' => null]);
     AssignmentBatch::factory()->create(['name' => 'Other package', 'external_reference' => null]);
