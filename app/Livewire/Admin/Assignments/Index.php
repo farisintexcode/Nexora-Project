@@ -130,7 +130,13 @@ class Index extends Component
     {
         Gate::authorize('viewAny', AssignmentBatch::class);
         $batches = AssignmentBatch::query()->with(['type', 'state']);
-        in_array($this->status, ['active', 'archived'], true) ? $batches->where('status', $this->status) : $batches->whereRaw('false');
+        $today = now()->timezone(config('dcms.business_timezone'))->toDateString();
+        match ($this->status) {
+            'active' => $batches->where('status', 'active')->where('due_date', '>=', $today),
+            'overdue' => $batches->where('status', 'active')->where('due_date', '<', $today),
+            'archived' => $batches->where('status', 'archived'),
+            default => $batches->whereRaw('false'),
+        };
         $batches->when($this->type !== '', fn ($q) => $q->where('type_code', $this->type))->when($this->state !== '', fn ($q) => $q->where('state_code', $this->state));
         $dates = Validator::make(['from' => $this->from ?: null, 'until' => $this->until ?: null], ['from' => ['nullable', 'date_format:Y-m-d'], 'until' => ['nullable', 'date_format:Y-m-d', ...($this->from !== '' ? ['after_or_equal:from'] : [])]]);
         if ($dates->fails()) {
@@ -143,13 +149,13 @@ class Index extends Component
             $batches->whereRaw('false');
         } elseif ($term !== '') {
             $literal = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term).'%';
-            $batches->where(fn ($q) => $q->where('name', 'ilike', $literal)->orWhere('external_reference', 'ilike', $literal)->when(ctype_digit($term) && strlen($term) < 10, fn ($q) => $q->orWhere('register_no', (int) $term)));
+            $batches->where(fn ($q) => $q->where('name', 'ilike', $literal)->orWhere('external_reference', 'ilike', $literal)->orWhere('assignment_code', 'ilike', $literal));
         }
         match ($this->sort) {
-            'oldest' => $batches->orderBy('register_no'),
+            'oldest' => $batches->orderBy('id'),
             'name', 'name_asc' => $batches->orderBy('name')->orderBy('id'),
             'name_desc' => $batches->orderByDesc('name')->orderByDesc('id'),
-            default => $batches->orderByDesc('register_no'),
+            default => $batches->orderByDesc('id'),
         };
         $batches->withCount([
             'tasks as upload_count',
@@ -166,6 +172,7 @@ class Index extends Component
             'filterError' => $dates->fails() ? $dates->errors()->first() : null,
             'activeFilterCount' => count(array_filter(self::ADVANCED_FILTERS, fn (string $filter): bool => $this->{$filter} !== '')),
             'canViewTasks' => Auth::user()->can('tasks.view'),
+            'today' => $today,
         ]);
     }
 }

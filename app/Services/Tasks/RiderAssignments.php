@@ -26,7 +26,7 @@ class RiderAssignments
         $summary = $this->tasks($actor)->select('assignment_batch_id')->selectRaw("count(*) as task_count, count(*) filter (where work_status in ('unstarted','in_progress')) as pending_count, count(*) filter (where work_status='submitted') as submitted_count, count(*) filter (where work_status='completed') as completed_count, count(*) filter (where review_status='returned') as returned_count")->groupBy('assignment_batch_id');
 
         return AssignmentBatch::query()->joinSub($summary, 'rider_work', 'assignment_batches.id', '=', 'rider_work.assignment_batch_id')
-            ->select(['assignment_batches.id', 'assignment_batches.public_id', 'assignment_batches.name', 'assignment_batches.external_reference', 'assignment_batches.start_date', 'assignment_batches.due_date', 'assignment_batches.status', 'rider_work.task_count', 'rider_work.pending_count', 'rider_work.submitted_count', 'rider_work.completed_count', 'rider_work.returned_count'])
+            ->select(['assignment_batches.id', 'assignment_batches.public_id', 'assignment_batches.assignment_code', 'assignment_batches.name', 'assignment_batches.external_reference', 'assignment_batches.start_date', 'assignment_batches.due_date', 'assignment_batches.status', 'rider_work.task_count', 'rider_work.pending_count', 'rider_work.submitted_count', 'rider_work.completed_count', 'rider_work.returned_count'])
             ->orderBy('assignment_batches.due_date')->orderBy('assignment_batches.id');
     }
 }

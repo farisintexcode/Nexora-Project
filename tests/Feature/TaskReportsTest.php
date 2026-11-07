@@ -83,6 +83,14 @@ test('Rider assignment and performance reports use only currently allocated task
     expect($reports->snapshot($actor, reportCriteria(['family' => 'rider_assignment']))['rows'])->toBe([]);
 });
 
+test('report rows carry the permanent assignment ID beside the assignment name', function () {
+    [$actor, $task] = reportFixture();
+    $snapshot = app(TaskReports::class)->snapshot($actor, reportCriteria());
+    expect($snapshot['columns']['assignment_id'])->toBe('Assignment ID')
+        ->and($snapshot['rows'][0]['assignment_id'])->toBe($task->batch->refresh()->assignment_code)
+        ->and($snapshot['rows'][0]['batch'])->toBe($task->batch->name);
+});
+
 test('renderer escapes spreadsheet formula injection and produces trusted PDF', function () {
     [$actor] = reportFixture();
     $snapshot = app(TaskReports::class)->snapshot($actor, reportCriteria());

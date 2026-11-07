@@ -5,7 +5,7 @@
         <h2 class="font-semibold">Choose an update</h2>
         <p class="text-xs leading-6 text-ink-500">Start each task and save its visit draft first. Select up to 50 of your current tasks. Submitted and Completed tasks are read-only; returned work needs a new correction draft.</p>
         <div class="grid gap-4 sm:grid-cols-2">
-            <x-select name="batch" label="Assignment" wire:model.live="batch"><option value="">Choose assignment</option>@foreach($batches as $assignment)<option value="{{ $assignment->public_id }}">{{ $assignment->name }}</option>@endforeach</x-select>
+            <x-select name="batch" label="Assignment" wire:model.live="batch"><option value="">Choose assignment</option>@foreach($batches as $assignment)<option value="{{ $assignment->public_id }}">{{ $assignment->assignment_code }} - {{ $assignment->name }}</option>@endforeach</x-select>
             <x-select name="operation" label="Type of manage" wire:model.live="operation">@foreach(\App\Actions\Tasks\RiderBatchUpdate::OPERATIONS as $code => $label)<option value="{{ $code }}">{{ $label }}</option>@endforeach</x-select>
         </div>
         @if(isset(\App\Actions\Tasks\RiderBatchUpdate::CATEGORIES[$operation]))

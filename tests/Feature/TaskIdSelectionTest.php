@@ -126,7 +126,7 @@ test('manage task shows three main filters and applies the rest only from the pa
     DB::table('tasks')->where('id', $task->id)->update(['priority_code' => 'urgent']);
 
     Livewire::actingAs(staffManager())->test(Index::class)
-        ->assertSee($assignment->id.' - Filter assignment')
+        ->assertSee($assignment->refresh()->assignment_code.' - Filter assignment')
         ->assertSee('All assignments')
         ->assertDontSee('Assignment batch')
         ->assertDontSee('Exact task ID')
@@ -187,7 +187,7 @@ test('create task shows assignment type and date like upload task', function ():
     $assignment = AssignmentBatch::factory()->create(['name' => 'Typed assignment', 'start_date' => '2026-11-02', 'due_date' => '2026-11-03']);
 
     Livewire::actingAs(staffManager())->test(Editor::class)
-        ->assertSee($assignment->id.' - Typed assignment')
+        ->assertSee($assignment->refresh()->assignment_code.' - Typed assignment')
         ->assertDontSee('Assignment batch')
         ->set('data.assignment_batch_id', (string) $assignment->id)
         ->assertSee('02 Nov 2026 - 03 Nov 2026');
@@ -196,7 +196,7 @@ test('create task shows assignment type and date like upload task', function ():
 test('verification shows three main filters and applies the rest only from the panel', function (): void {
     $assignment = AssignmentBatch::factory()->create(['name' => 'Review assignment']);
     Livewire::actingAs(staffManager())->test(Admin\Verification\Index::class)
-        ->assertSee($assignment->id.' - Review assignment')
+        ->assertSee($assignment->refresh()->assignment_code.' - Review assignment')
         ->assertDontSee('Assignment batch')
         ->assertDontSee('Submitted from')
         ->assertSee('Submitted Date')
@@ -235,7 +235,7 @@ test('report filters show assignment and rider lists like manage task', function
     $assignment = AssignmentBatch::factory()->create(['name' => 'Report assignment']);
     $rider = Staff::factory()->create(['is_rider' => true]);
     Livewire::actingAs(staffManager())->test(Admin\Reports\Index::class)
-        ->assertSee($assignment->id.' - Report assignment')
+        ->assertSee($assignment->refresh()->assignment_code.' - Report assignment')
         ->assertSee('All assignments')
         ->assertSee('Any Rider')
         ->assertSee($rider->full_name)
@@ -258,7 +258,7 @@ test('assign task shows assignment type and date and previews typed ids without 
     User::factory()->for($rider)->create()->assignRole('Rider');
 
     $page = Livewire::actingAs($actor)->test(Allocation::class)
-        ->assertSee($assignment->id.' - Typed assignment')
+        ->assertSee($assignment->refresh()->assignment_code.' - Typed assignment')
         ->assertDontSee('Assignment batch')
         ->assertDontSee('IWK')
         ->assertDontSee('Task IDs')
@@ -519,8 +519,8 @@ test('the dashboard names assignments in the same id and name format', function 
     numberedTask($assignment, 'JAN101');
 
     Livewire::actingAs(staffManager())->test(Admin\Home::class)
-        ->assertSeeHtml('>'.$assignment->id.' - Dashboard work</option>')
-        ->assertSeeHtml('>'.$assignment->id.' - Dashboard work</p>')
+        ->assertSeeHtml('>'.$assignment->refresh()->assignment_code.' - Dashboard work</option>')
+        ->assertSeeHtml('>'.$assignment->refresh()->assignment_code.' - Dashboard work</p>')
         ->assertDontSee('Assignment batch');
 });
 

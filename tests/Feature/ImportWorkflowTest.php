@@ -386,7 +386,7 @@ test('upload task page lists active assignments and fills type and date from the
     $active = AssignmentBatch::factory()->create(['name' => 'Selectable assignment', 'start_date' => '2026-11-02', 'due_date' => '2026-11-03']);
     AssignmentBatch::factory()->create(['name' => 'Hidden assignment', 'status' => BatchStatus::Archived, 'archived_at' => now()]);
     Livewire::actingAs(staffManager())->test(Index::class)
-        ->assertSee($active->id.' - Selectable assignment')
+        ->assertSee($active->refresh()->assignment_code.' - Selectable assignment')
         ->assertDontSee('Hidden assignment')
         ->assertDontSee('Target contract')
         ->set('data.assignment_batch_id', (string) $active->id)
