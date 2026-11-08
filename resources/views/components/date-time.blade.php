@@ -1,10 +1,11 @@
-@props(['name', 'label', 'model', 'defaultTime' => '09:00', 'withTime' => true, 'placeholder' => 'Select a date and time', 'disabled' => false])
-<div class="grid content-start gap-2" wire:key="calendar-{{ $name }}" wire:ignore x-data="nexoraDateTime($wire, '{{ $model }}', {{ $withTime ? "'".$defaultTime."'" : 'null' }})" x-on:keydown.escape="open && finish()">
+@props(['name', 'label', 'model', 'defaultTime' => '09:00', 'withTime' => true, 'placeholder' => 'Select a date and time', 'disabled' => false, 'min' => null, 'help' => null])
+<div class="grid content-start gap-2" wire:key="calendar-{{ $name }}" wire:ignore x-data="nexoraDateTime($wire, '{{ $model }}', {{ $withTime ? "'".$defaultTime."'" : 'null' }}, @js($min))" x-on:keydown.escape="open && finish()">
     <label id="{{ $name }}-label" for="{{ $name }}" class="field-label">{{ $label }}</label>
-    <button id="{{ $name }}" type="button" x-ref="trigger" class="field flex items-center justify-between gap-3 text-left" aria-labelledby="{{ $name }}-label {{ $name }}-value" aria-haspopup="dialog" x-bind:aria-expanded="open" x-on:click="toggle()" @disabled($disabled)>
+    <button id="{{ $name }}" type="button" x-ref="trigger" class="field flex items-center justify-between gap-3 text-left" aria-labelledby="{{ $name }}-label {{ $name }}-value" aria-haspopup="dialog" x-bind:aria-expanded="open" x-on:click="toggle()" @if($help) aria-describedby="{{ $name }}-help" @endif @disabled($disabled)>
         <span id="{{ $name }}-value" class="min-w-0 truncate" x-bind:class="summary ? '' : 'text-ink-500'" x-text="summary || @js($placeholder)"></span>
         <x-icon name="calendar" class="size-4 text-ink-500" />
     </button>
+    @if($help)<p id="{{ $name }}-help" class="field-help">{{ $help }}</p>@endif
     <div class="date-range-panel" role="dialog" aria-label="Choose {{ $label }}" x-show="open" x-cloak x-anchor.bottom-start.offset.4="$refs.trigger" x-on:click.outside="open = false">
         <div class="flex items-center justify-between gap-2">
             <button type="button" class="date-range-nav" aria-label="Previous month" x-on:click="shiftMonth(-1)"><x-icon name="chevron" class="size-4 rotate-180" /></button>
@@ -16,7 +17,7 @@
             <template x-for="cell in cells" x-bind:key="cell.key">
                 <div class="grid">
                     <template x-if="cell.iso">
-                        <button type="button" class="date-range-day" x-bind:data-state="cell.iso === date ? 'selected' : ''" x-bind:data-today="cell.iso === today" x-bind:aria-label="cell.label" x-bind:aria-pressed="cell.iso === date" x-bind:aria-current="cell.iso === today ? 'date' : null" x-text="cell.day" x-on:click="choose(cell.iso)"></button>
+                        <button type="button" class="date-range-day" x-bind:data-state="cell.iso === date ? 'selected' : ''" x-bind:data-today="cell.iso === today" x-bind:aria-label="cell.label" x-bind:aria-pressed="cell.iso === date" x-bind:aria-current="cell.iso === today ? 'date' : null" x-bind:disabled="isBeforeMinimum(cell.iso)" x-text="cell.day" x-on:click="choose(cell.iso)"></button>
                     </template>
                 </div>
             </template>

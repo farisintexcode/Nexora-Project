@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { chooseDate, expect, test } from './fixtures';
 
 test('assignment date filter picks one day by double-click or a range by two dates', async ({ page }) => {
     const email = process.env.DCMS_E2E_ADMIN_EMAIL;
@@ -54,7 +54,7 @@ test('assignment metadata editing and confirmed archival preserve usable desktop
     await page.getByRole('link', { name: 'New assignment', exact: true }).click();
     await page.getByLabel('Assignment type', { exact: true }).selectOption('domestic_dr');
     await page.getByLabel('Assignment name', { exact: true }).fill(name);
-    await page.getByLabel('Assignment due date', { exact: true }).fill(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+    await chooseDate(page, 'due-date', 'Assignment due date *', new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
     await page.getByLabel('DCA code', { exact: true }).fill('0001');
     await page.getByLabel('State', { exact: true }).selectOption('selangor');
     if (test.info().project.name === 'rider-mobile') {

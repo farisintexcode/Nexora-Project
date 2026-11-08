@@ -592,6 +592,7 @@
     .date-range-day[data-today='true'] { @apply font-bold underline underline-offset-4; }
     .date-range-day[data-state='range'] { @apply rounded-none bg-brand-soft; }
     .date-range-day[data-state='selected'] { @apply bg-brand-primary font-semibold text-white hover:bg-brand-hover; }
+    .date-range-day:disabled { @apply text-ink-300 hover:bg-transparent; }
     .dark .date-range-panel { background-color: var(--surface-raised); }
     .dark .date-range-day[data-state='selected'] { @apply bg-brand-accent text-brand-primary hover:bg-brand-accent-hover; }
 }
