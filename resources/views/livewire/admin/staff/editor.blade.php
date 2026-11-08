@@ -9,6 +9,7 @@
             <x-input name="data.first_name" label="First Name" wire:model="data.first_name" maxlength="100" required />
             <x-input name="data.last_name" label="Last Name" wire:model="data.last_name" maxlength="100" required />
             <x-select name="data.system_role" label="System Role" wire:model="data.system_role" required>
+                <option value="" disabled>Select role</option>
                 @foreach(config('dcms.staff_roles') as $role)<option value="{{ $role }}">{{ $role }}</option>@endforeach
             </x-select>
             <x-select name="data.is_active" label="Staff Status" wire:model="data.is_active" required><option value="1">Active</option><option value="0">Inactive</option></x-select>

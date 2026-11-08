@@ -69,7 +69,7 @@ class SaveStaff
                     if ($accountData->fails()) {
                         throw ValidationException::withMessages(collect($accountData->errors()->toArray())->mapWithKeys(fn ($messages, $key) => ['data.'.$key => $messages])->all());
                     }
-                    $data['is_rider'] = $input['system_role'] === 'Rider' || ($existing && ! $staff->user?->hasRole('Rider') && $staff->is_rider);
+                    $data['is_rider'] = $input['system_role'] === 'Rider';
                     if ($input['system_role'] === 'System Admin') {
                         Gate::forUser($actor)->authorize('roles.manage');
                     }
