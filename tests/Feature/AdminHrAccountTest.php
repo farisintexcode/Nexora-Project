@@ -179,19 +179,22 @@ test('disabling a pending invitation does not allow password setup to be skipped
     expect($account->fresh()->status)->toBe(AccountStatus::Invited);
 });
 
-test('equivalent legacy Admin edits retain custom grants and Rider eligibility', function (): void {
+test('equivalent legacy Admin edits retain custom grants and Rider eligibility', function (bool $privileged): void {
     $actor = User::factory()->create();
     $actor->assignRole('System Admin');
     $staff = Staff::factory()->create(['is_rider' => true]);
     $account = User::factory()->for($staff)->create();
     $account->assignRole('Admin');
     $account->givePermissionTo('templates.approve');
+    if ($privileged) {
+        $account->givePermissionTo('roles.manage');
+    }
 
-    Livewire::actingAs($actor)->test(Editor::class, ['staff' => $staff])->set('data.last_name', 'Changed')->call('save')->assertHasNoErrors();
+    Livewire::actingAs($actor)->test(Editor::class, ['staff' => $staff])->assertSet('data.system_role', $privileged ? 'System Admin' : 'Administrative')->set('data.last_name', 'Changed')->call('save')->assertHasNoErrors();
 
     expect($account->fresh()->getRoleNames()->all())->toBe(['Admin'])->and($account->fresh()->hasDirectPermission('templates.approve'))->toBeTrue()
         ->and($staff->fresh()->is_rider)->toBeTrue();
-});
+})->with([false, true]);
 
 test('removing required system account fields from Livewire payload cannot bypass validation', function (): void {
     $actor = staffManager();
@@ -262,4 +265,36 @@ test('authorized role changes preserve historical position values without exposi
 
     expect($staff->fresh()->position_code)->toBe('99')->and($account->fresh()->getRoleNames()->all())->toBe(['Administrative']);
     $this->actingAs($actor)->get(route('admin.staff.show', $staff))->assertOk()->assertSee('Administrative')->assertDontSee('Employment Position');
+});
+
+test('explicit legacy Admin eligibility removal requires a reason and preserves grants', function (): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => true]);
+    $account = User::factory()->for($staff)->create();
+    $account->assignRole('Admin');
+    $account->givePermissionTo('templates.approve');
+
+    $editor = Livewire::actingAs($actor)->test(Editor::class, ['staff' => $staff])
+        ->set('data.is_rider', false)->call('save')->assertHasErrors('data.reason');
+    expect($staff->fresh()->is_rider)->toBeTrue();
+    $editor->set('data.reason', 'Approved removal of field eligibility')->call('save')->assertHasNoErrors();
+    expect($staff->fresh()->is_rider)->toBeFalse();
+    expect($account->fresh()->getRoleNames()->all())->toBe(['Admin']);
+    expect($account->fresh()->hasDirectPermission('templates.approve'))->toBeTrue();
+});
+
+test('explicit legacy Admin role conversion still synchronizes eligibility and requires a reason', function (): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => true]);
+    $account = User::factory()->for($staff)->create();
+    $account->assignRole('Admin');
+
+    $editor = Livewire::actingAs($actor)->test(Editor::class, ['staff' => $staff])
+        ->set('data.system_role', 'System Admin')->call('save')->assertHasErrors('data.reason');
+    expect($staff->fresh()->is_rider)->toBeTrue();
+    $editor->set('data.reason', 'Converted to system administration')->call('save')->assertHasNoErrors();
+    expect($staff->fresh()->is_rider)->toBeFalse();
+    expect($account->fresh()->getRoleNames()->all())->toBe(['System Admin']);
 });

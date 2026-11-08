@@ -117,6 +117,7 @@ class Editor extends Component
             $this->revision
         );
 
+        $this->resetValidation();
         $this->reset('data');
 
         session()->flash(
