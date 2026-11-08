@@ -75,8 +75,9 @@ test('Rider applies reviews cancels and follows independent Admin leave decision
     await page.evaluate(() => window['dcmsSetTheme']('dark'));
     await page.screenshot({ path: test.info().outputPath('rider-leave-cancelled-dark.png'), fullPage: true });
     await page.goto('/rider/attendance/leave');
+    await page.getByLabel('Leave Type', { exact: true }).selectOption({ label: 'Synthetic Personal Leave' });
     await page.getByLabel('Status', { exact: true }).selectOption('approved');
-    await page.getByRole('button', { name: 'Apply Filters' }).click();
+    await page.getByRole('button', { name: /Apply filters/i }).click();
     await expect(page.getByRole('link', { name: 'View Request' })).toHaveCount(test.info().project.name === 'desktop' ? 1 : 2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(errors).toEqual([]);
@@ -106,8 +107,10 @@ test('Admin configures actual leave rules and records a rejection reason', async
     const offset = test.info().project.name === 'desktop' ? 5 : 8;
     const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + offset * 86400000));
     await chooseDateRange(page, 'leave-date', 'Date', date);
+    await page.getByRole('button', { name: /^Filters/ }).click();
+    await page.getByLabel('Leave Type', { exact: true }).selectOption({ label: 'Synthetic Personal Leave' });
     await page.getByLabel('Status', { exact: true }).selectOption('pending');
-    await page.getByRole('button', { name: 'Apply Filters' }).click();
+    await page.getByRole('button', { name: /Apply filters/i }).click();
     await expect(page.getByRole('link', { name: 'View Request', exact: true })).toHaveCount(1);
     await page.getByRole('link', { name: 'View Request', exact: true }).click();
     await page.getByLabel('Decision', { exact: true }).selectOption('rejected');

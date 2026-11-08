@@ -1,0 +1,2 @@
+@props(['controls', 'count' => 0])
+<button type="button" class="btn btn-secondary min-h-11 shrink-0" x-on:click="filtersOpen = !filtersOpen" x-bind:aria-expanded="filtersOpen" aria-controls="{{ $controls }}"><x-icon name="filter" class="size-4" />Filters @if($count)<span class="assignment-filter-count" aria-label="{{ $count }} applied">{{ $count }}</span>@endif<x-icon name="chevron" class="size-4 transition-transform" x-bind:class="filtersOpen ? '-rotate-90' : 'rotate-90'" /></button>

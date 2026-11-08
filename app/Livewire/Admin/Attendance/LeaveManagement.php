@@ -7,6 +7,7 @@ use App\Models\Attendance;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Notifications\LeaveUpdated;
+use App\Services\Attendance\AttendanceAccess;
 use App\Services\Attendance\LeaveAccess;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -30,6 +31,8 @@ class LeaveManagement extends Component
     public string $status = '';
 
     public string $search = '';
+
+    public string $rider = '';
 
     public string $filterType = '';
 
@@ -62,8 +65,15 @@ class LeaveManagement extends Component
 
     public function filterRequests(): void
     {
-        $this->validate(['status' => ['nullable', 'in:pending,approved,rejected,cancelled'], 'search' => ['nullable', 'string', 'max:100'], 'filterType' => ['nullable', 'uuid'], 'from' => ['nullable', 'date_format:Y-m-d'], 'until' => ['nullable', 'date_format:Y-m-d', ...($this->from !== '' ? ['after_or_equal:from'] : [])]]);
+        $this->validate(['rider' => ['nullable', 'uuid'], 'status' => ['nullable', 'in:pending,approved,rejected,cancelled'], 'search' => ['nullable', 'string', 'max:100'], 'filterType' => ['nullable', 'uuid'], 'from' => ['nullable', 'date_format:Y-m-d'], 'until' => ['nullable', 'date_format:Y-m-d', ...($this->from !== '' ? ['after_or_equal:from'] : [])]]);
         $this->resetPage();
+    }
+
+    public function resetFilters(): void
+    {
+        $this->reset('status', 'search', 'rider', 'filterType', 'from', 'until');
+        $this->resetPage();
+        $this->resetValidation();
     }
 
     public function render(LeaveAccess $access): View
@@ -72,6 +82,9 @@ class LeaveManagement extends Component
         abort_unless($access->admin($actor), 403);
         $selected = $this->requestId ? $access->scope($actor)->with('rider', 'requester', 'reviewer', 'document')->where('public_id', $this->requestId)->firstOrFail() : null;
         $query = $access->scope($actor)->with('rider');
+        if (Str::isUuid($this->rider)) {
+            $query->whereHas('rider', fn ($q) => $q->where('public_id', $this->rider));
+        }
         if (in_array($this->status, ['pending', 'approved', 'rejected', 'cancelled'], true)) {
             $query->where('status', $this->status);
         }
@@ -88,8 +101,9 @@ class LeaveManagement extends Component
                 $query->where($column, $field === 'from' ? '>=' : '<=', $date);
             }
         }
+        $counts = (clone $query)->reorder()->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status');
         $conflicts = $selected ? Attendance::query()->where('rider_id', $selected->rider_id)->whereBetween('service_date', [$selected->start_date, $selected->end_date])->count() : 0;
 
-        return view('livewire.admin.attendance.leave-management', ['selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $access->scope($actor)->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status'), 'canReview' => $access->review($actor), 'canConfigure' => $access->configure($actor), 'conflicts' => $conflicts, 'updates' => $actor->notifications()->where('type', LeaveUpdated::class)->latest()->limit(5)->get()]);
+        return view('livewire.admin.attendance.leave-management', ['riders' => app(AttendanceAccess::class)->riders($actor)->orderBy('staff_no')->get(), 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $counts, 'canReview' => $access->review($actor), 'canConfigure' => $access->configure($actor), 'conflicts' => $conflicts, 'updates' => $actor->notifications()->where('type', LeaveUpdated::class)->latest()->limit(5)->get()]);
     }
 }

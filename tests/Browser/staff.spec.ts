@@ -45,6 +45,7 @@ test('staff directory create edit eligibility and activity stay usable on deskto
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: test.info().outputPath('staff-profile.png'), fullPage: true });
     await page.getByRole('link', { name: 'Back to staff', exact: true }).click();
+    await page.getByRole('button', { name: /^Filters/ }).click();
     await page.getByLabel('Personnel', { exact: true }).selectOption('all');
     await page.getByLabel('Search staff', { exact: true }).fill(number);
     await expect(page.getByText('1 matching staff records', { exact: false })).toBeVisible();

@@ -53,7 +53,7 @@ php artisan dcms:doctor --no-interaction
 
 Migration `make_legacy_staff_position_optional` melonggarkan NOT NULL sahaja. Composite foreign key dan nilai position lama kekal. Borang baharu tidak menerima input position. Rollback sengaja ditolak jika staff tanpa position sudah wujud; gunakan forward fix dan jangan mereka nilai position untuk memaksa rollback.
 
-Leave Types ialah konfigurasi organisasi, bukan reference codes wajib. `DatabaseSeeder` tidak menyemai kategori atau entitlements secara automatik. Dalam **Human Resources → Leave Types**, pentadbir dengan `attendance.configure` boleh menambah polisi sebenar.
+Leave Types ialah konfigurasi organisasi, bukan reference codes wajib. `DatabaseSeeder` tidak menyemai kategori atau entitlements secara automatik. Dalam **Human Resources > Leave Management > Leave Types & Entitlements**, pentadbir dengan `attendance.configure` boleh menambah polisi sebenar.
 
 Untuk contoh setempat sahaja, gantikan email berikut dengan pentadbir aktif yang mempunyai `admin.access`, `attendance.view_all` dan `attendance.configure`:
 
@@ -125,8 +125,48 @@ Playwright config sedia ada menjalankan desktop dan rider-mobile dengan satu wor
 
 ## Had dan troubleshooting
 
-- Tiada annual balance ledger, entitlement accrual, carry-forward, payroll, half-day atau withdrawal selepas approval. Jangan memaparkan nombor baki rekaan.
-- Semua tarikh permohonan memerlukan attendance calendar eksplisit. Tiada automatic statutory holidays atau leave entitlements direka.
+- Annual entitlement dan baki tersedia melalui konfigurasi eksplisit. Tiada accrual, carry-forward automatik, payroll, half-day atau withdrawal selepas approval; jangan mereka baki sejarah.
+- Semua tarikh memerlukan recurring work schedule yang diluluskan atau override eksplisit. Hari normal dijana daripada polisi; tiada statutory holidays atau leave entitlements direka.
 - Private supporting documents masih memerlukan S3 dan scanner. Infrastruktur yang tidak tersedia menghasilkan validation yang jelas; jangan mematikan semakan keselamatan untuk meluluskan fail.
 - Jika jenis cuti hilang, semak status Active dan permission konfigurasi; tiada tenant/client selector dalam model leave_types semasa.
 - Semak logs terkini sahaja. Bezakan HTTP 403/404 yang memang dijangka dalam ujian keselamatan daripada exception yang tidak dijangka. Jangan cetak secret atau token ketika debugging.
+
+## Penapis seragam dan baki cuti - 9 November 2026
+
+Buka Human Resources > Leave Management. Butang **Leave Types & Entitlements** memerlukan kebenaran konfigurasi. Item sidebar Leave Types dan Administration (Planned) telah dibuang; laluan konfigurasi dikekalkan. Tiga System Role kekal System Admin, Administrative dan Rider; kebenaran granular menentukan tindakan.
+
+Pada Attendance, pilih **Service date**, **Rider** dan **Attendance status**. Buka **Filters** untuk **Rider name or staff number**, kemudian **Apply filters**. Nilai kekal pada borang; **Clear filters** mengembalikan tarikh bulan semasa dan membuang carian/status/Rider. Kad ringkasan, rekod, **Export CSV** dan **Print / Save PDF** menggunakan penapis efektif yang sama. Leave Management menyediakan **Rider / Staff**, **Status** dan **Date**; Filters mengandungi **Rider Name or Employee ID** dan **Leave Type**. Pending, Approved, Rejected dan Cancelled boleh ditapis. Staff Management mengekalkan Search staff, System Role dan Staff Status; Personnel, Account Status, Created date, Sort dan Staff per page berada di Filters. Carian staff dikemas kini secara langsung; Apply filters juga tersedia. Task/Assignment mengekalkan pemilihan, penapis dan pagination. Telefon menyusun medan menegak; Filters menyokong papan kekunci dan tema gelap.
+
+Pentadbir dengan `attendance.configure` membuka **Leave Types & Entitlements** untuk menambah/edit nama, **Description**, had setiap permohonan dan dokumen wajib. Tandakan **Deduct from tracked annual balance**, tetapkan **Leave Year** dan **Annual Entitlement (days)**, kemudian **Save Leave Type**. Nilai ialah polisi organisasi, bukan kelayakan berkanun lalai. Semak tahun sebelum menyimpan; tahun lampau tidak boleh ditulis semula. Deactivate menghentikan permohonan baharu dan mengekalkan sejarah. **Staff Leave Balances / Adjustments** menunjukkan baki Rider/type bagi Leave Year dipilih. Masukkan **Adjustment days** positif/negatif dan **Adjustment reason**, kemudian **Record Adjustment**. Pelarasan diaudit dan tidak boleh dipadam; pembetulan menggunakan pelarasan pampasan.
+
+Baki tersedia = kelayakan tahunan + pelarasan dibenarkan - Approved/Used Days - Pending Reserved Days. Pending menempah hari; Approved menukar tempahan kepada penggunaan tanpa potongan kedua. Rejected dan Cancelled melepaskan tempahan. Permohonan merentas tahun mengira hari bekerja dan baki setiap tahun; konfigurasikan kedua-dua tahun. Permohonan lama tanpa snapshot penjejakan tidak dipotong secara retroaktif. Rekonsiliasi baki pembukaan melalui pelarasan dengan sebab; jangan mereka data sejarah. Jenis tanpa penjejakan menunjukkan **Non-deductible / no tracked limit**. Tiada accrual/carry-forward automatik, separuh hari atau pembatalan selepas Approved.
+
+Buka **Attendance > Schedules & policies**. Terbitkan polisi dengan Working days dan waktu sebenar; jangan menganggap semua Rider bekerja Isnin-Jumaat. Pilih **Rider to schedule**, **Approved policy version** dan **Assign dates** sebagai julat kuat kuasa. Tambah **Public holiday date/name** kepada polisi sebelum tarikh dijana, kemudian **Assign recurring work schedule**. Hari normal dijana apabila cuti dikira; Rest Day dan Public Holiday tidak dicaj. Tarikh override sedia ada diutamakan; perubahan tarikh sedia ada memerlukan pembetulan bebas. Julat berulang tidak boleh bertindih. Mesej Working calendar unavailable memerlukan pentadbir melengkapkan jadual bagi semua tarikh berkenaan.
+
+Rider membuka **Attendance > Apply for Leave**, memilih jenis aktif, menyemak Annual Entitlement, Approved/Used Days, Pending Reserved Days dan Available Days. Pilih **Start Date/End Date** untuk Requested Days dan Projected Balance setiap tahun. Isi **Reason for Leave** dan **Supporting Document** jika wajib; pilih **Review Application**, semak, kemudian **Confirm and Submit**. Permohonan menjadi Pending. Pentadbir dengan `attendance.approve_correction` membuka **View Request** dan membuat keputusan bebas; pemohon tidak boleh meluluskan sendiri. Rejected memerlukan sebab. Rider menerima notifikasi dalam aplikasi dan melihat status/baki melalui butiran permohonan. **Cancel Application** hanya untuk Pending yang dibenarkan snapshot polisi. Dokumen peribadi masih memerlukan S3/scanner.
+
+Ujian manual menggunakan data synthetic berasingan: cipta jenis tracked/kelayakan; konfigurasikan jadual termasuk Sabtu bekerja, Ahad rehat dan cuti umum; mohon satu hari dan semak tempahan; lulus melalui akaun bebas dan pastikan tiada potongan berganda. Ulang dengan penolakan/pembatalan. Cuba pertindihan, baki tidak cukup dan merentas tahun tanpa kelayakan tahun kedua. Semak notifikasi/audit dan paparan Leave dalam Attendance selepas Approved. Uji penapis, Clear filters, jumlah kad dan eksport pada desktop/telefon dalam tema cerah/gelap; cuba akaun tanpa kebenaran dan Rider lain. Workflow invitation/first-time login dikekalkan.
+
+### Gate integrasi Docker dan migration bagi perubahan ini
+
+Migration additive: `2026_11_08_171943_add_leave_entitlements_and_recurring_work_calendars`. Semak `php artisan migrate:status --no-interaction`, jalankan `php artisan migrate --pretend --no-interaction`, kemudian `php artisan migrate --no-interaction`. Migration ini menambah dua medan leave_types dan empat jadual polisi/baki/jadual berulang; ia tidak backfill kelayakan atau menukar permohonan lama. Pada preview yang diperiksa, kiraan sebelum/selepas kekal 7 users, 8 staff, 0 tasks, 5 leave_types, 0 leave_requests dan 0 attendances. Tiada reset atau seeder dijalankan pada preview.
+
+Ujian PostgreSQL menggunakan database disposable `nexora_leave_testing`; browser menggunakan database berakhiran `_e2e` yang berasingan serta password runtime. Image setempat `nexora-preview-tests:local` menyediakan PHP 8.4 dan GD. Gunakan `php -d memory_limit=512M vendor/bin/pest ...` untuk set regression yang melibatkan workbook besar. Test concurrency menggunakan dua proses sebenar dan data committed pada database ujian, dengan DatabaseTruncation; ia tidak menjalankan rollback migration legacy yang sengaja menolak kehilangan rekod staff tanpa position.
+
+Server browser yang mendapat DB/Redis melalui environment kontena mesti menggunakan `php artisan serve --host=0.0.0.0 --port=8000 --no-reload --no-interaction`. Reload mode Laravel menapis environment child process dan boleh membaca semula nilai `.env`; `--no-reload` mengekalkan override database/Redis ujian. Semak nama database efektif sebelum seeding. Jalankan Playwright hanya terhadap server ujian ini. Redis test menggunakan logical database berasingan. Jika Chromium revision tiada, `npx.cmd playwright install chromium` memasang runtime browser tanpa mengubah dependencies projek.
+
+### Keputusan automatik sebenar - 9 November 2026
+
+| Invocation | Lulus | Gagal | Skip | Assertions / masa |
+|---|---:|---:|---:|---|
+| Regression luas PostgreSQL/Docker sebelum pembetulan terakhir | 324 | 2 | 1 | 1,585 assertions; 532.33s |
+| Rerun fokus balance, leave, shared calendars dan concurrency selepas pembetulan | 89 | 0 | 0 | 384 assertions; 163.40s |
+| Rerun akhir 15 kes balance/adjustment/filter | 15 | 0 | 0 | 94 assertions; 35.43s |
+| Concurrency dahulu, kemudian 33 kes leave requests untuk membuktikan isolation dan dokumen | 34 | 0 | 0 | 126 assertions; 67.78s |
+| Playwright akhir: 10 desktop + 10 rider-mobile | 20 | 0 | 0 | 8.6 minit |
+
+Dua kegagalan regression awal telah diselesaikan: calendar field baharu kini menggunakan shared date component, dan concurrency test menggunakan closure bebas daripada Pest class serta cleanup yang serasi dengan transactional tests. Semakan calendar lama turut dikemas kini kerana Staff editor memaparkan timestamps read-only, bukannya editable appointment date. Cleanup concurrency menandakan migration baseline perlu dibina semula supaya reference data milik migration kekal tersedia pada test seterusnya.
+
+Jumlah kes backend berbeza yang akhirnya lulus ialah 328, dengan satu skip EXIF sedia ada kerana decoder pilihan tidak tersedia; ini gabungan regression dan rerun, bukan dakwaan satu invocation 328 kes. Dua kes tambahan menguji immutable/authorized adjustment history dan keempat-empat status filter. Percubaan awal juga mengenal pasti GD yang tiada pada image lama, memory limit 128 MB yang tidak cukup untuk workbook, Chromium revision yang belum dipasang dan browser helpers lama; semua gate berkaitan telah dijalankan semula dalam runtime sesuai. Tiada gate gagal yang belum diselesaikan dalam skop ini.
+
+Pint `--dirty --format agent`, pemformatan fail PHP baharu, `php artisan view:cache`, `npm.cmd run build`, migration additive preview dan `git diff --check` lulus. Browser memeriksa filter expand/clear, widths 320/768/1280, dark mode, recurring schedule, baki sebelum/selepas independent approval, rejection/cancellation, attendance correction, staff, assignment dan Task ID/allocation. Screenshot desktop dan mobile telah diperiksa. Tiada production deployment, push Git atau external provider activation dilakukan.
