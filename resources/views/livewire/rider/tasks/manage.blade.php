@@ -45,7 +45,7 @@
                             <p>{{ $row['summary']['visit_time'] ? \Carbon\CarbonImmutable::parse($row['summary']['visit_time'])->timezone(config('dcms.business_timezone'))->format('d M Y H:i').' MYT' : 'No visit recorded' }} · {{ ucfirst(str_replace('_', ' ', $row['summary']['outcome'] ?? 'No outcome')) }}</p>
                             @foreach($row['summary']['remarks'] as $kind => $remark)<div><p class="text-xs text-ink-500">{{ ucfirst($kind) }} remarks</p><p class="whitespace-pre-line">{{ $remark ?: '—' }}</p></div>@endforeach
                             @foreach($row['summary']['business'] ?? [] as $kind => $value)@if($kind !== 'reference' && $value)<p class="break-words text-xs">{{ $kind === 'dr_code' ? 'DR code' : ucfirst(str_replace('_',' ',$kind)) }}: {{ $value }}</p>@endif @endforeach
-                            @foreach($row['proof'] as $image)<a class="break-words text-xs underline" target="_blank" rel="noopener" href="{{ route('proof.show', ['document' => $image['reference']]) }}">{{ $image['label'] }} · {{ str_replace('_',' ',$image['category']) }} · {{ $image['status'] }}</a>@endforeach
+                            @foreach($row['proof'] as $image)<a class="break-words text-xs underline" target="_blank" rel="noopener" href="{{ route('proof.show', ['document' => $image['reference']]) }}">{{ $image['label'] }} · {{ str_replace('_',' ',$image['category']) }} · {{ $image['status']==='skipped' ? 'Ready' : $image['status'] }}</a>@endforeach
                             <a href="{{ route('rider.tasks.show', ['task' => $row['task'], 'section' => 'completion']) }}" target="_blank" rel="noopener" class="btn btn-secondary">View saved task and images</a>
                         </div></details>
                     @endif

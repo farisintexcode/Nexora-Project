@@ -40,6 +40,9 @@ class Show extends Component
     #[Locked]
     public string $digest = '';
 
+    #[Locked]
+    public bool $visitDirty = false;
+
     #[Url]
     public string $section = 'overview';
 
@@ -99,12 +102,18 @@ class Show extends Component
         $this->version = $this->task()->lock_version;
         $this->visitKey = (string) Str::uuid7();
         $this->digest = '';
+        $this->visitDirty = false;
         $this->notice = 'Visit and remarks saved. Previous visits remain in history.';
         $this->section = 'proof';
     }
 
     public function uploadProof(TaskProof $proof): void
     {
+        if ($this->visitDirty) {
+            $this->addError('proof', 'Save your changed visit details before uploading evidence.');
+
+            return;
+        }
         $this->validate(['photos' => ['required', 'array', 'min:1', 'max:10'], 'photos.*' => ['required', 'file', 'max:'.config('task_execution.max_image_kib')]]);
         foreach ($this->photos as $index => $photo) {
             try {
@@ -158,6 +167,12 @@ class Show extends Component
     {
         $task = $this->task();
         Gate::authorize('execute', $task);
+        if ($this->visitDirty) {
+            $this->section = 'visit';
+            $this->addError('visit', 'Save your changed visit details before completing this task.');
+
+            return;
+        }
         $this->version = $task->lock_version;
         $this->digest = $checklist->review($task, Auth::user())['digest'];
         $this->section = 'completion';
@@ -166,10 +181,20 @@ class Show extends Component
 
     public function submitCompletion(RiderWork $work): void
     {
+        if ($this->visitDirty) {
+            throw ValidationException::withMessages(['visit' => 'Save your changed visit details before completing this task.']);
+        }
         $submission = $work->submit(Auth::user(), $this->task(), $this->version, $this->submissionKey, $this->digest);
         $this->version = $this->task()->lock_version;
         $this->section = 'history';
-        $this->notice = 'Pending Verification · '.$submission->public_id;
+        $this->notice = 'Task completed and submitted. Awaiting Admin verification · '.$submission->public_id;
+        $this->dispatch('rider-task-completed');
+    }
+
+    public function updatedData(): void
+    {
+        $this->visitDirty = true;
+        $this->digest = '';
     }
 
     public function render(CompletionChecklist $checklist): View
@@ -185,6 +210,7 @@ class Show extends Component
 
         return view('livewire.rider.tasks.show', [
             'task' => $task, 'review' => $review, 'choices' => $choices,
+            'visitPolicy' => $checklist->policy($task, $this->data['purpose'] ?? 'site_visit'),
             'editable' => Auth::user()->can('execute', $task) && $task->batch->status === BatchStatus::Active && $task->work_status === 'in_progress' && $task->review_status === 'none',
             'visits' => $task->activities()->where('activity_type_code', 'visit')->where('performed_by', Auth::id())->with('inspection')->latest('id')->limit(30)->get(),
             'submissions' => $task->submissions()->where('submitted_by', Auth::id())->latest('submission_version')->limit(20)->get(),
