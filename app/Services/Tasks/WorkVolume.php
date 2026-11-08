@@ -2,29 +2,24 @@
 
 namespace App\Services\Tasks;
 
-use App\Models\AssignmentBatch;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 
-/** Dashboard volume of assignments and tasks created per local day or month. */
+/** Dashboard volume of tasks created and tasks approved per local day or month. */
 class WorkVolume
 {
     /** @var array{daily: list<int>, monthly: list<int>} */
     public const RANGES = ['daily' => [7, 14, 30], 'monthly' => [3, 6, 12]];
 
     /**
-     * A series the actor may not view is null; when neither is viewable the whole result is null.
-     *
-     * @return array{buckets: Collection<int, array{label: string, date: string, assignments: ?int, tasks: ?int}>, assignments: ?int, tasks: ?int}|null
+     * @return array{buckets: Collection<int, array{label: string, date: string, created: int, approved: int}>, created: int, approved: int}|null
      */
     public function forUser(User $user, string $period, int $range): ?array
     {
-        $canViewAssignments = Gate::forUser($user)->allows('viewAny', AssignmentBatch::class);
-        $canViewTasks = Gate::forUser($user)->allows('viewAny', Task::class);
-        if (! $canViewAssignments && ! $canViewTasks) {
+        if (! Gate::forUser($user)->allows('viewAny', Task::class)) {
             return null;
         }
 
@@ -33,35 +28,29 @@ class WorkVolume
         $now = now()->timezone($timezone);
         $start = $monthly ? $now->copy()->startOfMonth()->subMonthsNoOverflow($range - 1) : $now->copy()->startOfDay()->subDays($range - 1);
         $bucketFormat = $monthly ? 'YYYY-MM' : 'YYYY-MM-DD';
-        $count = fn (Builder $query): Collection => $query->where('created_at', '>=', $start->copy()->utc())->where('created_at', '<=', now())
-            ->selectRaw("to_char(created_at at time zone ?, '{$bucketFormat}') as bucket, count(*) as total", [$timezone])
+        $count = fn (Builder $query, string $column): Collection => $query->where($column, '>=', $start->copy()->utc())->where($column, '<=', now())
+            ->selectRaw("to_char({$column} at time zone ?, '{$bucketFormat}') as bucket, count(*) as total", [$timezone])
             ->groupBy('bucket')->pluck('total', 'bucket');
 
-        $assignments = null;
-        if ($canViewAssignments) {
-            $assignments = $count(AssignmentBatch::query());
-        }
-        $tasks = null;
-        if ($canViewTasks) {
-            $tasks = $count(Task::query());
-        }
+        $created = $count(Task::query(), 'created_at');
+        $approved = $count(Task::query()->where('work_status', 'completed')->where('review_status', 'approved'), 'completed_at');
 
-        $buckets = collect(range(0, $range - 1))->map(function (int $offset) use ($monthly, $start, $range, $assignments, $tasks): array {
+        $buckets = collect(range(0, $range - 1))->map(function (int $offset) use ($monthly, $start, $range, $created, $approved): array {
             $date = $monthly ? $start->copy()->addMonthsNoOverflow($offset) : $start->copy()->addDays($offset);
             $key = $date->format($monthly ? 'Y-m' : 'Y-m-d');
 
             return [
                 'label' => $date->format($monthly ? 'M' : ($range === 7 ? 'D' : 'j')),
                 'date' => $date->format($monthly ? 'M Y' : 'd M Y'),
-                'assignments' => $assignments === null ? null : (int) ($assignments[$key] ?? 0),
-                'tasks' => $tasks === null ? null : (int) ($tasks[$key] ?? 0),
+                'created' => (int) ($created[$key] ?? 0),
+                'approved' => (int) ($approved[$key] ?? 0),
             ];
         });
 
         return [
             'buckets' => $buckets,
-            'assignments' => $assignments === null ? null : $buckets->sum('assignments'),
-            'tasks' => $tasks === null ? null : $buckets->sum('tasks'),
+            'created' => $buckets->sum('created'),
+            'approved' => $buckets->sum('approved'),
         ];
     }
 }

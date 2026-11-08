@@ -11,15 +11,19 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * Dashboard progress over non-cancelled tasks.
- * Complete means verified (completed and approved); "today" means currently allocated to a Rider today, business timezone.
+ * Dashboard progress over non-cancelled tasks in active assignments.
+ * Complete means verified (completed and approved). In the business timezone, "today" means currently allocated to a Rider today, and "complete today" means approved today whenever it was allocated.
  */
 class TaskProgress
 {
     private const COMPLETE = "tasks.work_status = 'completed' and tasks.review_status = 'approved'";
 
+    private const NOT_COMPLETE = 'not ('.self::COMPLETE.')';
+
+    public function __construct(private TaskAccess $access) {}
+
     /**
-     * @return array{total: int, complete: int, outstanding: int, completionRate: float, today: int, completeToday: int, outstandingToday: int, todayCompletionRate: float, riders: Collection<int, object{name: string, staff_no: string, total: int, complete: int, outstanding: int, assigned_today: int}>, riderCount: int}|null
+     * @return array{total: int, complete: int, outstanding: int, completionRate: float, today: int, completeToday: int, outstandingToday: int, riders: Collection<int, object{public_id: string, name: string, staff_no: string, total: int, complete: int, rate: float, outstanding: int, overdue: int, assigned_today: int}>, riderCount: int}|null
      */
     public function forUser(User $user, ?int $batchId = null, ?int $riderLimit = 5): ?array
     {
@@ -31,37 +35,41 @@ class TaskProgress
         $today = now()->timezone(config('dcms.business_timezone'))->startOfDay();
         $todayBounds = [$today->format('Y-m-d H:i:s.uP'), $today->copy()->addDay()->format('Y-m-d H:i:s.uP')];
         $assignedToday = 'allocation.assigned_at >= ? and allocation.assigned_at < ?';
+        $approvedToday = 'tasks.completed_at >= ? and tasks.completed_at < ? and '.self::COMPLETE;
 
         $totals = $this->allocated($tasks(), 'leftJoin')
             ->selectRaw('count(*) as total, count(*) filter (where '.self::COMPLETE.') as complete', [])
             ->selectRaw("count(*) filter (where {$assignedToday}) as today", $todayBounds)
-            ->selectRaw("count(*) filter (where {$assignedToday} and ".self::COMPLETE.') as complete_today', $todayBounds)
+            ->selectRaw("count(*) filter (where {$approvedToday}) as complete_today", $todayBounds)
+            ->selectRaw("count(*) filter (where {$assignedToday} and ".self::NOT_COMPLETE.') as outstanding_today', $todayBounds)
             ->toBase()->first();
 
         $allocatedTasks = $this->allocated($tasks(), 'join');
         $riderCount = (clone $allocatedTasks)->distinct()->count('allocation.collector_id');
+        $overdueByRider = $this->access->overdue(clone $allocatedTasks)
+            ->groupBy('allocation.collector_id')
+            ->selectRaw('allocation.collector_id, count(*) as overdue')
+            ->toBase()->pluck('overdue', 'collector_id');
         $riderRows = $allocatedTasks->join('staff', 'staff.id', '=', 'allocation.collector_id')
-            ->groupBy('staff.id', 'staff.first_name', 'staff.last_name', 'staff.staff_no')
-            ->select('staff.first_name', 'staff.last_name', 'staff.staff_no')
+            ->groupBy('staff.id', 'staff.public_id', 'staff.first_name', 'staff.last_name', 'staff.staff_no')
+            ->select('staff.id', 'staff.public_id', 'staff.first_name', 'staff.last_name', 'staff.staff_no')
             ->selectRaw('count(*) as total, count(*) filter (where '.self::COMPLETE.') as complete')
+            ->selectRaw('count(*) filter (where '.self::NOT_COMPLETE.') as outstanding')
             ->selectRaw("count(*) filter (where {$assignedToday}) as assigned_today", $todayBounds)
-            ->orderByDesc('total')->orderBy('staff.first_name')->orderBy('staff.id')->when($riderLimit !== null, fn ($q) => $q->limit($riderLimit))->toBase()->get()
+            ->orderByDesc('outstanding')->orderByDesc('total')->orderBy('staff.first_name')->orderBy('staff.id')->when($riderLimit !== null, fn ($q) => $q->limit($riderLimit))->toBase()->get()
             ->map(fn (object $row): object => (object) [
-                'name' => trim($row->first_name.' '.$row->last_name), 'staff_no' => $row->staff_no,
-                'total' => (int) $row->total, 'complete' => (int) $row->complete,
-                'outstanding' => (int) $row->total - (int) $row->complete, 'assigned_today' => (int) $row->assigned_today,
+                'public_id' => $row->public_id, 'name' => trim($row->first_name.' '.$row->last_name), 'staff_no' => $row->staff_no,
+                'total' => (int) $row->total, 'complete' => (int) $row->complete, 'rate' => $this->rate((int) $row->complete, (int) $row->total),
+                'outstanding' => (int) $row->outstanding, 'overdue' => (int) ($overdueByRider[$row->id] ?? 0), 'assigned_today' => (int) $row->assigned_today,
             ]);
 
         $total = (int) $totals->total;
         $complete = (int) $totals->complete;
-        $todayTotal = (int) $totals->today;
-        $completeToday = (int) $totals->complete_today;
 
         return [
             'total' => $total, 'complete' => $complete, 'outstanding' => $total - $complete,
             'completionRate' => $this->rate($complete, $total),
-            'today' => $todayTotal, 'completeToday' => $completeToday, 'outstandingToday' => $todayTotal - $completeToday,
-            'todayCompletionRate' => $this->rate($completeToday, $todayTotal),
+            'today' => (int) $totals->today, 'completeToday' => (int) $totals->complete_today, 'outstandingToday' => (int) $totals->outstanding_today,
             'riders' => $riderRows, 'riderCount' => $riderCount,
         ];
     }
@@ -99,7 +107,7 @@ class TaskProgress
 
     private function tasks(User $user): Builder
     {
-        return Task::query()->where('tasks.work_status', '!=', 'cancelled');
+        return Task::query()->where('tasks.work_status', '!=', 'cancelled')->whereHas('batch', fn ($q) => $q->where('status', 'active'));
     }
 
     private function allocated(Builder $tasks, string $join): Builder

@@ -54,6 +54,29 @@ test('tasks without their own due time become overdue after their batch due date
     expect($items['overdue']['count'])->toBe(1);
 });
 
+test('attention items with work waiting come first and missed deadlines lead and stand out', function (): void {
+    $user = staffManager();
+    $batch = AssignmentBatch::factory()->create(['due_date' => '2026-12-31']);
+    attentionTask($batch, ['work_status' => 'in_progress', 'review_status' => 'returned']);
+    attentionTask($batch, ['due_at' => '2026-10-30 00:00:00']);
+
+    $items = collect(app(AttentionQueue::class)->forUser($user));
+
+    expect($items->take(3)->pluck('key')->all())->toBe(['overdue', 'unassigned', 'returned'])
+        ->and($items->skip(3)->sum('count'))->toBe(0)
+        ->and($items->firstWhere('key', 'overdue')['urgent'])->toBeTrue();
+    Livewire::actingAs($user)->test(Home::class)->assertSeeHtml('border-red-200 bg-red-50');
+});
+
+test('an overdue card with nothing waiting does not stand out', function (): void {
+    $user = staffManager();
+
+    $items = collect(app(AttentionQueue::class)->forUser($user));
+
+    expect($items->sum('count'))->toBe(0);
+    Livewire::actingAs($user)->test(Home::class)->assertSee('All clear')->assertDontSeeHtml('border-red-200 bg-red-50');
+});
+
 test('admin access alone shows no attention items', function (): void {
     $user = User::factory()->create();
     $user->givePermissionTo('admin.access');

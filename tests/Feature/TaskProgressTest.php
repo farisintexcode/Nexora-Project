@@ -31,10 +31,10 @@ function progressTask(AssignmentBatch $batch, ?Staff $rider = null, string $assi
 
 test('progress counts verified completion overall, today and per current Rider allocation', function (): void {
     $user = staffManager();
-    $batch = AssignmentBatch::factory()->create();
+    $batch = AssignmentBatch::factory()->create(['due_date' => '2026-12-31']);
     $busy = Staff::factory()->create(['first_name' => 'Nordin', 'last_name' => 'Rider']);
     $quiet = Staff::factory()->create(['first_name' => 'Alwi', 'last_name' => 'Rider']);
-    $completed = ['work_status' => 'completed', 'review_status' => 'approved'];
+    $completed = ['work_status' => 'completed', 'review_status' => 'approved', 'completed_at' => '2026-10-31 03:00:00'];
     $yesterday = '2026-10-30 02:00:00';
 
     progressTask($batch, $busy, $yesterday, $completed);
@@ -50,10 +50,10 @@ test('progress counts verified completion overall, today and per current Rider a
 
     expect($progress)->toMatchArray([
         'total' => 5, 'complete' => 2, 'outstanding' => 3, 'completionRate' => 40.0,
-        'today' => 2, 'completeToday' => 1, 'outstandingToday' => 1, 'todayCompletionRate' => 50.0, 'riderCount' => 2,
+        'today' => 2, 'completeToday' => 2, 'outstandingToday' => 1, 'riderCount' => 2,
     ])->and($progress['riders']->map(fn (object $rider): array => (array) $rider)->all())->toBe([
-        ['name' => 'Nordin Rider', 'staff_no' => $busy->staff_no, 'total' => 3, 'complete' => 2, 'outstanding' => 1, 'assigned_today' => 2],
-        ['name' => 'Alwi Rider', 'staff_no' => $quiet->staff_no, 'total' => 1, 'complete' => 0, 'outstanding' => 1, 'assigned_today' => 0],
+        ['public_id' => $busy->public_id, 'name' => 'Nordin Rider', 'staff_no' => $busy->staff_no, 'total' => 3, 'complete' => 2, 'rate' => 66.67, 'outstanding' => 1, 'overdue' => 0, 'assigned_today' => 2],
+        ['public_id' => $quiet->public_id, 'name' => 'Alwi Rider', 'staff_no' => $quiet->staff_no, 'total' => 1, 'complete' => 0, 'rate' => 0.0, 'outstanding' => 1, 'overdue' => 0, 'assigned_today' => 0],
     ]);
     Livewire::actingAs($user)->test(Home::class)->assertSee('Assignment summary report')->assertSee('Nordin Rider')->assertSee('40.00%');
 });
@@ -88,7 +88,60 @@ test('a local midnight boundary decides which allocations count as today', funct
     progressTask($batch, $rider, $localMidnight->copy()->subSecond()->format('Y-m-d H:i:s.uP'));
     progressTask($batch, $rider, $localMidnight->copy()->addSecond()->format('Y-m-d H:i:s.uP'));
 
-    expect(app(TaskProgress::class)->forUser($user))->toMatchArray(['total' => 2, 'today' => 1, 'todayCompletionRate' => 0.0]);
+    expect(app(TaskProgress::class)->forUser($user))->toMatchArray(['total' => 2, 'today' => 1, 'outstandingToday' => 1]);
+});
+
+test('tasks in archived assignments are left out of progress totals and Rider rows', function (): void {
+    $user = staffManager();
+    $activeRider = Staff::factory()->create();
+    $archivedRider = Staff::factory()->create();
+    progressTask(AssignmentBatch::factory()->create(), $activeRider);
+    progressTask(AssignmentBatch::factory()->create(['status' => 'archived']), $archivedRider, attributes: ['work_status' => 'completed', 'review_status' => 'approved', 'completed_at' => '2026-10-31 03:00:00']);
+
+    $progress = app(TaskProgress::class)->forUser($user);
+
+    expect($progress)->toMatchArray(['total' => 1, 'complete' => 0, 'today' => 1, 'completeToday' => 0, 'riderCount' => 1])
+        ->and($progress['riders']->pluck('public_id')->all())->toBe([$activeRider->public_id]);
+});
+
+test('approved today follows the local approval date rather than the allocation date', function (): void {
+    $user = staffManager();
+    $batch = AssignmentBatch::factory()->create();
+    $rider = Staff::factory()->create();
+    $localMidnight = now()->timezone(config('dcms.business_timezone'))->startOfDay()->utc();
+    $approved = ['work_status' => 'completed', 'review_status' => 'approved'];
+    $lastWeek = '2026-10-24 02:00:00';
+    progressTask($batch, $rider, $lastWeek, [...$approved, 'completed_at' => $localMidnight->copy()->addSecond()]);
+    progressTask($batch, $rider, $lastWeek, [...$approved, 'completed_at' => $localMidnight->copy()->subSecond()]);
+    progressTask($batch, $rider, attributes: ['work_status' => 'submitted', 'review_status' => 'pending', 'submitted_at' => '2026-10-31 03:00:00']);
+
+    $progress = app(TaskProgress::class)->forUser($user);
+
+    expect($progress)->toMatchArray(['total' => 3, 'complete' => 2, 'today' => 1, 'completeToday' => 1, 'outstandingToday' => 1]);
+});
+
+test('Riders are ranked by outstanding work and show their overdue tasks with a link to their list', function (): void {
+    $user = staffManager();
+    $batch = AssignmentBatch::factory()->create(['due_date' => '2026-12-31']);
+    $complete = ['work_status' => 'completed', 'review_status' => 'approved', 'completed_at' => '2026-10-31 03:00:00'];
+    $mostlyDone = Staff::factory()->create(['first_name' => 'Busy', 'last_name' => 'Finisher']);
+    $behind = Staff::factory()->create(['first_name' => 'Behind', 'last_name' => 'Schedule']);
+    foreach (range(1, 4) as $ignored) {
+        progressTask($batch, $mostlyDone, attributes: $complete);
+    }
+    progressTask($batch, $behind, attributes: ['due_at' => '2026-10-30 00:00:00']);
+    progressTask($batch, $behind);
+
+    $riders = app(TaskProgress::class)->forUser($user)['riders'];
+
+    expect($riders->map(fn (object $rider): array => [$rider->name, $rider->outstanding, $rider->overdue, $rider->rate])->all())->toBe([
+        ['Behind Schedule', 2, 1, 0.0],
+        ['Busy Finisher', 0, 0, 100.0],
+    ]);
+    Livewire::actingAs($user)->test(Home::class)
+        ->assertSeeHtml('href="'.route('admin.tasks.index', ['rider' => $behind->public_id]).'"')
+        ->set('assignment', $batch->public_id)
+        ->assertSeeHtml('href="'.e(route('admin.tasks.index', ['rider' => $behind->public_id, 'batch' => $batch->public_id])).'"');
 });
 
 test('assignment progress lists active assignments with unfinished work, soonest due first', function (): void {
