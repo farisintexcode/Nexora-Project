@@ -15,7 +15,8 @@ class ReportRenderer
             foreach ($snapshot['rows'] as $row) {
                 $values = [];
                 foreach (array_keys($snapshot['columns']) as $column) {
-                    $values[] = $this->csv($row[$column] ?? '');
+                    $value = $row[$column] ?? '';
+                    $values[] = $this->csv(is_array($value) ? implode("\n", array_column($value, 'url')) : $value);
                 }
                 fputcsv($stream, [...$values, $snapshot['as_of']], escape: '');
             }
