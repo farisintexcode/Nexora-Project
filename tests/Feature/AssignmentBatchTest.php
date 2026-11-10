@@ -63,25 +63,24 @@ test('the new assignment form follows the operational field scheme and fills the
     $user = staffManager();
 
     Livewire::actingAs($user)->test(Editor::class)
-        ->assertSet('data.start_date', '2026-11-01')->assertSet('status', 'active')
+        ->assertSet('data.start_date', '2026-11-01')
         ->assertSeeHtml("nexoraDateTime(\$wire, 'data.due_date', null, '2026-11-01')")
         ->assertDontSeeHtml('type="date"')
         ->assertDontSee('Commissioning client')->assertDontSee('External batch reference')
-        ->assertSeeInOrder(['Assignment type', 'Assignment name', 'Assignment due date', 'Description (optional)', 'DCA code', 'DCA name', 'LA name', 'State', 'Status'])
+        ->assertSeeInOrder(['Assignment type', 'Assignment name', 'Assignment due date', 'Description (optional)', 'DCA code', 'DCA name', 'LA name', 'State'])
+        ->assertDontSeeHtml('name="status"')
         ->assertSeeInOrder(['Vacant', 'Domestic DR', 'Domestic CTOS', 'Domestic LOD', 'Domestic LOD CTOS', 'COM DR', 'COM LOD']);
 });
 
-test('a new assignment can start archived but saving an existing one never changes its status', function (): void {
+test('a new assignment always starts active and saving an existing one never changes its status', function (): void {
     $user = staffManager();
-    Livewire::actingAs($user)->test(Editor::class)->set('data', batchInput())->set('status', 'archived')->call('save')->assertHasNoErrors();
-    $archived = AssignmentBatch::query()->firstOrFail();
-    expect($archived->status)->toBe(BatchStatus::Archived)->and($archived->archived_at)->not->toBeNull()
-        ->and(AuditLog::query()->where('action', 'assignment_created')->firstOrFail()->toJson())->toContain('archived');
+    Livewire::actingAs($user)->test(Editor::class)->set('data', batchInput())->call('save')->assertHasNoErrors();
+    $created = AssignmentBatch::query()->firstOrFail();
+    expect($created->status)->toBe(BatchStatus::Active)->and($created->archived_at)->toBeNull();
 
     $active = app(SaveAssignmentBatch::class)->handle($user, batchInput(['external_reference' => 'B-2']));
     app(SaveAssignmentBatch::class)->handle($user, batchInput(['external_reference' => 'B-2', 'name' => 'Renamed']), $active, 0, 'archived');
     expect($active->fresh()->status)->toBe(BatchStatus::Active)->and($active->fresh()->name)->toBe('Renamed');
-    Livewire::actingAs($user)->test(Editor::class)->set('data', batchInput(['external_reference' => 'B-3']))->set('status', 'deleted')->call('save')->assertHasErrors('status');
 });
 
 test('external references are unique including archives while null references can repeat', function (): void {
@@ -265,16 +264,17 @@ test('admin screens show the assignment code instead of the primary key', functi
     }
 });
 
-test('reopening from the assignment page returns it to the active tab with the same ID', function (): void {
+test('assignment pages offer no manual archive or reopen, even with the reopen permission', function (): void {
     $user = staffManager();
     $user->givePermissionTo('assignments.reopen');
-    $archived = AssignmentBatch::factory()->create(['name' => 'Returning package', 'external_reference' => null, 'status' => 'archived', 'archived_at' => now()])->refresh();
+    $active = AssignmentBatch::factory()->create(['name' => 'Open package', 'external_reference' => null]);
+    $archived = AssignmentBatch::factory()->create(['name' => 'Returning package', 'external_reference' => null, 'status' => 'archived', 'archived_at' => now()]);
 
+    $this->actingAs($user)->get(route('admin.assignments.edit', $active))->assertOk()
+        ->assertDontSee('Archive assignment')->assertDontSee('Status change reason')->assertSee('moves to Archived automatically');
+    $this->get(route('admin.assignments.edit', $archived))->assertOk()
+        ->assertDontSee('Reopen assignment')->assertDontSee('Status change reason')->assertSee('Archived assignment: metadata is read-only.');
     Livewire::actingAs($user)->test(Index::class)->set('status', 'archived')->assertSee('Returning package')->assertDontSee('Move to active');
-    Livewire::actingAs($user)->test(Editor::class, ['batch' => $archived])->set('reason', 'Client sent more accounts')->call('changeStatus', 'active')->assertHasNoErrors();
-
-    expect($archived->refresh()->status)->toBe(BatchStatus::Active)->and($archived->assignment_code)->toBe($archived->getOriginal('assignment_code'));
-    Livewire::actingAs($user)->test(Index::class)->assertSee($archived->assignment_code)->assertSee('Returning package');
 });
 
 test('each assignment appears in exactly one of the active overdue and archived tabs', function (): void {

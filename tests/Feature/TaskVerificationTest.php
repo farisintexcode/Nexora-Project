@@ -1,10 +1,16 @@
 <?php
 
+use App\Actions\Assignments\ArchiveFinishedBatch;
+use App\Actions\Tasks\DeleteTasks;
 use App\Actions\Tasks\ReviewSubmission;
 use App\Actions\Tasks\RiderWork;
+use App\Actions\Tasks\TaskOperation;
+use App\Enums\BatchStatus;
 use App\Livewire\Admin\Verification\Show;
 use App\Models\AuditLog;
+use App\Models\DebtAccount;
 use App\Models\Document;
+use App\Models\ImportBatch;
 use App\Models\ReferenceValue;
 use App\Models\Staff;
 use App\Models\Task;
@@ -53,6 +59,56 @@ function verificationPreview(User $reviewer, TaskSubmission $submission, string 
 {
     return app(ReviewSubmission::class)->prepare($reviewer, [$submission->public_id], $decision, $reason);
 }
+
+test('verifying the only task archives its assignment automatically and records why', function (): void {
+    [$reviewer,$rider,$task,$submission] = reviewFixture();
+    $code = $task->batch->refresh()->assignment_code;
+    app(ReviewSubmission::class)->confirm($reviewer, verificationPreview($reviewer, $submission));
+
+    $batch = $task->batch->refresh();
+    expect($batch->status)->toBe(BatchStatus::Archived)->and($batch->archived_at)->not->toBeNull()->and($batch->assignment_code)->toBe($code)
+        ->and($task->refresh()->work_status)->toBe('completed')
+        ->and(AuditLog::query()->where('action', 'assignment_archived')->where('entity_id', $batch->public_id)->value('reason'))->toBe('Archived automatically: every task is completed and verified.');
+});
+
+test('an assignment stays active while a task is open and archives once the last one is cancelled', function (): void {
+    [$reviewer,$rider,$task,$submission] = reviewFixture();
+    $open = Task::factory()->create(['assignment_batch_id' => $task->assignment_batch_id, 'debt_account_id' => DebtAccount::factory()->create()->id]);
+    app(ReviewSubmission::class)->confirm($reviewer, verificationPreview($reviewer, $submission));
+    expect($task->batch->refresh()->status)->toBe(BatchStatus::Active);
+
+    $operation = app(TaskOperation::class)->prepare($reviewer, ['assignment_batch_id' => $task->assignment_batch_id, 'operation_code' => 'cancel', 'selection_mode' => 'single', 'task_ids' => [$open->id], 'reason' => 'Customer settled directly']);
+    app(TaskOperation::class)->confirm($reviewer, $operation, $operation->preview_digest);
+    app(TaskOperation::class)->process($operation->id);
+
+    expect($open->refresh()->work_status)->toBe('cancelled')->and($task->batch->refresh()->status)->toBe(BatchStatus::Archived);
+});
+
+test('deleting the last unstarted task archives an otherwise verified assignment', function (): void {
+    [$reviewer,$rider,$task,$submission] = reviewFixture();
+    $open = Task::factory()->create(['assignment_batch_id' => $task->assignment_batch_id, 'debt_account_id' => DebtAccount::factory()->create()->id]);
+    app(ReviewSubmission::class)->confirm($reviewer, verificationPreview($reviewer, $submission));
+    expect($task->batch->refresh()->status)->toBe(BatchStatus::Active);
+
+    app(DeleteTasks::class)->handle($reviewer, [$open->public_id]);
+
+    expect($task->batch->refresh()->status)->toBe(BatchStatus::Archived);
+});
+
+test('returned work, cancelled-only work and pending imports never archive an assignment', function (): void {
+    [$reviewer,$rider,$task,$submission] = reviewFixture();
+    app(ReviewSubmission::class)->confirm($reviewer, verificationPreview($reviewer, $submission, 'returned', 'Please retake the photo.'));
+    expect($task->batch->refresh()->status)->toBe(BatchStatus::Active)
+        ->and(app(ArchiveFinishedBatch::class)->handle($reviewer, $task->assignment_batch_id))->toBeFalse();
+
+    $cancelledOnly = Task::factory()->create(['work_status' => 'cancelled', 'review_status' => 'none', 'cancelled_at' => now()]);
+    expect(app(ArchiveFinishedBatch::class)->handle($reviewer, $cancelledOnly->assignment_batch_id))->toBeFalse();
+
+    $verified = Task::factory()->create(['work_status' => 'completed', 'review_status' => 'approved', 'completed_at' => now()]);
+    ImportBatch::factory()->create(['assignment_batch_id' => $verified->assignment_batch_id, 'status' => 'mapping']);
+    expect(app(ArchiveFinishedBatch::class)->handle($reviewer, $verified->assignment_batch_id))->toBeFalse()
+        ->and($verified->batch->refresh()->status)->toBe(BatchStatus::Active);
+});
 
 test('verification routes require reviewer permission', function (): void {
     [$reviewer,$rider,$task,$submission] = reviewFixture();

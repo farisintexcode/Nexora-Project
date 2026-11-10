@@ -39,7 +39,7 @@ test('assignment date filter picks one day by double-click or a range by two dat
     await expect(field).toContainText('Select a date or range');
 });
 
-test('assignment metadata editing and confirmed archival preserve usable desktop and mobile flows', async ({ page }) => {
+test('assignment metadata editing preserves usable desktop and mobile flows without manual status changes', async ({ page }) => {
     const email = process.env.DCMS_E2E_ADMIN_EMAIL;
     const password = process.env.DCMS_E2E_PASSWORD;
     test.skip(!email || !password, 'Use isolated synthetic assignment fixtures.');
@@ -65,22 +65,15 @@ test('assignment metadata editing and confirmed archival preserve usable desktop
     }
     await page.getByRole('button', { name: 'Save assignment', exact: true }).click();
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+    await page.getByRole('dialog', { name: 'Success', exact: true }).getByRole('button', { name: 'OK', exact: true }).click();
     await page.getByLabel('Assignment name', { exact: true }).fill(`Updated ${name}`);
     await page.getByRole('button', { name: 'Update assignment', exact: true }).click();
     await expect(page.getByRole('heading', { name: `Updated ${name}`, exact: true })).toBeVisible();
-    await page.getByLabel('Status change reason', { exact: true }).fill('Synthetic work package finished');
-    await page.getByRole('button', { name: 'Archive assignment', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Confirm assignment status change', exact: true });
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Update assignment', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Archive assignment', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect(page.getByText('Archived assignment: metadata is read-only. History is retained.', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Assignment name', { exact: true })).toBeDisabled();
-    await expect(page.getByText('Reopening requires the separately authorized assignments.reopen permission.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Archive assignment', exact: true })).toHaveCount(0);
+    await expect(page.getByText('This assignment moves to Archived automatically once every task is completed and verified.', { exact: true })).toBeVisible();
     await page.evaluate(() => scrollTo(0, 0));
-    await page.screenshot({ path: test.info().outputPath('archived-assignment.png'), fullPage: true });
-    await page.goto('/admin/assignments?status=archived');
+    await page.screenshot({ path: test.info().outputPath('active-assignment.png'), fullPage: true });
+    await page.goto('/admin/assignments');
     await page.getByLabel('Search assignments', { exact: true }).fill(`Updated ${name}`);
     await expect(page.getByText('Showing 1 to 1 of 1 entries', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: `Updated ${name}`, exact: true }).filter({ visible: true })).toBeVisible();

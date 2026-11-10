@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Admin\Assignments;
 
-use App\Actions\Assignments\ChangeBatchStatus;
 use App\Actions\Assignments\SaveAssignmentBatch;
 use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
@@ -16,7 +15,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
-/** UI11/12; archived assignments are read-only, transitions are a separate audited action. */
+/** UI11/12; new assignments always start active and archive automatically once their work is verified (ArchiveFinishedBatch). */
 #[Layout('layouts.admin')]
 class Editor extends Component
 {
@@ -30,10 +29,6 @@ class Editor extends Component
     public ?int $version = null;
 
     public array $data = ['name' => '', 'external_reference' => '', 'type_code' => '', 'start_date' => '', 'due_date' => '', 'description' => '', 'dca_code' => '', 'dca_name' => '', 'la_name' => '', 'state_code' => ''];
-
-    public string $status = 'active';
-
-    public string $reason = '';
 
     public function mount(?AssignmentBatch $batch = null): void
     {
@@ -55,18 +50,8 @@ class Editor extends Component
 
     public function save(SaveAssignmentBatch $save): void
     {
-        $batch = $save->handle(Auth::user(), $this->data, $this->batchId ? AssignmentBatch::query()->findOrFail($this->batchId) : null, $this->version, $this->status);
+        $batch = $save->handle(Auth::user(), $this->data, $this->batchId ? AssignmentBatch::query()->findOrFail($this->batchId) : null, $this->version);
         session()->flash('status', 'Assignment saved. No tasks were uploaded or allocated.');
-        $this->redirectRoute('admin.assignments.edit', ['batch' => $batch->public_id]);
-    }
-
-    public function changeStatus(string $target, ChangeBatchStatus $change): void
-    {
-        abort_unless($this->batchId !== null, 404);
-        $batch = $change->handle(Auth::user(), AssignmentBatch::query()->findOrFail($this->batchId), $target, $this->reason, $this->version ?? -1);
-        $this->version = $batch->lock_version;
-        $this->reason = '';
-        session()->flash('status', $batch->status === BatchStatus::Archived ? 'Assignment archived. Metadata is now read-only; all history is retained.' : 'Assignment reopened under authorization.');
         $this->redirectRoute('admin.assignments.edit', ['batch' => $batch->public_id]);
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Assignments\ArchiveFinishedBatch;
 use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
 use App\Models\BulkOperation;
@@ -179,6 +180,9 @@ class TaskOperation
             $operation->status = $operation->items()->where('state', 'failed')->exists() ? 'failed' : 'completed';
             $this->counts($operation);
             app(AuditWriter::class)->record(User::query()->find($operation->requested_by), 'task_operation_reconciled', $operation->public_id, ['status' => $operation->status], module: 'M05', entityType: 'bulk_operation');
+            if ($operation->operation_code === 'cancel') {
+                app(ArchiveFinishedBatch::class)->handle(User::query()->find($operation->requested_by), $batch->id);
+            }
         });
     }
 

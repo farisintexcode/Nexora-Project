@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Assignments\ArchiveFinishedBatch;
 use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
 use App\Models\FinancialSnapshot;
@@ -134,6 +135,11 @@ class ReviewSubmission
                     $recipient->notify(new TaskReviewed($review));
                 }
                 $result[] = ['submission' => $submission->public_id, 'review' => $review->public_id, 'status' => 'applied'];
+            }
+            if ($preview['decision'] === 'approved') {
+                foreach (collect($accepted)->map(fn (array $row): int => $row['submission']->task->assignment_batch_id)->unique()->sort() as $batchId) {
+                    app(ArchiveFinishedBatch::class)->handle($actor, $batchId);
+                }
             }
 
             return $result;

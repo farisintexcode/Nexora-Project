@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Assignments\ArchiveFinishedBatch;
 use App\Enums\BatchStatus;
 use App\Models\BulkOperation;
 use App\Models\BulkOperationItem;
@@ -48,6 +49,9 @@ class DeleteTasks
                 $task->save();
                 $task->delete();
                 $this->audit->record($actor, 'task_deleted', $task->public_id, ['work_status' => $task->work_status], module: 'M05', entityType: 'task');
+            }
+            foreach ($tasks->pluck('assignment_batch_id')->unique()->sort() as $batchId) {
+                app(ArchiveFinishedBatch::class)->handle($actor, $batchId);
             }
 
             return $tasks->count();
