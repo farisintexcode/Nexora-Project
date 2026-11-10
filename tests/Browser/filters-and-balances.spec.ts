@@ -64,6 +64,7 @@ test('tracked leave uses recurring schedule and preserves balance after independ
     await page.getByLabel('Approved policy version', { exact: true }).selectOption(await policyOption.getAttribute('value') as string);
     await chooseDateRange(page, 'assign-dates', 'Assign dates *', date);
     await page.getByRole('button', { name: 'Assign recurring work schedule', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Assign this recurring work schedule?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Recurring work schedule assigned' })).toBeVisible();
     const context = await browser.newContext({ baseURL: process.env.PLAYWRIGHT_BASE_URL });
     const rider = await context.newPage();
