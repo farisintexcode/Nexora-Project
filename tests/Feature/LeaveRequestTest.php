@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Attendance\ClockAttendance;
 use App\Actions\Attendance\CorrectAttendance;
 use App\Actions\Attendance\ManageLeave;
 use App\Livewire\Admin\Attendance\LeaveManagement;
@@ -11,6 +12,7 @@ use App\Models\LeaveType;
 use App\Models\Staff;
 use App\Models\User;
 use App\Notifications\LeaveUpdated;
+use App\Services\Attendance\AttendanceRegister;
 use App\Services\Imports\MalwareScanner;
 use Carbon\CarbonImmutable;
 use Database\Seeders\DatabaseSeeder;
@@ -19,6 +21,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -277,3 +280,53 @@ test('Livewire review submission and optional date filters preserve the owned ap
     Livewire::actingAs($rider)->test(LeaveRequests::class)->set('until', $data['end_date'])->call('filterRequests')->assertHasNoErrors()->assertSee($data['reason']);
     Livewire::actingAs($admin)->test(LeaveManagement::class)->set('until', $data['end_date'])->call('filterRequests')->assertHasNoErrors()->assertSee($type->name);
 });
+
+test('approved leave appears in attendance and blocks clock in without fabricating punches', function (): void {
+    [$rider,$admin,$type,$data,$schedule] = leaveFixture();
+    $request = submitLeave($rider, $data);
+    app(ManageLeave::class)->decide($admin, $request, 'approved', 'Independent leave approval', 0);
+    $this->travelTo(CarbonImmutable::parse($data['start_date'].' 10:00', 'Asia/Kuala_Lumpur'));
+
+    $register = app(AttendanceRegister::class)->query($admin, ['from' => $data['start_date'], 'until' => $data['end_date']])->first();
+    expect($register->result_status)->toBe('leave')->and($schedule->fresh()->day_type)->toBe('scheduled')->and(Attendance::count())->toBe(0);
+    expect(fn () => app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7()))->toThrow(ValidationException::class);
+    $this->assertDatabaseCount('attendances', 0);
+    $rider->givePermissionTo('attendance.correct');
+    expect(fn () => changeLeaveCalendar($rider, $admin, $schedule))->toThrow(ValidationException::class);
+});
+
+test('pending rejected and cancelled leave do not mark attendance as approved leave', function (string $state): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    $request = submitLeave($rider, $data);
+    if ($state === 'rejected') {
+        app(ManageLeave::class)->decide($admin, $request, 'rejected', 'Independent rejection reason', 0);
+    } elseif ($state === 'cancelled') {
+        app(ManageLeave::class)->cancel($rider, $request, 0);
+    }
+    $row = app(AttendanceRegister::class)->query($admin, ['from' => $data['start_date'], 'until' => $data['end_date']])->first();
+    expect($row->result_status)->not->toBe('leave');
+})->with(['pending', 'rejected', 'cancelled']);
+
+test('deactivated leave types retain submitted policy and existing requests can be reviewed', function (): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    $request = submitLeave($rider, $data);
+    $snapshot = $request->fresh()->type_snapshot;
+    app(ManageLeave::class)->configure($admin, ['name' => $type->name, 'max_calendar_days' => 1, 'requires_document' => false, 'allow_pending_cancel' => false, 'is_active' => false], $type->public_id, $type->lock_version);
+
+    expect(fn () => app(ManageLeave::class)->preview($rider, $data))->toThrow(ValidationException::class);
+    app(ManageLeave::class)->decide($admin, $request, 'approved', 'Review using submitted policy', 0);
+    expect($request->fresh()->type_snapshot)->toBe($snapshot)->and($request->fresh()->status)->toBe('approved');
+    $this->assertDatabaseCount('leave_requests', 1);
+});
+
+test('required application fields are enforced without partial records', function (string $field): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    unset($data[$field]);
+    try {
+        app(ManageLeave::class)->preview($rider, $data);
+        $this->fail('A required field was omitted.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey($field);
+    }
+    $this->assertDatabaseCount('leave_requests', 0);
+})->with(['type', 'start_date', 'end_date', 'reason']);

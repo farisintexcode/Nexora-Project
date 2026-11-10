@@ -13,6 +13,7 @@ use App\Livewire\Admin\Assignments\Editor as AssignmentEditor;
 use App\Livewire\Admin\Assignments\Index as AssignmentIndex;
 use App\Livewire\Admin\Attendance\Configuration;
 use App\Livewire\Admin\Attendance\LeaveManagement;
+use App\Livewire\Admin\Attendance\LeaveTypes;
 use App\Livewire\Admin\Calls\FollowUps;
 use App\Livewire\Admin\Calls\Show;
 use App\Livewire\Admin\Communications\Index;
@@ -129,6 +130,7 @@ Route::middleware(['auth', 'auth.session'])->group(function (): void {
         Route::livewire('/{leave}', LeaveRequests::class)->whereUuid('leave')->name('show');
     });
     Route::middleware(['can:admin.access', 'can:attendance.view_all'])->prefix('admin/leave')->name('admin.leave.')->group(function (): void {
+        Route::livewire('/types', LeaveTypes::class)->middleware('can:attendance.configure')->name('types');
         Route::livewire('/', LeaveManagement::class)->name('index');
         Route::livewire('/{leave}', LeaveManagement::class)->whereUuid('leave')->name('show');
     });

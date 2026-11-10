@@ -42,7 +42,7 @@ test('staff validation rejects invalid fields without partial persistence', func
     $this->assertDatabaseCount('audit_logs', $audits);
 })->with([
     [['staff_no' => ''], 'staff_no'], [['first_name' => []], 'first_name'], [['email' => 'invalid'], 'email'],
-    [['position_code' => 'male'], 'position_code'], [['gender_code' => '99'], 'gender_code'],
+    [['system_role' => 'Unknown'], 'system_role'], [['gender_code' => '99'], 'gender_code'],
     [['appointment_date' => '2026-02-30'], 'appointment_date'], [['phone' => 'letters'], 'phone'], [['is_rider' => 'wrong'], 'is_rider'],
 ]);
 
@@ -164,4 +164,37 @@ test('inactive reference values remain on historical staff but cannot be assigne
     $updated = app(SaveStaff::class)->handle($actor, staffInput(['last_name' => 'Updated']), $staff, $staff->revision());
     expect($updated->position_code)->toBe('01');
     expect(fn () => app(SaveStaff::class)->handle($actor, staffInput(['staff_no' => '000125'])))->toThrow(ValidationException::class);
+});
+
+test('staff system role starts blank and requires explicit selection', function (): void {
+    $actor = staffManager();
+    Livewire::actingAs($actor)->test(Editor::class)
+        ->assertSet('data.system_role', '')
+        ->assertSet('data.is_rider', false)
+        ->assertSee('Select role')
+        ->set('data', staffInput(['system_role' => '', 'create_account' => false]))
+        ->call('save')->assertHasErrors('data.system_role');
+    expect(Staff::query()->where('staff_no', '000123')->exists())->toBeFalse();
+});
+
+test('staff system role preserves editing selection and determines Rider eligibility', function (string $role): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = app(SaveStaff::class)->handle($actor, staffInput(['system_role' => $role, 'create_account' => false]));
+    expect($staff->is_rider)->toBe($role === 'Rider');
+    $account = User::factory()->for($staff)->create();
+    $account->assignRole($role);
+    Livewire::actingAs($actor)->test(Editor::class, ['staff' => $staff])
+        ->assertSet('data.system_role', $role)
+        ->call('save')->assertHasNoErrors();
+    expect($account->fresh()->getRoleNames()->all())->toBe([$role]);
+    expect($staff->fresh()->is_rider)->toBe($role === 'Rider');
+})->with(['System Admin', 'Administrative', 'Rider']);
+
+test('explicit non Rider role removes legacy Rider eligibility when editing', function (): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => true]);
+    $updated = app(SaveStaff::class)->handle($actor, staffInput(['system_role' => 'Administrative', 'create_account' => false, 'reason' => 'Selected office role']), $staff, $staff->revision());
+    expect($updated->is_rider)->toBeFalse();
 });

@@ -4,6 +4,7 @@ namespace App\Actions\Attendance;
 
 use App\Models\Attendance;
 use App\Models\AttendanceSchedule;
+use App\Models\LeaveRequest;
 use App\Models\Staff;
 use App\Models\User;
 use App\Services\Attendance\AttendanceStatus;
@@ -59,6 +60,10 @@ class ClockAttendance
                 ->where('scheduled_start_at', '<=', $now)->where('scheduled_end_at', '>', $now)->first();
             $schedule = $overnight ?? AttendanceSchedule::query()->where('rider_id', $rider->id)->where('service_date', $today->toDateString())->where('day_type', 'scheduled')->first();
             $date = $schedule?->service_date->toDateString() ?? $today->toDateString();
+            $through = $schedule?->scheduled_end_at?->subMicrosecond()->timezone(config('dcms.business_timezone'))->toDateString() ?? $date;
+            if (LeaveRequest::query()->where('rider_id', $rider->id)->where('status', 'approved')->where('start_date', '<=', $through)->where('end_date', '>=', $date)->exists()) {
+                throw ValidationException::withMessages(['clock' => 'Approved leave covers this shift. You cannot clock in during approved leave.']);
+            }
             $exists = Attendance::query()->where('rider_id', $rider->id)->where(fn ($q) => $schedule !== null ? $q->where('schedule_id', $schedule->id)->orWhere(fn ($q) => $q->whereNull('schedule_id')->where('service_date', $date)) : $q->where('service_date', $date))->exists();
             if ($exists) {
                 throw ValidationException::withMessages(['clock' => 'Attendance already exists for this service date. Use a correction request instead.']);

@@ -16,7 +16,8 @@ test('manual task editing and exact allocation preview are usable on desktop and
     const email = process.env.DCMS_E2E_ADMIN_EMAIL;
     const password = process.env.DCMS_E2E_PASSWORD;
     test.skip(!email || !password, 'Use isolated synthetic task fixtures.');
-    const account = `000TASK-${test.info().project.name}-${test.info().retry}`;
+    const account = `000TASK-${test.info().project.name}-${Date.now()}`;
+    const taskId = `FG${test.info().project.name === 'desktop' ? 1 : 2}${Date.now()}`;
     await page.goto('/login');
     await page.getByLabel('Email', { exact: true }).fill(email!);
     await page.getByLabel('Password', { exact: true }).fill(password!);
@@ -25,7 +26,8 @@ test('manual task editing and exact allocation preview are usable on desktop and
     await page.goto('/admin/tasks/create');
     const assignment = page.getByLabel('Assignment *', { exact: true });
     await assignment.selectOption((await assignment.locator('option').filter({ hasText: 'Synthetic Task Batch' }).first().getAttribute('value'))!);
-    await page.getByLabel('Task ID *', { exact: true }).fill(`FG${test.info().project.name === 'desktop' ? 1 : 2}${test.info().retry}`);
+    await expect(page.getByLabel('Type', { exact: true })).toHaveValue('Domestic DR');
+    await page.getByLabel('Task ID *', { exact: true }).fill(taskId);
     await page.getByLabel('Customer reference *', { exact: true }).fill('TASK-UI');
     await page.getByLabel('Account number *', { exact: true }).fill(account);
     await page.getByLabel('Service address', { exact: true }).fill('10 Synthetic Task Road');
@@ -33,10 +35,14 @@ test('manual task editing and exact allocation preview are usable on desktop and
     await pickDateTime(page, '#planned-visit', 'Planned visit (MYT)', 'October 2026', '20 October 2026', '09:30');
     await expect(page.locator('#planned-visit')).toContainText('20/10/2026, 09:30');
     await pickDateTime(page, '#due-at', 'Due date & time (MYT)', 'October 2026', '21 October 2026', '17:30');
+    await page.getByLabel('Outstanding balance (RM) *', { exact: true }).fill('100.00');
     await page.getByLabel('Special instructions', { exact: true }).fill('Synthetic task instructions');
     await page.getByRole('button', { name: 'Save task', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/tasks\/[^/]+$/);
     await expect(page.getByRole('heading', { name: 'Task details', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
     await page.getByRole('link', { name: 'Edit task', exact: true }).click();
+    await page.waitForLoadState('networkidle');
     await expect(page.getByLabel('Account number *', { exact: true })).toBeDisabled();
     await page.getByLabel('Priority *', { exact: true }).selectOption('urgent');
     await page.getByRole('button', { name: 'Update task', exact: true }).click();
@@ -50,7 +56,7 @@ test('manual task editing and exact allocation preview are usable on desktop and
     await expect(page).toHaveURL(/\/admin\/tasks$/);
     await page.screenshot({ path: test.info().outputPath('task-assigned.png'), fullPage: true });
     await page.goto('/admin/tasks');
-    await page.getByLabel('Task ID', { exact: true }).fill(account);
+    await page.getByLabel('Task ID', { exact: true }).fill(taskId);
     await expect(page.getByRole('link', { name: 'View task', exact: true }).filter({ visible: true })).toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole('button', { name: 'Filters' }).click();

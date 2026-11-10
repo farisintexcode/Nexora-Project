@@ -14,11 +14,14 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/** UI31/32 separate account action: users.invite; Admin additionally requires roles.manage. */
+/** M01/M10/M12 / UI31–32: users.invite; System Admin additionally requires roles.manage. */
 class InviteStaffAccount
 {
+    public string $deliveryStatus = 'prepared';
+
     public function __construct(private AuditWriter $audit) {}
 
     public function handle(User $actor, Staff $target, string $role, string $revision): string
@@ -34,13 +37,13 @@ class InviteStaffAccount
                 if (! config('dcms.terms_version') || ! config('dcms.privacy_url')) {
                     throw ValidationException::withMessages(['invitation' => 'Configure the approved terms version and privacy URL before issuing invitations.']);
                 }
-                if (! $staff->is_active || ! $staff->email || ! filter_var($staff->email, FILTER_VALIDATE_EMAIL)) {
-                    throw ValidationException::withMessages(['invitation' => 'An active staff member with a valid employment email is required.']);
+                if (! $staff->email || ! filter_var($staff->email, FILTER_VALIDATE_EMAIL)) {
+                    throw ValidationException::withMessages(['invitation' => 'A valid employment email is required.']);
                 }
-                Validator::make(['role' => $role], ['role' => ['required', 'in:Admin,Rider']])->validate();
-                if ($role === 'Admin') {
+                Validator::make(['role' => $role], ['role' => ['required', Rule::in(config('dcms.staff_roles'))]])->validate();
+                if ($role === 'System Admin') {
                     Gate::forUser($actor)->authorize('roles.manage');
-                } elseif (! $staff->is_rider) {
+                } elseif ($role === 'Rider' && ! $staff->is_rider) {
                     throw ValidationException::withMessages(['invitation' => 'Rider access requires active Rider eligibility.']);
                 }
                 $account = $staff->user()->first();
@@ -50,7 +53,8 @@ class InviteStaffAccount
                     if ($account->status !== AccountStatus::Invited) {
                         throw ValidationException::withMessages(['invitation' => 'This account already exists. Use its approved account recovery or administration process.']);
                     }
-                    if ($account->getRoleNames()->sort()->values()->all() !== [$role] || $account->getDirectPermissions()->isNotEmpty()) {
+                    $legacyRole = $account->getRoleNames()->all() === ['Admin'] && $role === ($account->can('roles.manage') ? 'System Admin' : 'Administrative');
+                    if ((! $legacyRole && $account->getRoleNames()->sort()->values()->all() !== [$role]) || (! $legacyRole && $account->getDirectPermissions()->isNotEmpty())) {
                         throw ValidationException::withMessages(['invitation' => 'Reissuing cannot change permissions. Use authorized identity administration.']);
                     }
                     if (Password::getRepository()->recentlyCreatedToken($account)) {
@@ -79,16 +83,21 @@ class InviteStaffAccount
                 $this->audit->record($actor, 'account_invitation_prepared', $staff->public_id,
                     ['status' => 'invited', 'role' => $role], module: 'M10', entityType: 'staff');
                 DB::afterCommit(function () use ($account, $token, &$delivery): void {
+                    if (! $account->staff()->where('is_active', true)->exists()) {
+                        $delivery = $this->deliveryStatus = 'inactive_staff';
+
+                        return;
+                    }
                     if ($this->usesLogTransport(config('mail.default'))) {
-                        $delivery = 'unsafe_transport';
+                        $delivery = $this->deliveryStatus = 'unsafe_transport';
 
                         return;
                     }
                     try {
                         $account->notify(new StaffInvitation($token));
-                        $delivery = config('mail.default') === 'array' ? 'local_capture' : 'mail_accepted';
+                        $delivery = $this->deliveryStatus = config('mail.default') === 'array' ? 'local_capture' : 'mail_accepted';
                     } catch (\Throwable $exception) {
-                        $delivery = 'delivery_failed';
+                        $delivery = $this->deliveryStatus = 'delivery_failed';
                         Log::warning('Staff invitation mail transport failed.', ['user_id' => $account->public_id, 'exception_type' => $exception::class]);
                     }
                 });
