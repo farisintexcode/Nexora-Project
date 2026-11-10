@@ -694,3 +694,32 @@
  .nexora-attendance .attendance-current .attendance-recorded-times { border-color: rgb(255 255 255 / 18%); }
  .nexora-attendance .attendance-remark [id$='-error'] { color: #fecaca; }
 }
+
+/* Human Resources pages: refined, consistent button system (staff, attendance, leave). */
+@layer components {
+    .hr-page .btn { @apply min-h-11 rounded-xl px-4 py-2.5 text-[13px] tracking-[0.01em]; gap: .5rem; box-shadow: 0 1px 2px rgb(2 48 71 / 6%); transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease; }
+    .hr-page .btn svg { @apply size-4 transition-transform duration-150; }
+    .hr-page .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus-color); }
+    .hr-page .btn-primary { box-shadow: 0 1px 2px rgb(2 48 71 / 8%), inset 0 -2px 0 rgb(2 48 71 / 10%); }
+    .hr-page .btn-primary:hover:not(:disabled):not([aria-disabled='true']) { box-shadow: 0 6px 16px -6px rgb(251 133 0 / 60%), inset 0 -2px 0 rgb(2 48 71 / 10%); }
+    .hr-page .btn-secondary { @apply border-ink-200; }
+    .hr-page .btn-secondary svg { @apply text-ink-500; }
+    .hr-page .btn-secondary:hover:not(:disabled):not([aria-disabled='true']) { border-color: var(--color-brand-primary); box-shadow: 0 4px 12px -6px rgb(2 48 71 / 30%); }
+    .hr-page .btn-secondary:hover:not(:disabled) svg { color: currentColor; }
+    .hr-page .btn-danger:hover:not(:disabled):not([aria-disabled='true']) { box-shadow: 0 6px 16px -6px rgb(185 28 28 / 55%); }
+    .hr-page .btn:hover:not(:disabled) svg[data-icon='arrow-left'] { transform: translateX(-2px); }
+    .hr-page .btn:hover:not(:disabled) svg[data-icon='arrow-right'] { transform: translateX(2px); }
+    .hr-page .btn:disabled, .hr-page .btn[aria-disabled='true'] { box-shadow: none; transform: none; }
+    .hr-page .btn-sm { @apply min-h-9 rounded-lg px-3 py-1.5 text-xs; }
+    .hr-page .btn-ghost { @apply min-h-9 rounded-lg border-transparent bg-transparent px-3 py-1.5 text-xs text-ink-600 shadow-none hover:bg-brand-soft hover:text-brand-dark; }
+    .hr-actions { @apply flex flex-wrap items-center gap-3; }
+    @media (max-width: 639px) {
+        .hr-page .page-header .btn, .hr-page .hr-actions > .btn, .hr-page .hr-actions > div, .hr-page .hr-actions > div > .btn { @apply w-full; }
+    }
+}
+@layer utilities {
+    .dark .hr-page .btn-secondary { border-color: var(--color-ink-200); }
+    .dark .hr-page .btn-secondary:hover:not(:disabled):not([aria-disabled='true']) { border-color: var(--color-brand-accent); }
+    .dark .hr-page .btn-ghost { background-color: transparent; color: var(--color-ink-600); }
+    .dark .hr-page .btn-ghost:hover { background-color: var(--color-ink-100); color: var(--foreground); }
+}

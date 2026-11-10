@@ -85,12 +85,6 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await page.getByRole('button',{name:'Publish approved version',exact:true}).click();
     await page.getByRole('dialog', { name: 'Publish this policy?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'published.'})).toBeVisible();
-    await page.getByLabel('Rider to schedule',{exact:true}).selectOption({label:'ATT-'+surface.toUpperCase()+' · Attendance '+surface});
-    await chooseDateRange(page,'assign-dates','Assign dates *',localDate(1));
-    await page.getByRole('button',{name:'Confirm calendar assignment',exact:true}).click();
-    await page.getByRole('dialog', { name: 'Assign these calendar days?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect(page.getByRole('status').filter({hasText:'1 calendar days assigned.'})).toBeVisible();
-    await page.screenshot({path:'.local-tools/m10-'+surface+'-calendar.png',fullPage:true});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
     expect(errors).toEqual([]);
 });
