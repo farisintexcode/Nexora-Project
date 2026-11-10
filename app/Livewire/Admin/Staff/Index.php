@@ -54,6 +54,7 @@ class Index extends Component
 
     /** Open the deactivation dialog for one staff record so the reason is captured beside its action. */
     public function confirmDeactivation(string $publicId): void
+    {
         Gate::authorize('update', Staff::query()->where('public_id', $publicId)->firstOrFail());
         $this->resetErrorBag();
         $this->reason = '';
