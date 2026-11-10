@@ -119,7 +119,7 @@ test('activation requires approved terms and records their version', function ()
     $user = User::factory()->create(['status' => 'invited', 'email_verified_at' => null]);
     $token = Password::createToken($user);
 
-    $this->post(route('activation.update'), ['email' => $user->email, 'token' => $token, 'name' => 'Invited staff', 'terms' => '1', 'password' => 'A-new-secure-123!', 'password_confirmation' => 'A-new-secure-123!'])->assertRedirect(route('login'));
+    $this->post(route('activation.update'), ['email' => $user->email, 'token' => $token, 'name' => 'Invited staff', 'terms' => '1', 'password' => 'A-new-secure-123!', 'password_confirmation' => 'A-new-secure-123!'])->assertRedirect(route('rider.home'));
 
     expect($user->fresh()->status)->toBe(AccountStatus::Active);
     expect(AuditLog::query()->where('action', 'activated')->first()->new_values_redacted['terms_version'])->toBe('test-v1');

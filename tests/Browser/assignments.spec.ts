@@ -44,7 +44,7 @@ test('assignment metadata editing and confirmed archival preserve usable desktop
     const password = process.env.DCMS_E2E_PASSWORD;
     test.skip(!email || !password, 'Use isolated synthetic assignment fixtures.');
     test.setTimeout(90000);
-    const name = `Recovery ${test.info().project.name}`;
+    const name = `Recovery ${test.info().project.name} ${Date.now()}`;
     await page.goto('/login');
     await page.getByLabel('Email', { exact: true }).fill(email!);
     await page.getByLabel('Password', { exact: true }).fill(password!);
@@ -64,10 +64,16 @@ test('assignment metadata editing and confirmed archival preserve usable desktop
         }
     }
     await page.getByRole('button', { name: 'Save assignment', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/assignments\/[^/]+\/edit$/);
+    await page.waitForLoadState('networkidle');
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Assignment saved.' })).toBeVisible();
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
     await page.getByLabel('Assignment name', { exact: true }).fill(`Updated ${name}`);
     await page.getByRole('button', { name: 'Update assignment', exact: true }).click();
+    await page.waitForLoadState('networkidle');
     await expect(page.getByRole('heading', { name: `Updated ${name}`, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
     await page.getByLabel('Status change reason', { exact: true }).fill('Synthetic work package finished');
     await page.getByRole('button', { name: 'Archive assignment', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Confirm assignment status change', exact: true });

@@ -369,6 +369,10 @@ erDiagram
 
 ## Table: staff
 
+**Confirmed 8 November 2026 transition:** `make_legacy_staff_position_optional` removes only NOT NULL from position_code; no values, columns, FKs, staff or accounts are dropped. Current staff forms do not read/write position. Existing positions remain available to historical consumers; new records may use NULL. Rollback refuses to invent a position for NULL records. System Role remains on existing Spatie memberships, not a new staff role column.
+
+**Confirmed 7 November 2026 M01/M10/M12 contract:** no new tables or columns are required for the HR rebuild. Keep the existing unique users.staff_id link, canonical unique login email and staff number, Spatie pivots, broker token storage and append-only audit. created_at remains automatic UTC persistence and read-only Asia/Kuala_Lumpur display. appointment_date is retained for historical compatibility but removed from HR interfaces. New linked accounts remain invited until personal password setup; inactive staff blocks activation independently of account state. System Admin/Administrative/Rider are the three selectable bundles; legacy Admin memberships and custom grants are preserved. Explicit authorized role changes are audited and replace role/direct grants. Account provisioning and staff registration share one transaction.
+
 - **Purpose / description:** Employment identity and allocation eligibility.
 - **Module / evidence:** M10; E17/E18. Physical design P.
 - **Model:** Staff.
@@ -383,7 +387,7 @@ erDiagram
 | gender_category | varchar(50) | Yes | 'gender' | See constraints below | Fixed lookup category; CHECK gender_category='gender' |
 | gender_code | varchar(24) | No | NULL | Composite FK (gender_category,gender_code) → reference_values(category,code); indexed | Approved gender code, original options Male/Female |
 | position_category | varchar(50) | Yes | 'position' | See constraints below | Fixed lookup category; CHECK position_category='position' |
-| position_code | varchar(32) | Yes | — | Composite FK (position_category,position_code) → reference_values(category,code); indexed | Observed position code; not permission role |
+| position_code | varchar(32) | No | — | Composite FK (position_category,position_code) → reference_values(category,code); indexed | Observed position code; not permission role |
 | appointment_date | date | No | NULL | See constraints below | Employment appointment date |
 | phone_ciphertext | text | No | NULL | See constraints below | Encrypted work/mobile telephone |
 | home_phone_ciphertext | text | No | NULL | See constraints below | Encrypted home telephone |
@@ -391,7 +395,7 @@ erDiagram
 | is_active | boolean | Yes | true | See constraints below | Active/Unactive normalization |
 | is_rider | boolean | Yes | false | Index with is_active | Collection staff eligibility; independent from Spatie role grants |
 
-**Constraints, indexes, validation, relationships and remarks:** Unique staff_no. Index (is_active,position_code). Position/gender FK to reference_values by composite (category,code) using explicit category columns added with references. Deactivate, never delete referenced collectors. Email format and position required at application layer.
+**Constraints, indexes, validation, relationships and remarks:** Unique staff_no. Index (is_active,position_code). Position/gender FK to reference_values by composite (category,code) using explicit category columns added with references. Deactivate, never delete referenced collectors. Email format is validated at the application boundary. Position is optional historical data, not a current form requirement.
 
 
 **Confirmed-scope constraints / relationships:** Rider Profile is this staff row linked to users.staff_id, not a separate rider_profiles table. Existing employment/contact fields retained. Eligible active Rider required for new allocation.
@@ -2309,3 +2313,25 @@ M09 operational task-report increment (27 October 2026): implement UI27/UI41 for
 Freeze bounded (maximum 5,000 tasks) source IDs and projected values together in a repeatable-read transaction; exports create a new clearly timed snapshot. Store encrypted snapshot data in canonical export_jobs, publish via durable outbox to Redis exports, generate escaped CSV or trusted Dompdf PDF, and store encrypted private S3 artifacts through documents. Recheck current requester permissions and every source task's portfolio at execution and signed user-bound download. Artifact expiry is 24 hours, configurable, with five-minute links and audited request/generation/download. Denied or changed scope cancels output; lost storage/retries never report success or replace completed files. No role grants or existing workflow changes.
 
 M09 export_jobs materialization: add encrypted snapshot_ciphertext (task public IDs, allowlisted columns, rows and same-snapshot totals) and snapshot_digest (SHA-256 of canonical encoded snapshot), without parallel per-family tables. Criteria JSON contains only validated identifiers/enums/dates/columns. artifact_document_id references documents; owner_type=export is registered in the existing morph map. status/format/family/count checks, requester/batch/document FKs and requester/status/created indexes enforce the documented lifecycle.
+
+## M10 existing leave persistence — completion contract, 8 November 2026
+
+These existing entities are reused; this increment creates no second leave system or entitlement ledger.
+
+| Canonical table | Fields and constraints used by the workflow |
+|---|---|
+| leave_types | UUID/timestamps; unique name; is_active, requires_document, allow_past_dates, allow_pending_cancel; max_calendar_days 1–93; nonnegative lock_version; configured_by FK users. Application name comparison is case-insensitive and serialized with the existing advisory lock. |
+| leave_requests | rider_id FK staff, requested_by FK users, leave_type_id FK leave_types; unique request_key; start/end dates and total_days; encrypted reason/reviewer remarks; immutable type/calendar JSONB snapshots; optional unique supporting_document_id FK documents; pending/approved/rejected/cancelled state, decision/cancellation actors/times and lock_version. Final decisions and application data cannot be rewritten or deleted. Reviewer differs from requester. |
+| leave_request_days | Composite PK (leave_request_id,schedule_id), restrict FKs to leave_requests/attendance_schedules, service_date and charged flag; working days charged, rest/holiday days excluded. |
+
+Staff-level locking serializes overlapping requests, decisions, cancellation and clocking; type/calendar version checks invalidate stale reviews. Request replay reuses the unique key. Deactivated/edited types do not replace historical snapshots. Approved charged days project `leave` in attendance reports; schedules and raw punches remain original. Clocking/corrections cannot conflict with approved leave. No annual-balance or statutory-entitlement value is invented. Leave notifications reuse database notifications, and audit writes remain inside the business transaction.
+
+## Confirmed M10 leave balances and unified filters - 9 November 2026
+
+This owner-approved task supersedes the 8 November exclusion of annual balances and the requirement to manually enter every normal calendar date. M10/UI33/UI53/UI59 reuse staff/users, leave_types, leave_requests, leave_request_days and attendance_schedules. Human Resources retains Leave Management; its authorized Leave Types & Entitlements link replaces the standalone sidebar item. Administration (Planned) is removed. UI30/UI33 and Leave Management adopt the compact Task/Assignment filter pattern without changing module-specific permissions, selection or ownership.
+
+Tracked types have explicit entitlement per leave year and authorized signed per-staff adjustments with reasons. Available = entitlement + adjustments - approved charged days - pending charged days. Staff locking serializes submissions and decisions; submission also locks the type. Cross-year requests validate every charge year separately. Rejection and policy-permitted pending cancellation release reservations. Approval converts reservation to usage without double deduction. Final decisions remain immutable. Past-year entitlement/adjustment writes are refused. Submitted snapshots retain entitlement facts; later current/future entitlement edits are audited. Historical applications without tracking snapshots remain non-deductible; administrators reconcile opening balances explicitly with audited adjustments. No statutory allocation, accrual, automatic carry-forward, half-day or approved withdrawal is invented.
+
+Recurring work assignments pin an approved policy to an existing Rider and effective date range. Missing canonical dates are generated under the staff lock from actual policy workdays/rest days and policy-specific configured holidays. Existing explicit dates always take priority. Missing assignments fail closed with setup guidance. Configure holidays before materialization; changing existing dates still requires independent correction. Existing overlap, private document, own access, independent review, in-app notification and approved-leave attendance contracts remain in force. No new customer/rider/request entity, role bypass, external messaging or provider activation is introduced.
+
+Additive schema: leave_types.description nullable text and tracks_balance default false preserve existing rows. leave_entitlements has unique(leave_type_id,leave_year), days 0-366 and configuring user/timestamps. leave_balance_adjustments references existing staff/type/year, signed nonzero days -366 to 366, encrypted reason and author/time; a PostgreSQL trigger refuses updates/deletion. attendance_recurring_assignments references staff/policy/author and ordered starts_on/ends_on; staff locking rejects overlapping ranges. attendance_policy_holidays has unique(policy_id,service_date), explicit name and author/time. FKs restrict deletion. Request snapshots carry tracks_balance and per-year balance_snapshot. No historical backfill or default entitlement is performed.

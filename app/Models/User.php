@@ -37,6 +37,14 @@ class User extends Authenticatable
         return $this->belongsTo(Staff::class);
     }
 
+    /** Presentation only: retain legacy memberships and authorize exclusively through permissions. */
+    public function systemRoleLabel(): string
+    {
+        return $this->getRoleNames()->map(fn (string $role): string => $role === 'Admin'
+            ? ($this->can('roles.manage') ? 'System Admin' : 'Administrative')
+            : $role)->unique()->join(', ');
+    }
+
     public function profilePhoto(): HasOne
     {
         return $this->hasOne(Document::class, 'owner_id')->ofMany(['id' => 'max'], function (Builder $query): void {

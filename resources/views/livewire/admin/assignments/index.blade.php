@@ -10,11 +10,7 @@
                     <x-icon name="search" class="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-ink-500" />
                     <input id="query" name="query" type="search" class="field pl-11" wire:model.live.debounce.400ms="query" placeholder="Search by ID, name or external reference..." maxlength="200" autocomplete="off">
                 </div>
-                <button type="button" class="btn btn-secondary shrink-0" x-on:click="filtersOpen = !filtersOpen" x-bind:aria-expanded="filtersOpen" aria-controls="assignment-filters">
-                    <x-icon name="filter" class="size-4" />Filters
-                    @if($activeFilterCount)<span class="assignment-filter-count" aria-label="{{ $activeFilterCount }} applied">{{ $activeFilterCount }}</span>@endif
-                    <x-icon name="chevron" class="size-4 transition-transform" x-bind:class="filtersOpen ? '-rotate-90' : 'rotate-90'" />
-                </button>
+                <x-filter-toggle controls="assignment-filters" :count="$activeFilterCount" />
             </div>
             <div id="assignment-filters" class="grid gap-5 border-t border-ink-100 pt-5" x-show="filtersOpen" x-cloak>
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

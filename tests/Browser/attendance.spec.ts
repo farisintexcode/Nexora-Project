@@ -1,4 +1,4 @@
-import { chooseDate, chooseDateRange, expect, test } from './fixtures';
+import { chooseDateRange, expect, test } from './fixtures';
 
 test('Rider clocks a real shift, requests correction and Admin independently approves it', async ({page}) => {
     test.setTimeout(240000);
@@ -50,10 +50,9 @@ test('Rider clocks a real shift, requests correction and Admin independently app
         }
         await page.setViewportSize({width:375,height:667});
     }
-    await chooseDate(page,'clock-out','Requested clock out (MYT)',localDate(-2)+'T18:00');
+    await page.getByLabel('Requested clock out (MYT)', { exact: true }).fill(localDate(-2)+'T18:00');
     await page.getByLabel('Correction reason',{exact:true}).fill('Synthetic correction '+surface);
     await page.getByRole('button',{name:'Submit correction request',exact:true}).click();
-    await page.getByRole('dialog', { name: 'Submit this correction?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Correction requested.'})).toBeVisible();
     await expect(historical.getByText('Pending Correction',{exact:true})).toBeVisible();
     await page.screenshot({path:'.local-tools/m10-'+surface+'-rider.png',fullPage:true});
@@ -68,6 +67,7 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await page.goto('/admin/attendance');
     await chooseDateRange(page,'service-date','Service date',localDate(-3),localDate(0));
     await page.getByLabel('Attendance status',{exact:true}).selectOption('pending_correction');
+    await page.getByRole('button', {name: /^Filters/}).click();
     await page.getByLabel('Rider name or staff number',{exact:true}).fill('ATT-'+surface.toUpperCase());
     await page.getByRole('button',{name:'Apply filters',exact:true}).click();
     await expect(page.getByRole('link',{name:'View attendance',exact:true})).toHaveCount(1);
@@ -85,6 +85,12 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await page.getByRole('button',{name:'Publish approved version',exact:true}).click();
     await page.getByRole('dialog', { name: 'Publish this policy?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'published.'})).toBeVisible();
+    await page.getByLabel('Rider to schedule',{exact:true}).selectOption({label:'ATT-'+surface.toUpperCase()+' · Attendance '+surface});
+    await chooseDateRange(page,'assign-dates','Assign dates *',localDate(1));
+    await page.getByRole('button',{name:'Confirm calendar assignment',exact:true}).click();
+    await page.getByRole('dialog', { name: 'Assign these calendar days?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
+    await expect(page.getByRole('status').filter({hasText:'1 calendar days assigned.'})).toBeVisible();
+    await page.screenshot({path:'.local-tools/m10-'+surface+'-calendar.png',fullPage:true});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
     expect(errors).toEqual([]);
 });

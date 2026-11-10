@@ -11,7 +11,9 @@ use App\Models\Staff;
 use App\Models\User;
 use App\Notifications\LeaveUpdated;
 use App\Services\Attendance\LeaveAccess;
+use App\Services\Attendance\LeaveBalance;
 use App\Services\Attendance\LeaveDocument;
+use App\Services\Attendance\WorkCalendar;
 use App\Services\AuditWriter;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
@@ -25,13 +27,14 @@ use Illuminate\Validation\ValidationException;
 /** M10 / leave_requests, leave_types and leave_request_days: explicit calendar, independent review, no punch mutation. */
 class ManageLeave
 {
-    public function __construct(private LeaveAccess $access, private LeaveDocument $documents, private AuditWriter $audit) {}
+    public function __construct(private LeaveAccess $access, private LeaveDocument $documents, private AuditWriter $audit, private LeaveBalance $balances, private WorkCalendar $workCalendar) {}
 
     public function duration(User $actor, array $data): int
     {
         abort_unless($this->access->own($actor->fresh()), 403);
         Validator::make($data, ['type' => ['required', 'uuid'], 'start_date' => ['required', 'date_format:Y-m-d'], 'end_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:start_date']])->validate();
-        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->firstOrFail();
+        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->first()
+            ?? throw ValidationException::withMessages(['type' => 'Choose an active leave type.']);
 
         return count(array_filter($this->calendar($actor->staff_id, $data, $type), fn ($day) => $day['day_type'] === 'scheduled'));
     }
@@ -41,8 +44,8 @@ class ManageLeave
         return DB::transaction(function () use ($actor, $data, $id, $version): LeaveType {
             $actor = $actor->fresh();
             abort_unless($this->access->configure($actor), 403);
-            $data += ['allow_past_dates' => false];
-            $data = Validator::make($data, ['name' => ['required', 'string', 'max:100'], 'max_calendar_days' => ['required', 'integer', 'between:1,93'], 'requires_document' => ['required', 'boolean'], 'allow_past_dates' => ['required', 'boolean'], 'allow_pending_cancel' => ['required', 'boolean'], 'is_active' => ['required', 'boolean']])->validate();
+            $data += ['allow_past_dates' => false, 'description' => null, 'tracks_balance' => false];
+            $data = Validator::make($data, ['description' => ['nullable', 'string', 'max:2000'], 'tracks_balance' => ['required', 'boolean'], 'name' => ['required', 'string', 'max:100'], 'max_calendar_days' => ['required', 'integer', 'between:1,93'], 'requires_document' => ['required', 'boolean'], 'allow_past_dates' => ['required', 'boolean'], 'allow_pending_cancel' => ['required', 'boolean'], 'is_active' => ['required', 'boolean']])->validate();
             $data['name'] = trim($data['name']);
             DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', ['leave.type:'.mb_strtolower($data['name'])]);
             if ($data['name'] === '') {
@@ -62,19 +65,21 @@ class ManageLeave
         }, 3);
     }
 
-    /** @return array{token:string,total_days:int,type_name:string,type:string,start_date:string,end_date:string,reason:string,excluded_days:int} */
+    /** @return array{token:string,total_days:int,type_name:string,type:string,start_date:string,end_date:string,reason:string,excluded_days:int,balances:array,tracks_balance:bool} */
     public function preview(User $actor, array $data, ?UploadedFile $support = null): array
     {
         $actor = $actor->fresh();
         abort_unless($this->access->own($actor), 403);
         $data = $this->validate($data);
-        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->firstOrFail();
+        $type = LeaveType::query()->where('public_id', $data['type'])->where('is_active', true)->first()
+            ?? throw ValidationException::withMessages(['type' => 'Choose an active leave type.']);
         $this->validateSupport($type, $support);
         $calendar = $this->calendar($actor->staff_id, $data, $type);
         $this->overlap($actor->staff_id, $data);
+        $balanceSnapshot = $this->balances->check($actor->staff_id, $type, $calendar);
         $payload = ['actor' => $actor->id, 'staff' => $actor->staff_id, 'data' => $data, 'type' => $type->id, 'type_version' => $type->lock_version, 'calendar' => $calendar, 'file' => $support ? hash_file('sha256', $support->getRealPath()) : null, 'expires' => now()->addMinutes(15)->timestamp, 'key' => (string) Str::uuid7()];
 
-        return ['token' => Crypt::encryptString(json_encode($payload, JSON_THROW_ON_ERROR)), 'total_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')), 'type_name' => $type->name, ...$data, 'excluded_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] !== 'scheduled'))];
+        return ['balances' => $balanceSnapshot, 'tracks_balance' => $type->tracks_balance, 'token' => Crypt::encryptString(json_encode($payload, JSON_THROW_ON_ERROR)), 'total_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')), 'type_name' => $type->name, ...$data, 'excluded_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] !== 'scheduled'))];
     }
 
     public function submit(User $actor, array $data, string $token, ?UploadedFile $support = null): LeaveRequest
@@ -98,16 +103,18 @@ class ManageLeave
                 if ($existing) {
                     return $existing;
                 }
-                $type = LeaveType::query()->whereKey($preview['type'])->where('is_active', true)->lockForUpdate()->firstOrFail();
+                $type = LeaveType::query()->whereKey($preview['type'])->where('is_active', true)->lockForUpdate()->first()
+                    ?? throw ValidationException::withMessages(['type' => 'This leave type is no longer available. Choose an active leave type and review again.']);
                 $calendar = $this->calendar($actor->staff_id, $data, $type, true);
                 if ($type->lock_version !== $preview['type_version'] || $calendar !== $preview['calendar']) {
                     throw ValidationException::withMessages(['review' => 'The leave policy or calendar changed. Review the application again.']);
                 }
                 $this->overlap($actor->staff_id, $data);
                 $this->validateSupport($type, $support);
+                $balanceSnapshot = $this->balances->check($actor->staff_id, $type, $calendar);
                 $doc = $support ? $this->documents->store($actor, $support, $key) : null;
                 $request = new LeaveRequest;
-                $request->forceFill(['request_key' => $preview['key'], 'rider_id' => $actor->staff_id, 'requested_by' => $actor->id, 'leave_type_id' => $type->id, 'start_date' => $data['start_date'], 'end_date' => $data['end_date'], 'total_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')), 'reason' => $data['reason'], 'type_snapshot' => ['name' => $type->name, 'max_calendar_days' => $type->max_calendar_days, 'allow_past_dates' => $type->allow_past_dates, 'allow_pending_cancel' => $type->allow_pending_cancel, 'requires_document' => $type->requires_document, 'version' => $type->lock_version], 'calendar_snapshot' => $calendar, 'supporting_document_id' => $doc?->id, 'status' => 'pending', 'submitted_at' => now()])->save();
+                $request->forceFill(['request_key' => $preview['key'], 'rider_id' => $actor->staff_id, 'requested_by' => $actor->id, 'leave_type_id' => $type->id, 'start_date' => $data['start_date'], 'end_date' => $data['end_date'], 'total_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')), 'reason' => $data['reason'], 'type_snapshot' => ['tracks_balance' => $type->tracks_balance, 'balance_snapshot' => $balanceSnapshot, 'name' => $type->name, 'max_calendar_days' => $type->max_calendar_days, 'allow_past_dates' => $type->allow_past_dates, 'allow_pending_cancel' => $type->allow_pending_cancel, 'requires_document' => $type->requires_document, 'version' => $type->lock_version], 'calendar_snapshot' => $calendar, 'supporting_document_id' => $doc?->id, 'status' => 'pending', 'submitted_at' => now()])->save();
                 foreach ($calendar as $day) {
                     $request->schedules()->attach($day['id'], ['service_date' => $day['service_date'], 'charged' => $day['day_type'] === 'scheduled']);
                 }
@@ -221,9 +228,10 @@ class ManageLeave
         if ($days > $type->max_calendar_days || (! $type->allow_past_dates && $data['start_date'] < now()->timezone(config('dcms.business_timezone'))->toDateString())) {
             throw ValidationException::withMessages(['start_date' => 'The requested dates are outside this leave type’s allowed date rules or maximum calendar span.']);
         }
+        $this->workCalendar->ensure($rider, $data['start_date'], $data['end_date']);
         $calendar = $this->schedules($rider, $data, $lock);
         if (count($calendar) !== (int) $days || array_filter($calendar, fn ($day) => ! in_array($day['day_type'], ['scheduled', 'day_off', 'public_holiday'], true))) {
-            throw ValidationException::withMessages(['start_date' => 'An explicit working/rest/holiday calendar is required for every date. Contact your administrator to complete it.']);
+            throw ValidationException::withMessages(['start_date' => 'Working calendar unavailable for one or more dates. Ask your administrator to open Attendance > Schedules & policies and assign a recurring work schedule covering these dates.']);
         }
         if (! array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')) {
             throw ValidationException::withMessages(['start_date' => 'The selected range contains no scheduled working days.']);
