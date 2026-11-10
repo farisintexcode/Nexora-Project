@@ -32,7 +32,6 @@ class Document extends Model
         return $this->morphTo();
     }
 
-    /** M06 / UI23: stable display reference; original evidence bytes remain untouched. */
     /** Clean, or skipped where the environment does not require a scan. Production always scans. */
     public function isCleared(): bool
     {

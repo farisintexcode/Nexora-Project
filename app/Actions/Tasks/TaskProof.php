@@ -9,6 +9,7 @@ use App\Models\TaskSubmissionDocument;
 use App\Models\User;
 use App\Services\AuditWriter;
 use App\Services\Imports\MalwareScanner;
+use App\Services\Tasks\ProofWatermark;
 use App\Services\Tasks\RiderAccess;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
@@ -70,8 +71,9 @@ class TaskProof
                     throw ValidationException::withMessages(['proof' => 'Save a new visit draft before adding proof.']);
                 }
                 $documents = Document::query()->where('owner_type', 'task')->where('owner_id', $task->id)->where('activity_id', $visit->id)->where('uploaded_by', $actor->id)->where('document_type_code', 'proof_image');
-                $hash = hash('sha256', $bytes);
-                if ($existing = (clone $documents)->where('sha256', $hash)->where('image_category_code', $category)->first()) {
+                $sourceHash = hash('sha256', $bytes);
+                $filename = 'proof-'.$sourceHash.'.jpg';
+                if ($existing = (clone $documents)->where('image_category_code', $category)->where(fn ($query) => $query->where('original_filename', $filename)->orWhere('sha256', $sourceHash))->first()) {
                     return $existing;
                 }
                 if ($version !== $task->lock_version) {
@@ -80,12 +82,17 @@ class TaskProof
                 if ($documents->count() >= config('task_execution.max_images')) {
                     throw ValidationException::withMessages(['proof' => 'Remove a draft image before adding more. Maximum 10 images.']);
                 }
+                $document = new Document;
+                $document->id = DB::scalar("select nextval(pg_get_serial_sequence('documents', 'id'))");
+                $document->public_id = (string) Str::uuid7();
+                $document->created_at = now();
+                $bytes = app(ProofWatermark::class)->stamp($bytes, $task, $document, $document->created_at);
+                $hash = hash('sha256', $bytes);
                 if (! Storage::disk(config('task_execution.disk'))->put($object, Crypt::encryptString($bytes), ['visibility' => 'private'])) {
                     throw new RuntimeException('private_storage_failed');
                 }
                 $stored = true;
-                $document = new Document;
-                $document->forceFill(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $actor->id, 'disk' => config('task_execution.disk'), 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => 'proof.jpg', 'mime_type' => 'image/jpeg', 'size_bytes' => strlen($bytes), 'sha256' => $hash, 'document_type_code' => 'proof_image', 'image_category_code' => $category, 'caption_ciphertext' => trim($caption ?? '') ?: null, 'scan_status' => self::scanRequired() ? 'pending' : 'skipped'])->save();
+                $document->forceFill(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $actor->id, 'disk' => config('task_execution.disk'), 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => $filename, 'mime_type' => 'image/jpeg', 'size_bytes' => strlen($bytes), 'sha256' => $hash, 'document_type_code' => 'proof_image', 'image_category_code' => $category, 'caption_ciphertext' => trim($caption ?? '') ?: null, 'scan_status' => self::scanRequired() ? 'pending' : 'skipped'])->save();
                 if (self::scanRequired()) {
                     $this->enqueue($document);
                 }

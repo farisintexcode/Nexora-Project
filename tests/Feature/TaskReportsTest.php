@@ -4,6 +4,7 @@ use App\Actions\Reports\ManageReports;
 use App\Livewire\Admin\Reports\Index;
 use App\Models\AssignmentBatch;
 use App\Models\AuditLog;
+use App\Models\CollectionActivity;
 use App\Models\DebtAccount;
 use App\Models\Document;
 use App\Models\Task;
@@ -35,6 +36,12 @@ function reportFixture(): array
     $task = Task::factory()->create(['assignment_batch_id' => $batch->id, 'debt_account_id' => DebtAccount::factory()->create()->id]);
 
     return [$actor, $task];
+}
+function reportProofImage(Task $task, User $uploader, array $overrides = []): Document
+{
+    $visit = CollectionActivity::factory()->create(['task_id' => $task->id, 'customer_id' => $task->customer_id, 'performed_by' => $uploader->id, 'activity_type_code' => 'visit']);
+
+    return Document::factory()->create([...['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $uploader->id, 'document_type_code' => 'proof_image', 'image_category_code' => 'premises', 'scan_status' => 'clean', 'mime_type' => 'image/jpeg'], ...$overrides]);
 }
 function reportCriteria(array $overrides = []): array
 {
@@ -97,6 +104,35 @@ test('renderer escapes spreadsheet formula injection and produces trusted PDF', 
     $snapshot['rows'][0]['batch'] = ' =HYPERLINK("https://example.test")';
     $renderer = app(ReportRenderer::class);
     expect($renderer->render($snapshot, 'csv'))->toContain("' =HYPERLINK")->and($renderer->render($snapshot, 'pdf'))->toStartWith('%PDF-');
+});
+
+test('reports link only to viewable proof images through the protected route', function () {
+    [$actor, $task] = reportFixture();
+    $premises = reportProofImage($task, $actor);
+    $payment = reportProofImage($task, $actor, ['image_category_code' => 'payment_evidence', 'scan_status' => 'skipped']);
+    $pending = reportProofImage($task, $actor, ['scan_status' => 'pending']);
+    reportProofImage($task, $actor)->delete();
+
+    $snapshot = app(TaskReports::class)->snapshot($actor, reportCriteria());
+
+    expect($snapshot['rows'][0]['proof_images'])->toBe([
+        ['label' => '1. Premises', 'url' => route('proof.show', $premises)],
+        ['label' => '2. Payment Evidence', 'url' => route('proof.show', $payment)],
+    ])->and(json_encode($snapshot))->not->toContain($pending->public_id);
+
+    $renderer = app(ReportRenderer::class);
+    expect($renderer->render($snapshot, 'csv'))->toContain(route('proof.show', $premises))->toContain(route('proof.show', $payment))
+        ->and($renderer->render($snapshot, 'pdf'))->toContain('/URI ('.route('proof.show', $premises).')');
+    expect(view('reports.tasks', compact('snapshot'))->render())->toContain('>2. Payment Evidence</a>');
+});
+
+test('reports omit proof images when the column is not selected', function () {
+    [$actor, $task] = reportFixture();
+    reportProofImage($task, $actor);
+
+    $snapshot = app(TaskReports::class)->snapshot($actor, reportCriteria(['columns' => ['task_id']]));
+
+    expect($snapshot['columns'])->not->toHaveKey('proof_images')->and($snapshot['rows'][0])->not->toHaveKey('proof_images');
 });
 
 test('livewire cannot bypass export authorization', function () {

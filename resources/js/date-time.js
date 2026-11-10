@@ -1,7 +1,7 @@
 // Calendar field for one date and time, stored as the Y-m-dTH:i value datetime-local inputs produce.
 import { isIso, monthCells, monthName, toDisplay, todayIso } from './calendar';
 
-window.nexoraDateTime = (wire, model, defaultTime) => ({
+window.nexoraDateTime = (wire, model, defaultTime, minimumDate = null) => ({
     value: wire.entangle(model),
     open: false,
     viewYear: 0,
@@ -56,6 +56,10 @@ window.nexoraDateTime = (wire, model, defaultTime) => ({
         }
         this.showMonthOf(this.date);
         this.open = true;
+    },
+
+    isBeforeMinimum(iso) {
+        return minimumDate !== null && iso < minimumDate;
     },
 
     choose(iso) {

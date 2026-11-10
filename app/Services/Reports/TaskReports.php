@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Models\Document;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\Tasks\TaskIdSelection;
@@ -20,11 +21,11 @@ class TaskReports
 {
     public const FAMILIES = ['task' => 'Task', 'rider_assignment' => 'Rider Assignment', 'rider_performance' => 'Rider Performance', 'completed_task' => 'Completed Task', 'verification' => 'Verification'];
 
-    public const COLUMNS = ['task_reference' => 'Task reference', 'task_id' => 'Task ID', 'assignment_id' => 'Assignment ID', 'batch' => 'Assignment', 'customer_reference' => 'Customer reference', 'account_reference' => 'Masked account', 'rider_staff_no' => 'Rider staff no.', 'work_status' => 'Work status', 'review_status' => 'Review status', 'created_at' => 'Created (MYT)', 'due_at' => 'Due (MYT)', 'submitted_at' => 'Submitted (MYT)', 'completed_at' => 'Completed (MYT)', 'excluded' => 'Excluded', 'payment_update' => 'Payment update marker', 'outstanding_balance' => 'Outstanding (RM)', 'monthly_charge' => 'Monthly charge (RM)', 'collected' => 'Verified collected (RM)'];
+    public const COLUMNS = ['task_reference' => 'Task reference', 'task_id' => 'Task ID', 'assignment_id' => 'Assignment ID', 'batch' => 'Assignment', 'customer_reference' => 'Customer reference', 'account_reference' => 'Masked account', 'rider_staff_no' => 'Rider staff no.', 'work_status' => 'Work status', 'review_status' => 'Review status', 'created_at' => 'Created (MYT)', 'due_at' => 'Due (MYT)', 'submitted_at' => 'Submitted (MYT)', 'completed_at' => 'Completed (MYT)', 'excluded' => 'Excluded', 'payment_update' => 'Payment update marker', 'outstanding_balance' => 'Outstanding (RM)', 'monthly_charge' => 'Monthly charge (RM)', 'collected' => 'Verified collected (RM)', 'proof_images' => 'Proof images'];
 
     public const PERFORMANCE = ['rider_staff_no' => 'Rider staff no.', 'allocated' => 'Current allocated tasks', 'completed' => 'Verified/completed tasks', 'pending_verification' => 'Pending verification', 'returned' => 'Returned tasks', 'outstanding_balance' => 'Outstanding (RM)', 'collected' => 'Verified collected (RM)'];
 
-    public const DEFAULT_COLUMNS = ['task_reference', 'task_id', 'assignment_id', 'batch', 'rider_staff_no', 'work_status', 'review_status', 'due_at', 'outstanding_balance', 'collected'];
+    public const DEFAULT_COLUMNS = ['task_reference', 'task_id', 'assignment_id', 'batch', 'rider_staff_no', 'work_status', 'review_status', 'due_at', 'outstanding_balance', 'collected', 'proof_images'];
 
     public function authorize(User $actor, bool $export = false): void
     {
@@ -103,7 +104,8 @@ class TaskReports
             if ($tasks->count() > config('reports.max_tasks')) {
                 throw ValidationException::withMessages(['report' => 'Narrow the filters to at most '.config('reports.max_tasks').' tasks.']);
             }
-            $rows = $tasks->map(fn (Task $t) => $this->row($t))->all();
+            $proofImages = in_array('proof_images', $criteria['columns'], true) ? $this->proofImages($tasks->pluck('id')->all()) : [];
+            $rows = $tasks->map(fn (Task $t) => $this->row($t) + ['proof_images' => $proofImages[$t->id] ?? []])->all();
             $totals = ['tasks' => $tasks->count(), 'completed' => $tasks->where('work_status', 'completed')->count(), 'pending_verification' => $tasks->where('work_status', 'submitted')->count(), 'returned' => $tasks->where('review_status', 'returned')->count()];
             if ($criteria['family'] === 'rider_performance') {
                 $rows = $tasks->groupBy(fn ($t) => $t->currentAllocation->collector->staff_no)->map(fn ($group, $staff) => ['rider_staff_no' => (string) $staff, 'allocated' => $group->count(), 'completed' => $group->where('work_status', 'completed')->count(), 'pending_verification' => $group->where('work_status', 'submitted')->count(), 'returned' => $group->where('review_status', 'returned')->count(), 'outstanding_balance' => Money::plain($group->sum(fn (Task $t) => $this->outstanding($t))), 'collected' => Money::plain($group->sum(fn (Task $t) => $this->collected($t)))])->values()->all();
@@ -113,6 +115,29 @@ class TaskReports
 
             return ['criteria' => $criteria, 'as_of' => now()->toIso8601String(), 'task_ids' => $tasks->pluck('public_id')->all(), 'columns' => $columns, 'rows' => $rows, 'totals' => $totals, 'money' => ['outstanding' => Money::format($tasks->sum(fn (Task $t) => $this->outstanding($t))), 'collected' => Money::format($tasks->sum(fn (Task $t) => $this->collected($t)))]];
         });
+    }
+
+    /**
+     * Links to the access-controlled proof route; the images themselves stay encrypted in private storage.
+     *
+     * @param  list<int>  $taskIds
+     * @return array<int, list<array{label: string, url: string}>>
+     */
+    private function proofImages(array $taskIds): array
+    {
+        return Document::query()
+            ->where('owner_type', 'task')
+            ->whereIn('owner_id', $taskIds)
+            ->where('document_type_code', 'proof_image')
+            ->whereIn('scan_status', Document::CLEARED_SCANS)
+            ->orderBy('id')
+            ->get(['id', 'public_id', 'owner_id', 'image_category_code'])
+            ->groupBy('owner_id')
+            ->map(fn ($documents) => $documents->values()->map(fn (Document $document, int $index): array => [
+                'label' => ($index + 1).'. '.Str::headline((string) $document->image_category_code),
+                'url' => route('proof.show', ['document' => $document->public_id]),
+            ])->all())
+            ->all();
     }
 
     private function row(Task $task): array

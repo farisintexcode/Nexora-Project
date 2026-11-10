@@ -64,6 +64,8 @@ test('the new assignment form follows the operational field scheme and fills the
 
     Livewire::actingAs($user)->test(Editor::class)
         ->assertSet('data.start_date', '2026-11-01')->assertSet('status', 'active')
+        ->assertSeeHtml("nexoraDateTime(\$wire, 'data.due_date', null, '2026-11-01')")
+        ->assertDontSeeHtml('type="date"')
         ->assertDontSee('Commissioning client')->assertDontSee('External batch reference')
         ->assertSeeInOrder(['Assignment type', 'Assignment name', 'Assignment due date', 'Description (optional)', 'DCA code', 'DCA name', 'LA name', 'State', 'Status'])
         ->assertSeeInOrder(['Vacant', 'Domestic DR', 'Domestic CTOS', 'Domestic LOD', 'Domestic LOD CTOS', 'COM DR', 'COM LOD']);

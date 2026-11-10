@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Tasks\ReviewSubmission;
 use App\Actions\Tasks\RiderWork;
 use App\Actions\Tasks\TaskProof;
 use App\Enums\BatchStatus;
@@ -18,6 +19,7 @@ use App\Models\TaskSubmissionDocument;
 use App\Models\User;
 use App\Services\Imports\MalwareScanner;
 use App\Services\Tasks\CompletionChecklist;
+use App\Services\Tasks\RiderAssignments;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -350,7 +352,7 @@ test('camera and gallery selections upload scan and submit through the actual Li
     foreach ($documents as $document) {
         cleanExecutionProof($document);
     }
-    $component->call('reviewCompletion')->assertSee('Required checks passed.')->call('submitCompletion')->assertHasNoErrors()->assertSee('Pending Verification');
+    $component->call('reviewCompletion')->assertSee('Required checks passed.')->call('submitCompletion')->assertHasNoErrors()->assertSee('Awaiting Admin verification');
     expect($task->refresh()->work_status)->toBe('submitted')->and($task->submissions()->count())->toBe(1);
 });
 
@@ -387,6 +389,86 @@ test('camera JPEG orientation is preserved while EXIF is stripped from stored pr
     $stored = app(TaskProof::class)->bytes($document);
     $dimensions = getimagesizefromstring($stored);
     expect([$dimensions[0], $dimensions[1]])->toBe([60, 80])->and($stored)->not->toContain('Exif')->and($document->captured_at)->toBeNull();
+});
+
+test('Rider assignment progress follows successful submissions returns and approval separately', function (): void {
+    Storage::fake('s3');
+    [$rider, $task] = executionFixture();
+    $others = Task::factory()->count(2)->create(['assignment_batch_id' => $task->assignment_batch_id]);
+    foreach ($others as $other) {
+        TaskAllocation::factory()->create(['task_id' => $other->id, 'collector_id' => $rider->staff_id]);
+    }
+    $progress = fn () => app(RiderAssignments::class)->batches($rider)->sole();
+    expect((int) $progress()->completed_count)->toBe(0);
+    executionVisit($rider, $task);
+    $document = executionProof($rider, $task);
+    cleanExecutionProof($document);
+    expect((int) $progress()->completed_count)->toBe(0);
+    expect(fn () => app(RiderWork::class)->submit($rider, $task, $task->refresh()->lock_version, (string) Str::uuid7(), 'stale-digest'))->toThrow(ValidationException::class);
+    expect((int) $progress()->completed_count)->toBe(0);
+    $submission = executionSubmit($rider, $task);
+    expect((int) $progress()->completed_count)->toBe(1)->and((int) $progress()->pending_count)->toBe(2)->and((int) $progress()->verified_count)->toBe(0);
+    $this->actingAs($rider)->get(route('rider.assignments.index'))->assertOk()->assertSee('1 of 3 completed')->assertSee('width:33.33%', false);
+    $admin = staffManager();
+    $reviewer = app(ReviewSubmission::class);
+    $reviewer->confirm($admin, $reviewer->prepare($admin, [$submission->public_id], 'returned', 'Record the missing site detail.'));
+    expect((int) $progress()->completed_count)->toBe(0)->and((int) $progress()->pending_count)->toBe(3);
+    executionVisit($rider, $task);
+    cleanExecutionProof(executionProof($rider, $task));
+    $correction = executionSubmit($rider, $task);
+    $reviewer->confirm($admin, $reviewer->prepare($admin, [$correction->public_id], 'approved', 'Correction checked.'));
+    expect((int) $progress()->completed_count)->toBe(1)->and((int) $progress()->verified_count)->toBe(1);
+    foreach ($others as $other) {
+        executionVisit($rider, $other);
+        cleanExecutionProof(executionProof($rider, $other));
+        executionSubmit($rider, $other);
+    }
+    expect((int) $progress()->completed_count)->toBe(3)->and((int) $progress()->pending_count)->toBe(0)->and((int) $progress()->verified_count)->toBe(1);
+    $this->actingAs($rider)->get(route('rider.assignments.index'))->assertOk()->assertSee('3 of 3 completed')->assertSee('width:100%', false);
+});
+
+test('new proof is permanently watermarked encrypted and idempotent across preview and Admin access', function (): void {
+    config(['task_execution.disk' => 'local', 'task_execution.scan_required' => false]);
+    Storage::fake('local');
+    $this->travelTo(now()->utc()->startOfMinute());
+    [$rider, $task] = executionFixture();
+    executionVisit($rider, $task);
+    $photo = UploadedFile::fake()->image('field.png', 1400, 1000);
+    $proof = app(TaskProof::class);
+    $document = $proof->upload($rider, $task, $task->refresh()->lock_version, $photo, 'premises', 'Watermark test');
+    $bytes = $proof->bytes($document);
+    expect(hash('sha256', $bytes))->toBe($document->sha256)->and($document->scan_status)->toBe('skipped');
+    $image = imagecreatefromstring($bytes);
+    $red = 0;
+    for ($y = 0; $y < 160; $y++) {
+        for ($x = 700; $x < 1400; $x++) {
+            $pixel = imagecolorat($image, $x, $y);
+            if ((($pixel >> 16) & 255) > 160 && (($pixel >> 8) & 255) < 100 && ($pixel & 255) < 100) {
+                $red++;
+            }
+        }
+    }
+    imagedestroy($image);
+    expect($red)->toBeGreaterThan(100);
+    expect(Storage::disk('local')->get($document->object_key))->not->toBe($bytes);
+    $this->actingAs($rider)->get(route('proof.show', $document))->assertOk()->assertContent($bytes);
+    $this->get(route('proof.show', $document))->assertOk()->assertContent($bytes);
+    $this->get(route('rider.tasks.show', ['task' => $task, 'section' => 'proof']))->assertOk()->assertSee($document->proofReference())->assertDontSee('Skipped');
+    $this->actingAs(staffManager())->get(route('proof.show', $document))->assertOk()->assertContent($bytes);
+    $this->travel(30)->minutes();
+    $again = $proof->upload($rider, $task, $task->refresh()->lock_version, $photo, 'premises', 'Watermark test');
+    expect($again->id)->toBe($document->id)->and($proof->bytes($again))->toBe($bytes)->and(Document::where('owner_id', $task->id)->where('owner_type', 'task')->count())->toBe(1);
+});
+
+test('changed visit details must be saved before completion review or submission', function (): void {
+    [$rider, $task] = executionFixture();
+    executionVisit($rider, $task);
+    Livewire::actingAs($rider)->test(Show::class, ['task' => $task])
+        ->set('data.visit_remarks', 'Unsaved field correction')
+        ->call('reviewCompletion')->assertSet('section', 'visit')->assertHasErrors('visit')
+        ->call('submitCompletion')->assertHasErrors('visit');
+    expect($task->submissions()->count())->toBe(0);
+    $this->actingAs($rider)->get(route('rider.tasks.show', ['task' => $task, 'section' => 'visit']))->assertOk()->assertSee('Additional Details')->assertSee('Field Visit Details')->assertSee('Remarks / Notes');
 });
 
 test('call-only outcomes cannot be submitted as Rider site visits', function (): void {
