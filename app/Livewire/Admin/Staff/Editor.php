@@ -6,6 +6,7 @@ use App\Actions\Staff\SaveStaff;
 use App\Models\ReferenceValue;
 use App\Models\Staff;
 use App\Services\Staff\StaffAssignments;
+use App\Services\Staff\StaffNumberGenerator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -53,6 +54,8 @@ class Editor extends Component
         );
 
         if (! $staff?->exists) {
+            $this->data['staff_no'] = app(StaffNumberGenerator::class)->next();
+
             return;
         }
 

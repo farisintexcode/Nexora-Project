@@ -22,14 +22,15 @@ beforeEach(function (): void {
 });
 
 test('staff creation preserves staff number encrypts private contacts and never grants an account', function (): void {
+    $this->travelTo('2026-01-15 09:00:00');
     $actor = staffManager();
     $staff = app(SaveStaff::class)->handle($actor, staffInput(['position_code' => '99', 'roles' => ['Admin'], 'permissions' => ['roles.manage']]));
 
-    expect($staff->staff_no)->toBe('000123')->and($staff->position_code)->toBe('99')->and($staff->user)->toBeNull()
+    expect($staff->staff_no)->toBe('ST260101')->and($staff->position_code)->toBe('99')->and($staff->user)->toBeNull()
         ->and($staff->phone_ciphertext)->toBe('+60123456789')->and($staff->getRawOriginal('phone_ciphertext'))->not->toContain('+60123456789');
     $this->assertDatabaseCount('users', 1);
     expect(AuditLog::query()->where('module', 'M10')->first()->toJson())->not->toContain('+60123456789', '10 Synthetic Test Road', 'nadia@example.test');
-    Livewire::actingAs($actor)->test(Index::class)->assertSee('000123')->assertSee('Nadia Test')->assertDontSee('+60123456789');
+    Livewire::actingAs($actor)->test(Index::class)->assertSee('ST260101')->assertSee('Nadia Test')->assertDontSee('+60123456789');
 });
 
 test('staff validation rejects invalid fields without partial persistence', function (array $invalid, string $field): void {
@@ -41,17 +42,47 @@ test('staff validation rejects invalid fields without partial persistence', func
     $this->assertDatabaseCount('staff', 0);
     $this->assertDatabaseCount('audit_logs', $audits);
 })->with([
-    [['staff_no' => ''], 'staff_no'], [['first_name' => []], 'first_name'], [['email' => 'invalid'], 'email'],
+    [['first_name' => []], 'first_name'], [['phone' => ''], 'phone'], [['email' => 'invalid'], 'email'],
     [['system_role' => 'Unknown'], 'system_role'], [['gender_code' => '99'], 'gender_code'],
     [['appointment_date' => '2026-02-30'], 'appointment_date'], [['phone' => 'letters'], 'phone'], [['is_rider' => 'wrong'], 'is_rider'],
 ]);
 
-test('unique staff number conflicts return a field error', function (): void {
+test('staff numbers are generated per year and continue across months', function (): void {
     $actor = staffManager();
-    app(SaveStaff::class)->handle($actor, staffInput());
+    $save = fn (array $overrides = []): Staff => app(SaveStaff::class)->handle($actor, staffInput(['email' => fake()->unique()->safeEmail(), ...$overrides]));
 
-    Livewire::actingAs($actor)->test(Editor::class)->set('data', staffInput())->call('save')->assertHasErrors('data.staff_no');
-    $this->assertDatabaseCount('staff', 1);
+    $this->travelTo('2026-01-10 09:00:00');
+    expect($save()->staff_no)->toBe('ST260101')
+        ->and($save(['staff_no' => 'MANUAL-1'])->staff_no)->toBe('ST260102');
+
+    $this->travelTo('2026-04-03 09:00:00');
+    expect($save()->staff_no)->toBe('ST260403');
+
+    $this->travelTo('2027-01-05 09:00:00');
+    expect($save()->staff_no)->toBe('ST270101');
+    Livewire::actingAs($actor)->test(Editor::class)->assertSet('data.staff_no', 'ST270102');
+});
+
+test('editing staff keeps the existing staff number', function (): void {
+    $this->travelTo('2026-01-10 09:00:00');
+    $actor = staffManager();
+    $staff = app(SaveStaff::class)->handle($actor, staffInput());
+
+    $updated = app(SaveStaff::class)->handle($actor, staffInput(['staff_no' => 'CHANGED-1', 'last_name' => 'Updated']), $staff, $staff->revision());
+
+    expect($updated->staff_no)->toBe('ST260101')->and($updated->last_name)->toBe('Updated');
+});
+
+test('work phone is required for new staff but stays optional when editing', function (): void {
+    $actor = staffManager();
+
+    expect(fn () => app(SaveStaff::class)->handle($actor, staffInput(['phone' => ''])))->toThrow(ValidationException::class);
+    $this->assertDatabaseCount('staff', 0);
+
+    $staff = app(SaveStaff::class)->handle($actor, staffInput());
+    $updated = app(SaveStaff::class)->handle($actor, staffInput(['phone' => '']), $staff, $staff->revision());
+
+    expect($updated->phone_ciphertext)->toBeNull();
 });
 
 test('stale edits including same-second reverted values cannot overwrite staff history', function (): void {
@@ -174,7 +205,7 @@ test('staff system role starts blank and requires explicit selection', function 
         ->assertSee('Select role')
         ->set('data', staffInput(['system_role' => '', 'create_account' => false]))
         ->call('save')->assertHasErrors('data.system_role');
-    expect(Staff::query()->where('staff_no', '000123')->exists())->toBeFalse();
+    $this->assertDatabaseCount('staff', 0);
 });
 
 test('staff system role preserves editing selection and determines Rider eligibility', function (string $role): void {

@@ -7,6 +7,7 @@ use App\Models\Staff;
 use App\Models\User;
 use App\Services\AuditWriter;
 use App\Services\Staff\StaffAssignments;
+use App\Services\Staff\StaffNumberGenerator;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -19,7 +20,7 @@ class SaveStaff
 {
     public ?string $invitationDelivery = null;
 
-    public function __construct(private AuditWriter $audit, private StaffAssignments $assignments, private InviteStaffAccount $invite, private ManageStaffAccount $accounts) {}
+    public function __construct(private AuditWriter $audit, private StaffAssignments $assignments, private InviteStaffAccount $invite, private ManageStaffAccount $accounts, private StaffNumberGenerator $staffNumbers) {}
 
     public function handle(User $actor, array $input, ?Staff $existing = null, ?string $revision = null): Staff
     {
@@ -34,6 +35,7 @@ class SaveStaff
                 if ($existing && (! $revision || ! hash_equals($staff->revision(), $revision))) {
                     throw ValidationException::withMessages(['revision' => 'This staff record changed. Reload and review before saving.']);
                 }
+                $input['staff_no'] = $staff->exists ? $staff->staff_no : $this->staffNumbers->next();
                 foreach (['staff_no', 'first_name', 'last_name', 'email', 'phone', 'home_phone', 'address', 'reason'] as $field) {
                     if (is_string($input[$field] ?? null)) {
                         $input[$field] = trim($input[$field]);
@@ -49,7 +51,7 @@ class SaveStaff
                     'gender_code' => ['nullable', 'string', Rule::exists('reference_values', 'code')->where('category', 'gender')->where(fn ($q) => $q->when(! $staff->exists || ($input['gender_code'] ?? null) !== $staff->gender_code, fn ($q) => $q->where('is_active', true)))],
                     'position_code' => ['nullable', 'string', Rule::exists('reference_values', 'code')->where('category', 'position')->where(fn ($q) => $q->when(! $staff->exists || ($input['position_code'] ?? null) !== $staff->position_code, fn ($q) => $q->where('is_active', true)))],
                     'appointment_date' => ['nullable', 'date_format:Y-m-d'],
-                    'phone' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9][0-9 ()\-.]{4,39}$/'],
+                    'phone' => [$staff->exists ? 'nullable' : 'required', 'string', 'max:40', 'regex:/^[+0-9][0-9 ()\-.]{4,39}$/'],
                     'home_phone' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9][0-9 ()\-.]{4,39}$/'],
                     'address' => ['nullable', 'string', 'max:2000'], 'is_active' => ['required', 'boolean'],
                     'is_rider' => ['required', 'boolean'], 'reason' => ['nullable', 'string', 'max:1000'],

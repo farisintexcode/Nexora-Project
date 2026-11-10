@@ -4,17 +4,21 @@
     <form wire:submit="save" class="grid gap-6">
         <fieldset class="form-section grid gap-5 sm:grid-cols-2">
             <legend>Staff Information</legend>
-            <x-input name="data.staff_no" label="Staff ID / Staff Number" wire:model="data.staff_no" maxlength="50" required />
+            <x-input name="data.staff_no" label="Staff ID" value="{{ $data['staff_no'] }}" readonly disabled :help="$staffId ? null : 'Auto-generated. Final number is confirmed on save.'" />
             <x-input name="data.email" label="Email Address" type="email" wire:model="data.email" maxlength="254" required />
             <x-input name="data.first_name" label="First Name" wire:model="data.first_name" maxlength="100" required />
             <x-input name="data.last_name" label="Last Name" wire:model="data.last_name" maxlength="100" required />
-            <x-select name="data.system_role" label="System Role" wire:model="data.system_role" required>
-                <option value="" disabled>Select role</option>
+            <x-select name="data.system_role" label="Role" wire:model="data.system_role" required>
+                <option value="" disabled>Role</option>
                 @foreach(config('dcms.staff_roles') as $role)<option value="{{ $role }}">{{ $role }}</option>@endforeach
             </x-select>
             <x-select name="data.is_active" label="Staff Status" wire:model="data.is_active" required><option value="1">Active</option><option value="0">Inactive</option></x-select>
             <x-select name="data.gender_code" label="Gender (optional)" wire:model="data.gender_code"><option value="">Not specified</option>@foreach($genders as $gender)<option value="{{ $gender->code }}">{{ $gender->label }}</option>@endforeach</x-select>
-            <x-input name="data.phone" label="Work / mobile phone (optional)" wire:model="data.phone" maxlength="40" />
+            @if($staffId)
+                <x-input name="data.phone" label="Work / mobile phone (optional)" wire:model="data.phone" maxlength="40" />
+            @else
+                <x-input name="data.phone" label="Work / mobile phone" wire:model="data.phone" maxlength="40" required />
+            @endif
             <x-input name="data.home_phone" label="Home phone (optional)" wire:model="data.home_phone" maxlength="40" />
             <div class="sm:col-span-2"><x-textarea name="data.address" label="Address (optional)" wire:model="data.address" maxlength="2000" /></div>
             <p class="field-help sm:col-span-2">System Role controls the login permission bundle. Rider access also sets staff Rider eligibility. System Admin grants require roles.manage.</p>
