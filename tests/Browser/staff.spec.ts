@@ -47,8 +47,9 @@ test('staff directory create edit eligibility and activity stay usable on deskto
     await page.getByRole('link', { name: 'Back to staff', exact: true }).click();
     await page.getByRole('button', { name: /^Filters/ }).click();
     await page.getByLabel('Personnel', { exact: true }).selectOption('all');
+    await page.getByLabel('Staff Status', { exact: true }).selectOption('inactive');
     await page.getByLabel('Search staff', { exact: true }).fill(number);
-    await expect(page.getByText('1 matching staff records', { exact: false })).toBeVisible();
+    await expect(page.getByRole('row').filter({ hasText: number })).toHaveCount(1);
     await expect(page.getByText(`Updated Nadia ${suffix}`, { exact: true }).filter({ visible: true }).first()).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('staff-directory.png'), fullPage: true });
 });

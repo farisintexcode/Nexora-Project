@@ -33,9 +33,12 @@ for (const role of ['System Admin', 'Administrative', 'Rider']) {
         const row = page.getByRole('row').filter({ hasText: suffix });
         await expect(row).toHaveCount(1);
         await expect(row).toContainText('Invited');
-        await page.getByLabel('Deactivation reason', { exact: true }).fill('Synthetic browser pause');
-        page.once('dialog', dialog => dialog.accept());
         await row.getByRole('button', { name: 'Deactivate', exact: true }).click();
+        const dialog = page.getByRole('dialog');
+        await dialog.getByLabel('Deactivation reason', { exact: true }).fill('Synthetic browser pause');
+        await dialog.getByRole('button', { name: 'Deactivate', exact: true }).click();
+        await expect(row).toHaveCount(0, { timeout: 30000 });
+        await page.getByLabel('Staff Status', { exact: true }).selectOption('inactive');
         await expect(row).toContainText('Inactive', { timeout: 30000 });
         await expect(row).toContainText('Invited');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();

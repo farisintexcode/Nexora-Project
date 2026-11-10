@@ -24,8 +24,9 @@ class Index extends Component
     #[Url]
     public string $kind = 'rider';
 
+    /** Resigned or paused staff are hidden by default; choose Inactive or All statuses to see them. */
     #[Url]
-    public string $status = '';
+    public string $status = 'active';
 
     #[Url]
     public string $role = '';
@@ -49,6 +50,23 @@ class Index extends Component
 
     public string $reason = '';
 
+    public ?string $deactivating = null;
+
+    /** Open the deactivation dialog for one staff record so the reason is captured beside its action. */
+    public function confirmDeactivation(string $publicId): void
+        Gate::authorize('update', Staff::query()->where('public_id', $publicId)->firstOrFail());
+        $this->resetErrorBag();
+        $this->reason = '';
+        $this->deactivating = $publicId;
+    }
+
+    public function cancelDeactivation(): void
+    {
+        $this->resetErrorBag();
+        $this->reason = '';
+        $this->deactivating = null;
+    }
+
     public function changeAvailability(string $publicId, bool $active, SaveStaff $save): void
     {
         DB::transaction(function () use ($publicId, $active, $save): void {
@@ -62,6 +80,7 @@ class Index extends Component
             $save->handle(Auth::user(), [...$data, 'is_active' => $active, 'reason' => $this->reason], $staff, $staff->revision());
         }, 3);
         $this->reason = '';
+        $this->deactivating = null;
         session()->flash('status', 'Staff availability updated. Account activation still requires password setup.');
     }
 
@@ -143,6 +162,7 @@ class Index extends Component
         return view('livewire.admin.staff.index', [
             'staffMembers' => $query->paginate($size, ['id', 'public_id', 'staff_no', 'first_name', 'last_name', 'email', 'created_at', 'position_code', 'is_active', 'is_rider']),
             'filterError' => $dates->fails() ? $dates->errors()->first() : null,
+            'deactivatingStaff' => $this->deactivating ? Staff::query()->where('public_id', $this->deactivating)->first(['public_id', 'staff_no', 'first_name', 'last_name']) : null,
         ]);
     }
 }

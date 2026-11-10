@@ -217,6 +217,35 @@ test('directory availability actions retain employment history and separate acco
         ->and($staff->fresh()->appointment_date->format('Y-m-d'))->toBe('2020-01-01');
 });
 
+test('directory deactivation asks for the reason in a dialog for the selected staff', function (): void {
+    $actor = staffManager();
+    $staff = Staff::factory()->create();
+
+    $page = Livewire::actingAs($actor)->test(Index::class)
+        ->call('confirmDeactivation', $staff->public_id)
+        ->assertSet('deactivating', $staff->public_id)
+        ->assertSee('Deactivate '.$staff->full_name.'?');
+
+    $page->call('changeAvailability', $staff->public_id, false)->assertHasErrors('data.reason')->assertSet('deactivating', $staff->public_id);
+    expect($staff->fresh()->is_active)->toBeTrue();
+
+    $page->set('reason', 'Employment paused')->call('changeAvailability', $staff->public_id, false)
+        ->assertHasNoErrors()->assertSet('deactivating', null);
+    expect($staff->fresh()->is_active)->toBeFalse();
+});
+
+test('directory hides inactive staff by default but keeps them reachable through the status filter', function (): void {
+    $actor = staffManager();
+    Staff::factory()->create(['first_name' => 'Current', 'last_name' => 'Worker', 'is_rider' => true]);
+    Staff::factory()->create(['first_name' => 'Resigned', 'last_name' => 'Worker', 'is_rider' => true, 'is_active' => false]);
+
+    Livewire::actingAs($actor)->test(Index::class)
+        ->assertSet('status', 'active')->assertSee('Current Worker')->assertDontSee('Resigned Worker')
+        ->set('status', 'inactive')->assertSee('Resigned Worker')->assertDontSee('Current Worker')
+        ->set('status', '')->assertSee('Resigned Worker')->assertSee('Current Worker')
+        ->call('resetFilters')->assertSet('status', 'active')->assertDontSee('Resigned Worker');
+});
+
 test('HR forms hide appointment date and preserve its historical value on editing', function (): void {
     $actor = staffManager();
     $staff = Staff::factory()->create(['appointment_date' => '2020-01-01']);
