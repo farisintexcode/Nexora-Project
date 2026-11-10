@@ -44,8 +44,8 @@ class ManageLeave
         return DB::transaction(function () use ($actor, $data, $id, $version): LeaveType {
             $actor = $actor->fresh();
             abort_unless($this->access->configure($actor), 403);
-            $data += ['allow_past_dates' => false, 'description' => null, 'tracks_balance' => false];
-            $data = Validator::make($data, ['description' => ['nullable', 'string', 'max:2000'], 'tracks_balance' => ['required', 'boolean'], 'name' => ['required', 'string', 'max:100'], 'max_calendar_days' => ['required', 'integer', 'between:1,93'], 'requires_document' => ['required', 'boolean'], 'allow_past_dates' => ['required', 'boolean'], 'allow_pending_cancel' => ['required', 'boolean'], 'is_active' => ['required', 'boolean']])->validate();
+            $data += ['allow_past_dates' => false, 'description' => null, 'tracks_balance' => false, 'limit_unit' => 'days'];
+            $data = Validator::make($data, ['description' => ['nullable', 'string', 'max:2000'], 'tracks_balance' => ['required', 'boolean'], 'limit_unit' => ['required', 'in:days,applications'], 'name' => ['required', 'string', 'max:100'], 'max_calendar_days' => ['required', 'integer', 'between:1,93'], 'requires_document' => ['required', 'boolean'], 'allow_past_dates' => ['required', 'boolean'], 'allow_pending_cancel' => ['required', 'boolean'], 'is_active' => ['required', 'boolean']])->validate();
             $data['name'] = trim($data['name']);
             DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', ['leave.type:'.mb_strtolower($data['name'])]);
             if ($data['name'] === '') {
@@ -62,6 +62,24 @@ class ManageLeave
             $this->audit->record($actor, 'leave.type_configured', $type->public_id, ['changed_fields' => array_keys($data)], module: 'M10', entityType: 'leave_type');
 
             return $type;
+        }, 3);
+    }
+
+    /** Delete a leave type that was never used. Types with applications are kept for history and can be made unavailable instead. */
+    public function deleteType(User $actor, string $id): void
+    {
+        DB::transaction(function () use ($actor, $id): void {
+            $actor = $actor->fresh();
+            abort_unless($this->access->configure($actor), 403);
+            $type = LeaveType::query()->where('public_id', $id)->lockForUpdate()->firstOrFail();
+            $applications = LeaveRequest::query()->where('leave_type_id', $type->id)->count();
+            if ($applications > 0 || DB::table('leave_balance_adjustments')->where('leave_type_id', $type->id)->exists()) {
+                $reason = $applications > 0 ? $applications.' leave '.Str::plural('application', $applications).' already '.($applications === 1 ? 'uses' : 'use').' it' : 'it has balance adjustments';
+                throw ValidationException::withMessages(['delete' => "{$type->name} can't be deleted because {$reason}. To stop new applications, click Edit Type and untick \"Available for new applications\"."]);
+            }
+            DB::table('leave_entitlements')->where('leave_type_id', $type->id)->delete();
+            $type->delete();
+            $this->audit->record($actor, 'leave.type_deleted', $type->public_id, ['name' => $type->name], module: 'M10', entityType: 'leave_type');
         }, 3);
     }
 
@@ -114,7 +132,7 @@ class ManageLeave
                 $balanceSnapshot = $this->balances->check($actor->staff_id, $type, $calendar);
                 $doc = $support ? $this->documents->store($actor, $support, $key) : null;
                 $request = new LeaveRequest;
-                $request->forceFill(['request_key' => $preview['key'], 'rider_id' => $actor->staff_id, 'requested_by' => $actor->id, 'leave_type_id' => $type->id, 'start_date' => $data['start_date'], 'end_date' => $data['end_date'], 'total_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')), 'reason' => $data['reason'], 'type_snapshot' => ['tracks_balance' => $type->tracks_balance, 'balance_snapshot' => $balanceSnapshot, 'name' => $type->name, 'max_calendar_days' => $type->max_calendar_days, 'allow_past_dates' => $type->allow_past_dates, 'allow_pending_cancel' => $type->allow_pending_cancel, 'requires_document' => $type->requires_document, 'version' => $type->lock_version], 'calendar_snapshot' => $calendar, 'supporting_document_id' => $doc?->id, 'status' => 'pending', 'submitted_at' => now()])->save();
+                $request->forceFill(['request_key' => $preview['key'], 'rider_id' => $actor->staff_id, 'requested_by' => $actor->id, 'leave_type_id' => $type->id, 'start_date' => $data['start_date'], 'end_date' => $data['end_date'], 'total_days' => count(array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')), 'reason' => $data['reason'], 'type_snapshot' => ['tracks_balance' => $type->tracks_balance, 'limit_unit' => $type->limit_unit, 'balance_snapshot' => $balanceSnapshot, 'name' => $type->name, 'max_calendar_days' => $type->max_calendar_days, 'allow_past_dates' => $type->allow_past_dates, 'allow_pending_cancel' => $type->allow_pending_cancel, 'requires_document' => $type->requires_document, 'version' => $type->lock_version], 'calendar_snapshot' => $calendar, 'supporting_document_id' => $doc?->id, 'status' => 'pending', 'submitted_at' => now()])->save();
                 foreach ($calendar as $day) {
                     $request->schedules()->attach($day['id'], ['service_date' => $day['service_date'], 'charged' => $day['day_type'] === 'scheduled']);
                 }
@@ -130,7 +148,7 @@ class ManageLeave
         } catch (\Throwable $error) {
             if ($support) {
                 try {
-                    Storage::disk('s3')->delete($key);
+                    Storage::disk(LeaveDocument::disk())->delete($key);
                 } catch (\Throwable) {
                 }
             }
@@ -231,7 +249,7 @@ class ManageLeave
         $this->workCalendar->ensure($rider, $data['start_date'], $data['end_date']);
         $calendar = $this->schedules($rider, $data, $lock);
         if (count($calendar) !== (int) $days || array_filter($calendar, fn ($day) => ! in_array($day['day_type'], ['scheduled', 'day_off', 'public_holiday'], true))) {
-            throw ValidationException::withMessages(['start_date' => 'Working calendar unavailable for one or more dates. Ask your administrator to open Attendance > Schedules & policies and assign a recurring work schedule covering these dates.']);
+            throw ValidationException::withMessages(['start_date' => 'Working calendar unavailable for one or more dates. Ask your administrator to open Attendance > Schedules & policies and publish a policy for all riders, or give you a schedule covering these dates.']);
         }
         if (! array_filter($calendar, fn ($day) => $day['day_type'] === 'scheduled')) {
             throw ValidationException::withMessages(['start_date' => 'The selected range contains no scheduled working days.']);

@@ -14,10 +14,11 @@
             </x-select>
             <x-select name="data.is_active" label="Staff Status" wire:model="data.is_active" required><option value="1">Active</option><option value="0">Inactive</option></x-select>
             <x-select name="data.gender_code" label="Gender (optional)" wire:model="data.gender_code"><option value="">Not specified</option>@foreach($genders as $gender)<option value="{{ $gender->code }}">{{ $gender->label }}</option>@endforeach</x-select>
+            <x-select name="data.work_state_code" label="Work state (for public holidays)" wire:model="data.work_state_code"><option value="">Not set (national holidays only)</option>@foreach($states as $state)<option value="{{ $state->code }}">{{ $state->label }}</option>@endforeach</x-select>
             <x-input name="data.phone" label="Work / mobile phone (optional)" wire:model="data.phone" maxlength="40" />
             <x-input name="data.home_phone" label="Home phone (optional)" wire:model="data.home_phone" maxlength="40" />
             <div class="sm:col-span-2"><x-textarea name="data.address" label="Address (optional)" wire:model="data.address" maxlength="2000" /></div>
-            <p class="field-help sm:col-span-2">System Role controls the login permission bundle. Rider access also sets staff Rider eligibility. System Admin grants require roles.manage.</p>
+            <p class="field-help sm:col-span-2">System Role controls the login permission bundle. Rider access also sets staff Rider eligibility. System Admin grants require roles.manage. Work state decides which state public holidays apply; Kedah, Kelantan and Terengganu also follow a Friday–Saturday weekend.</p>
         </fieldset>
         <fieldset class="form-section grid gap-5">
             <legend>System Account Setup</legend>

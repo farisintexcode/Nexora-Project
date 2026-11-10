@@ -58,9 +58,10 @@ class Index extends Component
         return $this->only(['from', 'until', 'status', 'rider', 'search']);
     }
 
+    /** Filter by a summary card; selecting the active card again clears the status filter. */
     public function selectStatus(string $status): void
     {
-        $this->status = $status;
+        $this->status = $this->status === $status ? '' : $status;
         $this->resetPage();
     }
 
@@ -71,12 +72,14 @@ class Index extends Component
         $error = null;
         try {
             $query = $register->query(auth()->user(), $this->filters(), asOf: $asOf);
+            $summary = $register->query(auth()->user(), [...$this->filters(), 'status' => ''], asOf: $asOf);
             session()->put('attendance.filters.'.auth()->id(), $this->filters());
         } catch (ValidationException $e) {
             $error = $e->validator->errors()->first();
             $query = $register->query(auth()->user(), [])->whereRaw('false');
+            $summary = clone $query;
         }
-        $totals = (clone $query)->selectRaw('result_status, count(*) as total')->groupBy('result_status')->pluck('total', 'result_status')->all();
+        $totals = $summary->selectRaw('result_status, count(*) as total')->groupBy('result_status')->pluck('total', 'result_status')->all();
         $rows = $query->orderByDesc('service_date')->orderBy('staff_no')->orderBy('rider_public_id')->paginate(25);
 
         return view('livewire.admin.attendance.index', ['rows' => $rows, 'totals' => $totals, 'filterError' => $error, 'asOf' => $asOf, 'riders' => $access->riders(auth()->user())->orderBy('staff_no')->limit(200)->get()]);

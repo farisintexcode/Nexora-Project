@@ -51,6 +51,11 @@ class Staff extends Model
         return $this->belongsTo(ReferenceValue::class, 'position_code', 'code')->where('category', 'position');
     }
 
+    public function workState(): BelongsTo
+    {
+        return $this->belongsTo(ReferenceValue::class, 'work_state_code', 'code')->where('category', 'state');
+    }
+
     public function gender(): BelongsTo
     {
         return $this->belongsTo(ReferenceValue::class, 'gender_code', 'code')->where('category', 'gender');

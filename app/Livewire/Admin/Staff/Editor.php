@@ -31,6 +31,7 @@ class Editor extends Component
         'last_name' => '',
         'email' => '',
         'gender_code' => '',
+        'work_state_code' => '',
         'system_role' => '',
         'create_account' => true,
         'phone' => '',
@@ -66,6 +67,7 @@ class Editor extends Component
             'last_name',
             'email',
             'gender_code',
+            'work_state_code',
         ] as $field) {
             $this->data[$field] = $staff->{$field} ?? '';
         }
@@ -169,6 +171,16 @@ class Editor extends Component
                         ->orWhere('code', $staff?->gender_code)
                 )
                 ->orderBy('sort_order')
+                ->get(),
+
+            'states' => ReferenceValue::query()
+                ->where('category', 'state')
+                ->where(
+                    fn ($q) => $q
+                        ->where('is_active', true)
+                        ->orWhere('code', $staff?->work_state_code)
+                )
+                ->orderBy('label')
                 ->get(),
         ]);
     }

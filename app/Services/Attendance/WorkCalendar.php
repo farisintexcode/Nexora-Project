@@ -31,30 +31,63 @@ class WorkCalendar
         }, 3);
     }
 
+    /**
+     * Create missing calendar days. A per-Rider recurring assignment wins; otherwise the default policy in effect
+     * that day applies to every active Rider. Days already on the calendar never change.
+     */
     public function ensure(int $staff, string $from, string $until): void
     {
         DB::transaction(function () use ($staff, $from, $until): void {
-            Staff::query()->whereKey($staff)->lockForUpdate()->firstOrFail();
+            $rider = Staff::query()->whereKey($staff)->lockForUpdate()->firstOrFail();
             $existing = AttendanceSchedule::query()->where('rider_id', $staff)->whereBetween('service_date', [$from, $until])->pluck('id', 'service_date');
             $assignments = DB::table('attendance_recurring_assignments')->where('rider_id', $staff)->where('starts_on', '<=', $until)->where('ends_on', '>=', $from)->get();
+            $defaults = $rider->is_rider && $rider->is_active
+                ? AttendancePolicy::query()->where('is_default', true)->where('is_active', true)->where('effective_from', '<=', $until)->orderByDesc('effective_from')->orderByDesc('id')->get()
+                : collect();
+            if ($assignments->isEmpty() && $defaults->isEmpty()) {
+                return;
+            }
+            $holidays = app(PublicHolidays::class)->between($from, $until, $rider->work_state_code);
+            $joined = $rider->created_at?->timezone(config('dcms.business_timezone'))->toDateString() ?? $from;
+            $configure = app(ConfigureAttendance::class);
+            $policies = [];
             foreach (CarbonPeriod::create($from, $until) as $date) {
                 $day = $date->toDateString();
                 if ($existing->has($day)) {
                     continue;
                 }
                 $assignment = $assignments->first(fn (object $row): bool => $row->starts_on <= $day && $row->ends_on >= $day);
-                if (! $assignment) {
+                $policy = $assignment
+                    ? ($policies[$assignment->policy_id] ??= AttendancePolicy::query()->findOrFail($assignment->policy_id))
+                    : ($day >= $joined ? $defaults->first(fn (AttendancePolicy $policy): bool => $policy->effective_from->toDateString() <= $day) : null);
+                if (! $policy) {
                     continue;
                 }
-                $policy = AttendancePolicy::query()->findOrFail($assignment->policy_id);
-                $kind = DB::table('attendance_policy_holidays')->where('policy_id', $policy->id)->where('service_date', $day)->exists() ? 'public_holiday' : (in_array($date->isoWeekday(), $policy->rules['workdays'], true) ? 'scheduled' : 'day_off');
-                $configure = app(ConfigureAttendance::class);
+                $holiday = $holidays->get($day) ?? DB::table('attendance_policy_holidays')->where('policy_id', $policy->id)->where('service_date', $day)->value('name');
+                $kind = $holiday !== null ? 'public_holiday' : (in_array($date->isoWeekday(), $this->workdays($policy->rules, $rider->work_state_code), true) ? 'scheduled' : 'day_off');
                 [$start, $end] = $kind === 'scheduled' ? $configure->times($day, $policy->rules) : [null, null];
                 $configure->assertNoOverlap($staff, $start, $end);
+                $source = $assignment ? 'Recurring assignment '.$assignment->id : 'Default policy '.$policy->code.' v'.$policy->version;
                 $schedule = new AttendanceSchedule;
-                $schedule->forceFill(['rider_id' => $staff, 'policy_id' => $policy->id, 'service_date' => $day, 'day_type' => $kind, 'scheduled_start_at' => $start, 'scheduled_end_at' => $end, 'authorized_by' => $assignment->authorized_by, 'remarks' => 'Recurring assignment '.$assignment->id])->save();
+                $schedule->forceFill(['rider_id' => $staff, 'policy_id' => $policy->id, 'service_date' => $day, 'day_type' => $kind, 'scheduled_start_at' => $start, 'scheduled_end_at' => $end, 'authorized_by' => $assignment->authorized_by ?? $policy->approved_by, 'remarks' => $holiday !== null ? $source.' · '.$holiday : $source])->save();
             }
         }, 3);
+    }
+
+    /**
+     * ISO weekdays (1 = Monday) the Rider works. In Friday–Saturday weekend states every workday moves one day earlier.
+     *
+     * @param  array{workdays: list<int>}  $rules
+     * @return list<int>
+     */
+    public function workdays(array $rules, ?string $stateCode): array
+    {
+        $workdays = array_map('intval', $rules['workdays']);
+        if ($stateCode === null || ! in_array($stateCode, config('attendance.friday_weekend_states', []), true)) {
+            return $workdays;
+        }
+
+        return array_map(fn (int $day): int => $day === 1 ? 7 : $day - 1, $workdays);
     }
 
     public function holiday(User $actor, string $policyId, string $date, string $name): void

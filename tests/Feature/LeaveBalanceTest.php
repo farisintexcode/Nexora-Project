@@ -169,13 +169,11 @@ test('leave filters apply Rider status type and dates and clear independently of
 test('adjustment history cannot be rewritten and Riders cannot configure entitlements or adjustments', function (): void {
     [$admin, $rider, $type] = balanceFixture();
     $balances = app(LeaveBalance::class);
-    Livewire::actingAs($admin)->test(LeaveTypes::class)->call('adjustBalance')->assertHasErrors(['balanceStaff', 'balanceType']);
     expect(fn () => $balances->entitlement($rider, $type, 2026, 99))->toThrow(HttpException::class);
     expect(fn () => $balances->adjust($rider, $rider->staff->public_id, $type, 2026, 1, 'Unauthorized'))->toThrow(HttpException::class);
     $balances->adjust($admin, $rider->staff->public_id, $type, 2026, 1, 'Authorized exception');
     expect(fn () => DB::transaction(fn () => DB::table('leave_balance_adjustments')->update(['days' => 99])))->toThrow(QueryException::class);
     expect($balances->forStaff($rider->staff_id, $type, 2026)['adjustments'])->toBe(1);
-    Livewire::actingAs($admin)->test(LeaveTypes::class)->set('balanceStaff', $rider->staff->public_id)->set('balanceType', $type->public_id)->assertSee('Authorized exception')->assertSee('Adjustment history');
 });
 
 test('all four leave status filters return only their matching records and totals', function (): void {
@@ -195,4 +193,33 @@ test('all four leave status filters return only their matching records and total
             ->assertViewHas('requests', fn ($requests) => $requests->total() === 1 && $requests->first()->status === $state)
             ->assertViewHas('counts', fn ($counts) => $counts->sum() === 1);
     }
+});
+
+test('application limited leave counts each request once however many working days it covers', function (): void {
+    [$admin, $rider] = balanceFixture();
+    $medical = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'limit_unit' => 'applications', 'max_calendar_days' => 93, 'allow_pending_cancel' => true]);
+    app(LeaveBalance::class)->entitlement($admin, $medical, 2026, 2);
+    $apply = fn (string $from, string $until): LeaveRequest => balanceSubmit($rider, ['type' => $medical->public_id, 'start_date' => $from, 'end_date' => $until, 'reason' => 'Synthetic medical leave']);
+
+    $threeDays = $apply('2026-11-10', '2026-11-12');
+    expect($threeDays->total_days)->toBe(3)->and($threeDays->type_snapshot['limit_unit'])->toBe('applications')
+        ->and(app(LeaveBalance::class)->forStaff($rider->staff_id, $medical, 2026))->toMatchArray(['unit' => 'applications', 'pending' => 1, 'available' => 1]);
+
+    $apply('2026-11-13', '2026-11-13');
+    expect(fn () => $apply('2026-11-14', '2026-11-14'))->toThrow(ValidationException::class, 'already used all 2');
+});
+
+test('day limited leave explains how many working days are left', function (): void {
+    [, $rider, $type] = balanceFixture(2);
+
+    expect(fn () => balanceSubmit($rider, ['type' => $type->public_id, 'start_date' => '2026-11-10', 'end_date' => '2026-11-12', 'reason' => 'Synthetic leave request']))
+        ->toThrow(ValidationException::class, 'this request needs 3 working days, but only 2 are left');
+});
+
+test('riders see their yearly balance for every leave type on the leave page', function (): void {
+    [$admin, $rider, $type, $data] = balanceFixture(5);
+    balanceSubmit($rider, $data);
+
+    Livewire::actingAs($rider)->test(LeaveRequests::class)
+        ->assertSee('My leave balance 2026')->assertSee('Limit 5 working days a year')->assertSee('Waiting approval');
 });

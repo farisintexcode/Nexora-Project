@@ -142,11 +142,15 @@ class LeaveRequests extends Component
             if ($year >= 2000 && $lastYear <= 2200 && $lastYear - $year <= 1) {
                 foreach (range($year, max($year, $lastYear)) as $balanceYear) {
                     $balanceYears[$balanceYear] = app(LeaveBalance::class)->forStaff(auth()->user()->staff_id, $chosenType, $balanceYear);
-                    $balanceYears[$balanceYear]['requested'] = $duration === null ? 0 : AttendanceSchedule::query()->where('rider_id', auth()->user()->staff_id)->whereBetween('service_date', [$this->start_date, $this->end_date])->whereYear('service_date', $balanceYear)->where('day_type', 'scheduled')->count();
+                    $balanceYears[$balanceYear]['requested'] = $duration === null ? 0 : ($chosenType->limitsApplications() ? (int) ($balanceYear === $year) : AttendanceSchedule::query()->where('rider_id', auth()->user()->staff_id)->whereBetween('service_date', [$this->start_date, $this->end_date])->whereYear('service_date', $balanceYear)->where('day_type', 'scheduled')->count());
                 }
             }
         }
 
-        return view('livewire.rider.leave-requests', ['chosenType' => $chosenType, 'balanceYears' => $balanceYears, 'duration' => $duration, 'durationError' => $durationError, 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(12), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $this->own()->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status'), 'staff' => auth()->user()->staff]);
+        $thisYear = now()->timezone(config('dcms.business_timezone'))->year;
+        $overview = $selected || $this->applying ? collect() : LeaveType::query()->where('is_active', true)->orderBy('name')->get()
+            ->map(fn (LeaveType $leaveType): array => ['type' => $leaveType, 'balance' => app(LeaveBalance::class)->forStaff(auth()->user()->staff_id, $leaveType, $thisYear)]);
+
+        return view('livewire.rider.leave-requests', ['overview' => $overview, 'thisYear' => $thisYear, 'chosenType' => $chosenType, 'balanceYears' => $balanceYears, 'duration' => $duration, 'durationError' => $durationError, 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(12), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $this->own()->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status'), 'staff' => auth()->user()->staff]);
     }
 }

@@ -6,8 +6,10 @@ use App\Actions\Attendance\ClockAttendance;
 use App\Actions\Attendance\CorrectAttendance;
 use App\Models\Attendance as Punch;
 use App\Models\AttendanceSchedule;
+use App\Models\LeaveRequest;
 use App\Notifications\AttendanceCorrected;
 use App\Services\Attendance\AttendanceRegister;
+use App\Services\Attendance\WorkCalendar;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -62,6 +64,13 @@ class Attendance extends Component
         $this->inRequest = (string) Str::uuid7();
         $this->outRequest = (string) Str::uuid7();
         $today = now()->timezone(config('dcms.business_timezone'));
+        try {
+            if (auth()->user()->staff_id) {
+                app(WorkCalendar::class)->ensure(auth()->user()->staff_id, $today->toDateString(), $today->toDateString());
+            }
+        } catch (ValidationException) {
+            // Today stays unscheduled when it would overlap another shift.
+        }
         $this->until = $today->toDateString();
         $this->from = $today->startOfMonth()->toDateString();
         $this->syncOpen();
@@ -137,7 +146,8 @@ class Attendance extends Component
         $today = now()->timezone(config('dcms.business_timezone'))->toDateString();
         $todaySchedule = AttendanceSchedule::query()->with('policy')->where('rider_id', auth()->user()->staff_id)->where('service_date', $today)->first();
         $todayPunch = Punch::query()->where('rider_id', auth()->user()->staff_id)->where('service_date', $today)->first();
+        $todayLeave = LeaveRequest::query()->where('rider_id', auth()->user()->staff_id)->where('status', 'approved')->where('start_date', '<=', $today)->where('end_date', '>=', $today)->first();
 
-        return view($this->historyPage ? 'livewire.rider.attendance-history' : 'livewire.rider.attendance', ['open' => $open, 'todaySchedule' => $todaySchedule, 'todayPunch' => $todayPunch, 'rows' => $query->orderByDesc('service_date')->orderByDesc('attendance_id')->paginate(15), 'filterError' => $error, 'notices' => auth()->user()->notifications()->where('type', AttendanceCorrected::class)->latest()->limit(5)->get()])->layout(auth()->user()->can('admin.access') ? 'layouts.admin' : 'layouts.rider');
+        return view($this->historyPage ? 'livewire.rider.attendance-history' : 'livewire.rider.attendance', ['open' => $open, 'todaySchedule' => $todaySchedule, 'todayPunch' => $todayPunch, 'todayLeave' => $todayLeave, 'rows' => $query->orderByDesc('service_date')->orderByDesc('attendance_id')->paginate(15), 'filterError' => $error, 'notices' => auth()->user()->notifications()->where('type', AttendanceCorrected::class)->latest()->limit(5)->get()])->layout(auth()->user()->can('admin.access') ? 'layouts.admin' : 'layouts.rider');
     }
 }

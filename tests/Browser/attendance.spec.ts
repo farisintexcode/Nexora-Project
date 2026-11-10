@@ -77,7 +77,7 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await page.getByRole('button',{name:'Approve correction',exact:true}).click();
     await page.getByRole('dialog', { name: 'Approve this correction?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status').filter({hasText:'Correction approved.'})).toBeVisible();
-    await expect(page.getByText('Worked 480 min',{exact:false})).toBeVisible();
+    await expect(page.getByText('8h 00m',{exact:true})).toBeVisible();
     await page.screenshot({path:'.local-tools/m10-'+surface+'-review.png',fullPage:true});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
     await page.goto('/admin/attendance/configuration');
