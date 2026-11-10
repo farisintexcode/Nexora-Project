@@ -1,6 +1,6 @@
 <section class="hr-page grid gap-6">
 <x-feedback />
-<x-page-header title="Leave Management" eyebrow="" description="Review leave applications and manage the organization’s leave types."><x-slot:actions>@if($canConfigure)<a class="btn btn-primary" href="{{ route('admin.leave.types') }}"><x-icon name="settings" />Leave Types &amp; Entitlements</a>@endif<a class="btn btn-secondary" href="{{ route('admin.attendance.index') }}"><x-icon name="clock" />Attendance</a>@if($selected)<a class="btn btn-secondary" href="{{ route('admin.leave.index') }}"><x-icon name="arrow-left" />All leave requests</a>@endif</x-slot:actions></x-page-header>
+<x-page-header title="Leave Management" eyebrow="" description="Review leave applications and manage the organization’s leave types."><x-slot:actions>@if($canConfigure)<a class="btn btn-primary" href="{{ route('admin.leave.types') }}"><x-icon name="tag" />Leave Types &amp; Entitlements</a>@endif<a class="btn btn-secondary" href="{{ route('admin.attendance.index') }}"><x-icon name="clock" />Attendance</a>@if($selected)<a class="btn btn-secondary" href="{{ route('admin.leave.index') }}"><x-icon name="arrow-left" />All leave requests</a>@endif</x-slot:actions></x-page-header>
 @foreach($errors->all() as $error)<p role="alert" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ $error }}</p>@endforeach
 @if($selected)
     <x-leave-details :request="$selected" :admin="true" />
