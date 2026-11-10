@@ -20,7 +20,11 @@ test('compact Admin filters expand clear and fit mobile and dark mode', async ({
         await toggle.click();
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await expect(page.getByLabel(advanced, { exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+        if (path === '/admin/staff') {
+            await expect(page.getByRole('button', { name: 'Apply filters', exact: true })).toHaveCount(0);
+        } else {
+            await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+        }
         await expect(page.getByRole('button', { name: 'Clear filters', exact: true })).toBeVisible();
         await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
         for (const width of [320, 768, 1280]) {

@@ -1,4 +1,4 @@
-<section class="grid max-w-5xl gap-6">
+<section class="hr-page grid max-w-5xl gap-6">
     <x-feedback />
     <x-page-header :title="$staffId ? 'Edit Staff' : 'Add New Staff'" eyebrow="Human Resources" description="Register staff and securely provision a linked login account." />
     <form wire:submit="save" class="grid gap-6">
@@ -39,6 +39,6 @@
         <fieldset class="form-section grid gap-5"><legend>Record Information</legend>
             <dl class="grid gap-4 text-sm sm:grid-cols-2"><div><dt>Created At</dt><dd>{{ $staff?->created_at?->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') ?? 'Generated automatically when saved' }}</dd></div>@if($staff)<div><dt>Updated At</dt><dd>{{ $staff->updated_at->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') }}</dd></div>@endif</dl><p class="field-help">Record timestamps are read-only and displayed in Asia/Kuala_Lumpur.</p>
         </fieldset>
-        <div class="surface flex flex-wrap items-center gap-3 p-4"><x-button wire:loading.attr="disabled" wire:target="save">Save staff</x-button><a class="btn btn-secondary" href="{{ route('admin.staff.index') }}">Cancel</a><span wire:loading wire:target="save" class="text-xs text-ink-500">Saving staff...</span></div>
+        <div class="surface hr-actions sticky bottom-4 z-10 p-4"><x-button wire:loading.attr="disabled" wire:target="save"><x-icon name="check" />Save staff</x-button><a class="btn btn-secondary" href="{{ route('admin.staff.index') }}"><x-icon name="close" />Cancel</a><span wire:loading wire:target="save" class="text-xs text-ink-500">Saving staff...</span></div>
     </form>
 </section>

@@ -3,7 +3,6 @@
 use App\Actions\Attendance\ClockAttendance;
 use App\Actions\Attendance\ConfigureAttendance;
 use App\Actions\Attendance\CorrectAttendance;
-use App\Livewire\Admin\Attendance\Configuration;
 use App\Models\Attendance;
 use App\Models\AttendanceAdjustment;
 use App\Models\AttendancePolicy;
@@ -171,7 +170,7 @@ test('calendar assignment respects approved workdays exceptions and immutable po
     $new = $configure->policy($admin, ['code' => $schedule->policy->code, 'rules' => array_replace($schedule->policy->rules, ['grace_minutes' => 0])]);
     expect($new->version)->toBe(2)->and($schedule->refresh()->policy_id)->not->toBe($new->id);
     expect(fn () => DB::transaction(fn () => DB::table('attendance_policies')->where('id', $new->id)->update(['is_active' => false])))->toThrow(QueryException::class);
-    $this->actingAs($admin)->get(route('admin.attendance.configuration'))->assertOk()->assertSee('Publish a policy version');
+    $this->actingAs($admin)->get(route('admin.attendance.configuration'))->assertOk()->assertSee('Publish a policy version')->assertDontSee('Assign calendar days');
 });
 
 test('invalid policy rules fail before activation and Riders cannot configure schedules', function (array $changes): void {
@@ -304,11 +303,10 @@ test('an independently approved planned-shift correction preserves the previous 
         ->and($request->refresh()->before_values['scheduled_start_at'])->toBe('2026-10-19T01:00:00.000000Z');
 });
 
-test('malformed attendance filters and calendar identifiers return usable validation instead of database errors', function (): void {
+test('malformed attendance filters return usable validation instead of database errors', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00', 'Asia/Kuala_Lumpur'));
     [$admin,$rider,$schedule] = attendanceFixture();
     $this->actingAs($admin)->get(route('admin.attendance.index', ['from' => 'not-a-date']))->assertOk()->assertSee('format Y-m-d');
-    Livewire::actingAs($admin)->test(Configuration::class)->set('riderId', 'invalid')->set('policyId', 'invalid')->call('assign')->assertHasErrors(['riderId', 'policyId']);
     expect(AttendanceSchedule::query()->count())->toBe(1);
 });
 

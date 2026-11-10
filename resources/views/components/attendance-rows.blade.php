@@ -12,7 +12,7 @@
 <div><dt class="text-xs text-ink-500">Worked / unpaid break</dt><dd class="mt-1">{{ $row->worked_minutes === null ? 'Pending' : $row->worked_minutes.' min' }} / {{ $row->break_minutes === null ? 'Unscheduled' : $row->break_minutes.' min' }}</dd></div>
 </dl>
 <div class="flex flex-wrap items-center justify-between gap-3 border-t border-ink-200 pt-4"><p class="text-xs text-ink-500">{{ $row->policy_code ? $row->policy_code.' · version '.$row->policy_version : 'Unscheduled — ask an authorized administrator to assign a schedule and review the link.' }} · MYT</p>
-@if($admin && $row->schedule_public_id)<a class="btn btn-secondary" href="{{ route('admin.attendance.show',$row->schedule_public_id) }}">View attendance</a>
+@if($admin && $row->schedule_public_id)<a class="btn btn-secondary btn-sm" href="{{ route('admin.attendance.show',$row->schedule_public_id) }}"><x-icon name="eye" />View attendance</a>
 @elseif(!$admin && $row->schedule_public_id && $row->attendance_id && !$row->pending_correction)
 @can('attendance.correct')<button type="button" class="btn btn-secondary" wire:click="selectCorrection('{{ $row->schedule_public_id }}')">Request correction</button>@endcan
 @endif</div>

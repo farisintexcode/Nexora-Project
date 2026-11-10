@@ -13,7 +13,7 @@ use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-/** M10/UI59: publish immutable rule versions and explicit calendar assignments. */
+/** M10/UI59: publish immutable attendance rule versions and recurring work schedules. */
 #[Layout('layouts.admin')]
 class Configuration extends Component
 {
@@ -29,9 +29,9 @@ class Configuration extends Component
 
     public string $until = '';
 
-    public string $dayType = 'calendar';
+    public string $holidayDate = '';
 
-    public string $remarks = '';
+    public string $holidayName = '';
 
     public function mount(): void
     {
@@ -47,16 +47,6 @@ class Configuration extends Component
         $this->policyId = $policy->public_id;
         session()->flash('status', 'Policy version '.$policy->version.' published. Existing schedules keep their pinned version.');
     }
-
-    public function assign(ConfigureAttendance $configure): void
-    {
-        $count = $configure->assign(auth()->user(), $this->riderId, $this->policyId, $this->from, $this->until, $this->dayType, $this->remarks);
-        session()->flash('status', $count.' calendar days assigned. Existing records were preserved.');
-    }
-
-    public string $holidayDate = '';
-
-    public string $holidayName = '';
 
     public function assignRecurring(WorkCalendar $calendar): void
     {
