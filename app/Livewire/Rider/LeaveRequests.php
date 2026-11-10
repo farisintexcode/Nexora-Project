@@ -3,9 +3,11 @@
 namespace App\Livewire\Rider;
 
 use App\Actions\Attendance\ManageLeave;
+use App\Models\AttendanceSchedule;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Services\Attendance\LeaveAccess;
+use App\Services\Attendance\LeaveBalance;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
@@ -124,6 +126,27 @@ class LeaveRequests extends Component
             }
         }
 
-        return view('livewire.rider.leave-requests', ['duration' => $duration, 'durationError' => $durationError, 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(12), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $this->own()->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status'), 'staff' => auth()->user()->staff]);
+        $chosenType = $selected?->leaveType ?? (Str::isUuid($this->type) ? LeaveType::query()->where('public_id', $this->type)->where('is_active', true)->first() : null);
+        $balanceYears = [];
+        if ($chosenType) {
+            $year = now()->timezone(config('dcms.business_timezone'))->year;
+            $lastYear = $year;
+            if ($selected) {
+                $year = $selected->start_date->year;
+                $lastYear = $selected->end_date->year;
+            }
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->start_date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->end_date)) {
+                $year = (int) substr($this->start_date, 0, 4);
+                $lastYear = (int) substr($this->end_date, 0, 4);
+            }
+            if ($year >= 2000 && $lastYear <= 2200 && $lastYear - $year <= 1) {
+                foreach (range($year, max($year, $lastYear)) as $balanceYear) {
+                    $balanceYears[$balanceYear] = app(LeaveBalance::class)->forStaff(auth()->user()->staff_id, $chosenType, $balanceYear);
+                    $balanceYears[$balanceYear]['requested'] = $duration === null ? 0 : AttendanceSchedule::query()->where('rider_id', auth()->user()->staff_id)->whereBetween('service_date', [$this->start_date, $this->end_date])->whereYear('service_date', $balanceYear)->where('day_type', 'scheduled')->count();
+                }
+            }
+        }
+
+        return view('livewire.rider.leave-requests', ['chosenType' => $chosenType, 'balanceYears' => $balanceYears, 'duration' => $duration, 'durationError' => $durationError, 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(12), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $this->own()->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status'), 'staff' => auth()->user()->staff]);
     }
 }

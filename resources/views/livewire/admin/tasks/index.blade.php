@@ -7,7 +7,7 @@
 <x-select name="batch" label="Assignment" wire:model.live="batch"><option value="">All assignments</option>@foreach($batches as $item)<option value="{{ $item->public_id }}">{{ $item->assignment_code }} - {{ $item->name }}</option>@endforeach</x-select>
 <x-input name="query" label="Task ID" wire:model.live.debounce.400ms="query" placeholder="FG001" />
 <x-select name="status" label="Task status" wire:model.live="status">@foreach(['all'=>'All tasks','active'=>'Active tasks','unassigned'=>'Unassigned','assigned'=>'Assigned','unstarted'=>'Not started','in_progress'=>'In progress','pending_verification'=>'Pending verification','completed'=>'Completed','returned'=>'Returned','overdue'=>'Overdue','cancelled'=>'Cancelled','visited'=>'Visited','pending_completion'=>'Pending completion'] as $value=>$label)<option value="{{ $value }}">{{ $label }}</option>@endforeach</x-select>
-<button type="button" class="btn btn-secondary min-h-11 shrink-0" x-on:click="filtersOpen = !filtersOpen" x-bind:aria-expanded="filtersOpen" aria-controls="task-filters"><x-icon name="filter" class="size-4" />Filters @if($activeFilterCount)<span class="assignment-filter-count" aria-label="{{ $activeFilterCount }} applied">{{ $activeFilterCount }}</span>@endif<x-icon name="chevron" class="size-4 transition-transform" x-bind:class="filtersOpen ? '-rotate-90' : 'rotate-90'" /></button>
+<x-filter-toggle controls="task-filters" :count="$activeFilterCount" />
 </div>
 <div id="task-filters" class="grid gap-5 border-t border-ink-100 pt-5" x-show="filtersOpen" x-cloak>
 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

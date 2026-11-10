@@ -41,9 +41,9 @@ class BootstrapAdmin extends Command
             $user->status = AccountStatus::Active;
             $user->email_verified_at = now();
             $user->save();
-            $user->assignRole('Admin');
+            $user->assignRole('System Admin');
             $user->givePermissionTo(['roles.manage', 'users.invite']);
-            $audit->record($user, 'bootstrap_admin', metadata: ['role' => 'Admin'], reason: 'Initial local development account');
+            $audit->record($user, 'bootstrap_admin', metadata: ['role' => 'System Admin'], reason: 'Initial local development account');
         });
         $this->info('Admin provisioned.');
 

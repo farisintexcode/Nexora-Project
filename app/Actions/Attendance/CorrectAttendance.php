@@ -5,6 +5,7 @@ namespace App\Actions\Attendance;
 use App\Models\Attendance;
 use App\Models\AttendanceAdjustment;
 use App\Models\AttendanceSchedule;
+use App\Models\LeaveRequest;
 use App\Models\Staff;
 use App\Models\User;
 use App\Notifications\AttendanceCorrected;
@@ -40,6 +41,7 @@ class CorrectAttendance
             $schedule = AttendanceSchedule::query()->lockForUpdate()->findOrFail($target->id);
             $actor = $actor->fresh();
             abort_unless($this->canRequest($actor, $schedule), 403);
+            $this->guardApprovedLeave($schedule);
             $attendance = $this->attendance($schedule);
             if (! $this->sameSnapshot($this->snapshot($schedule, $attendance), $before)) {
                 throw ValidationException::withMessages(['correction' => 'Attendance changed. Reload the original values before requesting a correction.']);
@@ -111,6 +113,7 @@ class CorrectAttendance
             }
             $proposed = $adjustment->proposed_values;
             if ($decision === 'approved') {
+                $this->guardApprovedLeave($schedule);
                 if ($attendance !== null) {
                     $in = CarbonImmutable::parse($proposed['effective_clock_in_at']);
                     $out = isset($proposed['effective_clock_out_at']) ? CarbonImmutable::parse($proposed['effective_clock_out_at']) : null;
@@ -144,6 +147,13 @@ class CorrectAttendance
 
             return $adjustment;
         }, 3);
+    }
+
+    private function guardApprovedLeave(AttendanceSchedule $schedule): void
+    {
+        if (LeaveRequest::query()->where('status', 'approved')->whereHas('schedules', fn ($q) => $q->where('attendance_schedules.id', $schedule->id))->exists()) {
+            throw ValidationException::withMessages(['correction' => 'Approved leave covers this calendar date. Its attendance calendar cannot be changed.']);
+        }
     }
 
     private function attendance(AttendanceSchedule $schedule): ?Attendance

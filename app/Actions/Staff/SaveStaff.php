@@ -14,10 +14,12 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/** M10 / UI31–32 / Database.md staff. No personnel update grants account permissions. */
+/** M10 / UI31–32 / Database.md staff/users. Account grants use separately authorized actions. */
 class SaveStaff
 {
-    public function __construct(private AuditWriter $audit, private StaffAssignments $assignments) {}
+    public ?string $invitationDelivery = null;
+
+    public function __construct(private AuditWriter $audit, private StaffAssignments $assignments, private InviteStaffAccount $invite, private ManageStaffAccount $accounts) {}
 
     public function handle(User $actor, array $input, ?Staff $existing = null, ?string $revision = null): Staff
     {
@@ -26,6 +28,9 @@ class SaveStaff
                 DB::select("select pg_advisory_xact_lock(hashtext('dcms.staff.availability'))");
                 $staff = $existing ? Staff::query()->lockForUpdate()->findOrFail($existing->id) : new Staff;
                 Gate::forUser($actor)->authorize($existing ? 'update' : 'create', $existing ? $staff : Staff::class);
+                if ($existing && $staff->user?->can('roles.manage')) {
+                    Gate::forUser($actor)->authorize('roles.manage');
+                }
                 if ($existing && (! $revision || ! hash_equals($staff->revision(), $revision))) {
                     throw ValidationException::withMessages(['revision' => 'This staff record changed. Reload and review before saving.']);
                 }
@@ -42,7 +47,7 @@ class SaveStaff
                     'first_name' => ['required', 'string', 'max:100'], 'last_name' => ['nullable', 'string', 'max:100'],
                     'email' => ['nullable', 'email', 'max:254'],
                     'gender_code' => ['nullable', 'string', Rule::exists('reference_values', 'code')->where('category', 'gender')->where(fn ($q) => $q->when(! $staff->exists || ($input['gender_code'] ?? null) !== $staff->gender_code, fn ($q) => $q->where('is_active', true)))],
-                    'position_code' => ['required', 'string', Rule::exists('reference_values', 'code')->where('category', 'position')->where(fn ($q) => $q->when(! $staff->exists || ($input['position_code'] ?? null) !== $staff->position_code, fn ($q) => $q->where('is_active', true)))],
+                    'position_code' => ['nullable', 'string', Rule::exists('reference_values', 'code')->where('category', 'position')->where(fn ($q) => $q->when(! $staff->exists || ($input['position_code'] ?? null) !== $staff->position_code, fn ($q) => $q->where('is_active', true)))],
                     'appointment_date' => ['nullable', 'date_format:Y-m-d'],
                     'phone' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9][0-9 ()\-.]{4,39}$/'],
                     'home_phone' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9][0-9 ()\-.]{4,39}$/'],
@@ -53,6 +58,27 @@ class SaveStaff
                     throw ValidationException::withMessages(collect($validator->errors()->toArray())->mapWithKeys(fn ($messages, $key) => ['data.'.$key => $messages])->all());
                 }
                 $data = $validator->validated();
+                if (array_key_exists('system_role', $input)) {
+                    $accountData = Validator::make($input, [
+                        'system_role' => ['required', 'string', Rule::in(config('dcms.staff_roles'))],
+                        'create_account' => ['required', 'boolean'],
+                        'account_status' => ['sometimes', 'required', 'string', Rule::in(['active', 'disabled', 'invited', 'locked'])],
+                        'last_name' => ['required', 'string', 'max:100'],
+                        'email' => ['required', 'email', 'max:254', Rule::unique('users', 'email')->ignore($staff->user?->id)],
+                    ]);
+                    if ($accountData->fails()) {
+                        throw ValidationException::withMessages(collect($accountData->errors()->toArray())->mapWithKeys(fn ($messages, $key) => ['data.'.$key => $messages])->all());
+                    }
+                    $account = $staff->user;
+                    $equivalentLegacyRole = $existing && $account?->getRoleNames()->all() === ['Admin']
+                        && $input['system_role'] === ($account->can('roles.manage') ? 'System Admin' : 'Administrative');
+                    if (! $equivalentLegacyRole) {
+                        $data['is_rider'] = $input['system_role'] === 'Rider';
+                    }
+                    if ($input['system_role'] === 'System Admin') {
+                        Gate::forUser($actor)->authorize('roles.manage');
+                    }
+                }
                 $availabilityReduced = $existing && (($staff->is_active && ! $data['is_active']) || ($staff->is_rider && ! $data['is_rider']));
                 if ($availabilityReduced) {
                     if (! ($data['reason'] ?? null)) {
@@ -65,6 +91,9 @@ class SaveStaff
                         throw ValidationException::withMessages(['data.is_active' => 'Outstanding current tasks must be reassigned or resolved before disabling this staff member or removing Rider eligibility.']);
                     }
                     $account = $staff->user()->first();
+                    if (! $data['is_active'] && $account?->can('roles.manage') && ! User::query()->whereKeyNot($account->id)->where('status', 'active')->permission('roles.manage')->permission('admin.access')->where(fn ($q) => $q->whereNull('staff_id')->orWhereHas('staff', fn ($q) => $q->where('is_active', true)))->exists()) {
+                        throw ValidationException::withMessages(['data.is_active' => 'The last active System Admin cannot be deactivated.']);
+                    }
                     if (! $data['is_active'] && $account?->can('admin.access') && ! User::query()->whereKeyNot($account->id)->where('status', 'active')->permission('admin.access')->where(fn ($q) => $q->whereNull('staff_id')->orWhereHas('staff', fn ($q) => $q->where('is_active', true)))->exists()) {
                         throw ValidationException::withMessages(['data.is_active' => 'The last active administrator cannot be deactivated.']);
                     }
@@ -77,6 +106,9 @@ class SaveStaff
                     }
                 }
                 foreach (['staff_no', 'first_name', 'last_name', 'email', 'gender_code', 'position_code', 'appointment_date'] as $field) {
+                    if ($existing && in_array($field, ['appointment_date', 'position_code'], true) && ! array_key_exists($field, $input)) {
+                        continue;
+                    }
                     $staff->{$field} = ($data[$field] ?? null) === '' ? null : ($data[$field] ?? null);
                 }
                 foreach (['phone', 'home_phone', 'address'] as $field) {
@@ -88,6 +120,23 @@ class SaveStaff
                 $this->audit->record($actor, $existing ? 'staff_updated' : 'staff_created', $staff->public_id,
                     ['is_active' => $staff->is_active, 'is_rider' => $staff->is_rider, 'changed_fields' => array_keys($data)],
                     reason: $availabilityReduced ? $data['reason'] : null, module: 'M10', entityType: 'staff', previous: $before);
+
+                if (isset($input['system_role'])) {
+                    $account = $staff->user()->first();
+                    if ($account) {
+                        $legacyRole = $account->getRoleNames()->all() === ['Admin'] && $input['system_role'] === ($account->can('roles.manage') ? 'System Admin' : 'Administrative');
+                        $roleChanged = ! $legacyRole && $account->getRoleNames()->all() !== [$input['system_role']];
+                        $status = $input['account_status'] ?? $account->status->value;
+                        if ($roleChanged || $status !== $account->status->value) {
+                            $this->accounts->handle($actor, $staff, $input['system_role'], $status);
+                        }
+                    } elseif ($input['create_account']) {
+                        $this->invite->handle($actor, $staff, $input['system_role'], $staff->revision());
+                        DB::afterCommit(function (): void {
+                            $this->invitationDelivery = $this->invite->deliveryStatus;
+                        });
+                    }
+                }
 
                 return $staff->refresh();
             }, 3);

@@ -45,6 +45,14 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function resetFilters(): void
+    {
+        $this->reset('status', 'rider', 'search');
+        $this->from = now()->timezone(config('dcms.business_timezone'))->startOfMonth()->toDateString();
+        $this->until = now()->timezone(config('dcms.business_timezone'))->toDateString();
+        $this->resetPage();
+    }
+
     public function filters(): array
     {
         return $this->only(['from', 'until', 'status', 'rider', 'search']);

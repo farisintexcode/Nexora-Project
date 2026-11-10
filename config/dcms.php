@@ -20,6 +20,7 @@ return [
     'business_timezone' => env('DCMS_BUSINESS_TIMEZONE', 'Asia/Kuala_Lumpur'),
     'terms_version' => env('DCMS_TERMS_VERSION'),
     'privacy_url' => env('DCMS_PRIVACY_URL'),
+    'staff_roles' => ['System Admin', 'Administrative', 'Rider'],
     'permissions' => [
         'admin.access', 'rider.access', 'dashboard.view',
         'customers.view', 'customers.update_contacts',

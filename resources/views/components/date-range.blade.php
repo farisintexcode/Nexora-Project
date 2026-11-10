@@ -1,7 +1,7 @@
 @props(['name', 'label', 'from', 'until', 'placeholder' => 'Select a date or range', 'live' => false])
-<div class="grid content-start gap-2" wire:key="calendar-{{ $name }}" wire:ignore x-data="nexoraDateRange($wire, '{{ $from }}', '{{ $until }}', {{ $live ? 'true' : 'false' }})" x-on:keydown.escape="open && finish()">
+<div class="grid min-w-0 content-start gap-2" wire:key="calendar-{{ $name }}" wire:ignore x-data="nexoraDateRange($wire, '{{ $from }}', '{{ $until }}', {{ $live ? 'true' : 'false' }})" x-on:keydown.escape="open && finish()">
     <label id="{{ $name }}-label" for="{{ $name }}" class="field-label">{{ $label }}</label>
-    <button id="{{ $name }}" type="button" x-ref="trigger" class="field flex items-center justify-between gap-3 text-left" aria-labelledby="{{ $name }}-label {{ $name }}-value" aria-haspopup="dialog" x-bind:aria-expanded="open" x-on:click="toggle()">
+    <button id="{{ $name }}" type="button" x-ref="trigger" class="field flex min-w-0 items-center justify-between gap-3 text-left" aria-labelledby="{{ $name }}-label {{ $name }}-value" aria-haspopup="dialog" x-bind:aria-expanded="open" x-on:click="toggle()">
         <span id="{{ $name }}-value" class="min-w-0 truncate" x-bind:class="summary ? '' : 'text-ink-500'" x-text="summary || @js($placeholder)"></span>
         <x-icon name="calendar" class="size-4 text-ink-500" />
     </button>

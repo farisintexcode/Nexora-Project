@@ -23,7 +23,7 @@ class Doctor extends Command
 
     private const REFERENCE_CATEGORIES = ['assignment_type', 'priority', 'state', 'image_category', 'visit_purpose', 'document_type', 'position'];
 
-    protected $signature = 'dcms:doctor {--fix : Grant missing baseline permissions to the Admin and Rider roles}';
+    protected $signature = 'dcms:doctor {--fix : Grant missing baseline permissions to the system roles}';
 
     protected $description = 'Check this computer can run the flow from Add Assignment to Report';
 
@@ -110,6 +110,8 @@ class Doctor extends Command
     {
         $baseline = [
             'Admin' => array_values(array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions'))),
+            'Administrative' => array_values(array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions'), ['attendance.configure', 'monitoring.view', 'audit.view'])),
+            'System Admin' => array_values(array_unique([...array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions')), 'roles.manage', 'users.invite', 'integrations.manage'])),
             'Rider' => config('dcms.rider_permissions'),
         ];
         foreach ($baseline as $name => $expected) {

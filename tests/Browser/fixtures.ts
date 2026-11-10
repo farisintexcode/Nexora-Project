@@ -21,7 +21,7 @@ async function showMonth(page: Page, label: string, iso: string): Promise<void> 
     const dialog = dialogFor(page, label);
     const target = atMidnight(iso).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     for (let step = 0; step < 36; step++) {
-        const shown = (await dialog.locator('p[aria-live="polite"]').textContent())?.trim() ?? '';
+        const shown = (await dialog.locator('p[x-text="monthLabel"]').textContent())?.trim() ?? '';
         if (shown === target) return;
         await dialog.getByRole('button', { name: atMidnight(iso) < new Date(`1 ${shown}`) ? 'Previous month' : 'Next month', exact: true }).click();
     }
@@ -44,6 +44,7 @@ export async function chooseDate(page: Page, id: string, label: string, value: s
 export async function chooseDateRange(page: Page, id: string, label: string, from: string, until: string = from): Promise<void> {
     const dialog = dialogFor(page, label);
     await page.locator(`#${id}`).click();
+    await expect(dialog).toBeVisible();
     await showMonth(page, label, from);
     if (from === until) {
         await dialog.getByRole('button', { name: dayLabel(from), exact: true }).dblclick();
