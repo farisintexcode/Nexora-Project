@@ -4,7 +4,8 @@
     $shift = $open?->schedule ?? $todaySchedule;
     $currentPunch = $open ?? $todayPunch;
     $clockedOut = !$open && $todayPunch?->effective_clock_out_at;
-    $shiftLabel = $open ? 'Checked In' : ($clockedOut ? 'Checked Out' : ($todayPunch ? 'Attendance recorded' : 'Not Checked In'));
+    $onLeave = $todayLeave && !$clockedOut;
+    $shiftLabel = $onLeave ? 'On Leave' : ($open ? 'Checked In' : ($clockedOut ? 'Checked Out' : ($todayPunch ? 'Attendance recorded' : 'Not Checked In')));
     $separateHistory = auth()->user()->canUseRiderInterface() && !auth()->user()->can('admin.access');
 @endphp
 <x-feedback />
@@ -12,17 +13,17 @@
 @foreach($notices as $notice)<div class="rounded-xl bg-brand-soft p-4 text-sm" role="status">{{ $notice->data['message'] }}</div>@endforeach
 <div class="attendance-date-card"><span class="attendance-icon"><x-icon name="calendar" /></span><div><p class="rider-kicker">Today · Server-recorded time</p><p class="font-semibold">{{ $serverNow->format('d M Y, l') }}</p><p class="mt-1 text-xs text-ink-500">{{ $serverNow->format('H:i:s') }} · {{ config('dcms.business_timezone') }}</p></div></div>
 <section class="attendance-current surface" aria-labelledby="current-shift-title"><div class="attendance-current-grid"><div class="attendance-current-status">
-<div class="attendance-current-heading"><span class="attendance-status-icon"><x-icon name="clock" /></span><p class="rider-kicker" id="current-shift-title">Current shift</p><h2>{{ $shiftLabel }}</h2><div class="flex flex-wrap justify-center gap-2"><x-badge :tone="$open?'brand':'neutral'">{{ $open ? 'Open shift' : ($todayPunch ? 'Recorded' : 'Not clocked in') }}</x-badge>@if($clockedOut)<x-badge :tone="$todayPunch->status==='present'?'success':'neutral'">{{ \App\Services\Attendance\AttendanceStatus::LABELS[$todayPunch->status] ?? 'Needs review' }}</x-badge>@endif</div></div>
-@if($open)<p class="attendance-context">Clocked in {{ $open->raw_clock_in_at->timezone(config('dcms.business_timezone'))->format('d M Y H:i:s') }} MYT.<br>Service date {{ $open->service_date->toDateString() }}.</p>@if($open->schedule && now()->greaterThan($open->schedule->scheduled_end_at))<p role="status" class="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Incomplete: the scheduled shift ended without a clock out. Record the actual clock out now, or request an effective-time correction where permitted.</p>@endif
-@elseif($todayLeave && !$todayPunch)<p class="attendance-context">You are on approved leave today ({{ $todayLeave->type_snapshot['name'] ?? 'Leave' }}). No need to clock in.</p>
+<div class="attendance-current-heading"><span class="attendance-status-icon"><x-icon name="clock" /></span><p class="rider-kicker" id="current-shift-title">Current shift</p><h2>{{ $shiftLabel }}</h2><div class="flex flex-wrap justify-center gap-2"><x-badge :tone="$open && !$onLeave?'brand':'neutral'">{{ $onLeave ? 'Approved leave' : ($open ? 'Open shift' : ($todayPunch ? 'Recorded' : 'Not clocked in')) }}</x-badge>@if($clockedOut)<x-badge :tone="$todayPunch->status==='present'?'success':'neutral'">{{ \App\Services\Attendance\AttendanceStatus::LABELS[$todayPunch->status] ?? 'Needs review' }}</x-badge>@endif</div></div>
+@if($onLeave)<p class="attendance-context">You are on approved leave today ({{ $todayLeave->type_snapshot['name'] ?? 'Leave' }}). Clock in and clock out are not available.</p>@if($open)<p role="status" class="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">You still have an unfinished clock-in from {{ $open->service_date->format('d M Y') }}. Ask an administrator to correct it.</p>@endif
+@elseif($open)<p class="attendance-context">Clocked in {{ $open->raw_clock_in_at->timezone(config('dcms.business_timezone'))->format('d M Y H:i:s') }} MYT.<br>Service date {{ $open->service_date->toDateString() }}.</p>@if($open->schedule && now()->greaterThan($open->schedule->scheduled_end_at))<p role="status" class="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Incomplete: the scheduled shift ended without a clock out. Record the actual clock out now, or request an effective-time correction where permitted.</p>@endif
 @elseif(!$todaySchedule)<p class="attendance-context">No schedule is assigned today. You may record your actual time; it will remain Needs review until an authorized schedule-link correction is approved.</p>
 @elseif($todaySchedule->day_type!=='scheduled')<p class="attendance-context">{{ \App\Services\Attendance\AttendanceStatus::LABELS[$todaySchedule->day_type] ?? $todaySchedule->day_type }}</p>@endif
 </div><div class="attendance-current-controls">
 @can('attendance.clock')
 @if(!$open && !$todayPunch && !$todayLeave)<div class="attendance-remark"><x-input name="remarks" label="Shift remark (optional)" wire:model="remarks" maxlength="2000" /></div>@endif
 <div class="attendance-punch-actions">
-@if($open)<span class="attendance-inactive-action" aria-disabled="true"><x-icon name="check" />Clocked In</span><x-button type="button" class="min-h-14 w-full" wire:click="clock('out')" wire:confirm="Record your clock out using the current server time?" wire:loading.attr="disabled"><x-icon name="logout" />Clock Out</x-button>
-@elseif($todayLeave && !$todayPunch)<span class="attendance-inactive-action" aria-disabled="true"><x-icon name="calendar" />On leave today</span>
+@if($onLeave)<span class="attendance-inactive-action" aria-disabled="true"><x-icon name="calendar" />On leave today</span>
+@elseif($open)<span class="attendance-inactive-action" aria-disabled="true"><x-icon name="check" />Clocked In</span><x-button type="button" class="min-h-14 w-full" wire:click="clock('out')" wire:confirm="Record your clock out using the current server time?" wire:loading.attr="disabled"><x-icon name="logout" />Clock Out</x-button>
 @elseif(!$todayPunch)<x-button type="button" class="min-h-14 w-full" wire:click="clock('in')" wire:loading.attr="disabled"><x-icon name="logout" class="rotate-180" />Clock In</x-button><span class="attendance-inactive-action" aria-disabled="true"><x-icon name="logout" />Clock Out</span>
 @else<div class="attendance-saved-note"><x-icon name="check" /><span>Your attendance is recorded. Use the correction workflow for any changes.</span></div>@endif
 </div>

@@ -28,7 +28,7 @@ class LeaveAccess
 
     public function review(User $actor): bool
     {
-        return $this->admin($actor) && $actor->can('attendance.approve_correction');
+        return $this->admin($actor) && $actor->can('leave.approve');
     }
 
     public function view(User $actor, LeaveRequest $request): bool

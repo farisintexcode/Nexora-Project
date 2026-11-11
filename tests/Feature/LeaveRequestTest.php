@@ -4,6 +4,7 @@ use App\Actions\Attendance\ClockAttendance;
 use App\Actions\Attendance\CorrectAttendance;
 use App\Actions\Attendance\ManageLeave;
 use App\Livewire\Admin\Attendance\LeaveManagement;
+use App\Livewire\Rider\Attendance as RiderAttendance;
 use App\Livewire\Rider\LeaveRequests;
 use App\Models\Attendance;
 use App\Models\AttendanceSchedule;
@@ -142,10 +143,44 @@ test('approval requires a separate permission and rejects self review', function
     [$rider,$admin,$type,$data] = leaveFixture();
     $request = submitLeave($rider, $data);
     $viewer = User::factory()->create();
-    $viewer->assignRole('Admin');
+    $viewer->givePermissionTo(['admin.access', 'attendance.view_all']);
     expect(fn () => app(ManageLeave::class)->decide($viewer, $request, 'approved', '', 0))->toThrow(HttpException::class);
-    $rider->givePermissionTo(['admin.access', 'attendance.view_all', 'attendance.approve_correction']);
+    $rider->givePermissionTo(['admin.access', 'attendance.view_all', 'leave.approve']);
     expect(fn () => app(ManageLeave::class)->decide($rider, $request, 'approved', '', 0))->toThrow(ValidationException::class);
+});
+
+test('admin approves or rejects from the review buttons and viewers without permission are told why', function (): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    $request = submitLeave($rider, $data);
+    $viewer = User::factory()->create();
+    $viewer->givePermissionTo(['admin.access', 'attendance.view_all']);
+    Livewire::actingAs($viewer)->test(LeaveManagement::class, ['leave' => $request->public_id])
+        ->assertSee('leave.approve')->assertDontSee("decide('approved')", false);
+
+    Livewire::actingAs($admin)->test(LeaveManagement::class, ['leave' => $request->public_id])
+        ->assertSee("decide('approved')", false)->assertSee("decide('rejected')", false)
+        ->call('decide', 'rejected')->assertHasErrors('remarks')
+        ->set('remarks', 'Peak delivery week')->call('decide', 'rejected')->assertHasNoErrors()
+        ->assertRedirect(route('admin.leave.show', $request->public_id));
+    expect($request->fresh())->status->toBe('rejected')->reviewer_remarks->toBe('Peak delivery week');
+
+    $other = submitLeave($rider, [...$data, 'reason' => 'Second application']);
+    Livewire::actingAs($admin)->test(LeaveManagement::class, ['leave' => $other->public_id])->call('decide', 'approved')->assertHasNoErrors();
+    expect($other->fresh()->status)->toBe('approved');
+});
+
+test('supporting documents can be previewed inline as well as downloaded', function (): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    Storage::fake('s3');
+    config(['filesystems.disks.s3.bucket' => 'private-leave-tests']);
+    $this->mock(MalwareScanner::class)->shouldReceive('scan')->once()->andReturnNull();
+    $pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF";
+    $request = submitLeave($rider, $data, UploadedFile::fake()->createWithContent('letter.pdf', $pdf));
+    $this->actingAs($admin)->get(route('leave.document', ['leave' => $request->public_id, 'preview' => 1]))->assertOk()->assertContent($pdf)
+        ->assertHeader('Content-Disposition', 'inline; filename="support.pdf"')->assertHeader('X-Frame-Options', 'SAMEORIGIN');
+    $this->actingAs($admin)->get(route('leave.document', $request))->assertHeader('Content-Disposition', 'attachment; filename="support.pdf"');
+    Livewire::actingAs($admin)->test(LeaveManagement::class, ['leave' => $request->public_id])
+        ->assertSee(route('leave.document', ['leave' => $request->public_id, 'preview' => 1]), false)->assertSee('<iframe', false);
 });
 
 test('rejection requires a reason and terminal decisions cannot be repeated or cancelled', function (): void {
@@ -175,11 +210,80 @@ test('calendar changes or real attendance prevent approval without altering the 
     if ($conflict === 'calendar') {
         changeLeaveCalendar($rider, $admin, $schedule);
     } else {
-        Attendance::factory()->create(['rider_id' => $rider->staff_id, 'schedule_id' => $schedule->id, 'service_date' => $data['start_date'], 'raw_clock_in_at' => $schedule->scheduled_start_at, 'effective_clock_in_at' => $schedule->scheduled_start_at]);
+        Attendance::factory()->create(['rider_id' => $rider->staff_id, 'schedule_id' => $schedule->id, 'service_date' => $data['start_date'], 'raw_clock_in_at' => $schedule->scheduled_start_at, 'effective_clock_in_at' => $schedule->scheduled_start_at, 'raw_clock_out_at' => $schedule->scheduled_end_at, 'effective_clock_out_at' => $schedule->scheduled_end_at]);
     }
     expect(fn () => app(ManageLeave::class)->decide($admin, $request, 'approved', '', 0))->toThrow(ValidationException::class);
     expect($request->fresh()->status)->toBe('pending');
 })->with(['calendar', 'attendance']);
+
+test('an earlier shift still running into the leave is named in the review panel and blocks approval', function (): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    $request = submitLeave($rider, $data);
+    $leaveStart = CarbonImmutable::parse($data['start_date'], 'Asia/Kuala_Lumpur');
+    Attendance::factory()->create(['rider_id' => $rider->staff_id, 'service_date' => $leaveStart->subDays(2)->toDateString(), 'raw_clock_in_at' => $leaveStart->subDays(2)->setTime(22, 55)->utc(), 'effective_clock_in_at' => $leaveStart->subDays(2)->setTime(22, 55)->utc(), 'effective_clock_out_at' => $leaveStart->setTime(4, 7)->utc()]);
+    $shift = 'The '.$leaveStart->subDays(2)->format('d M Y').' shift (clocked in '.$leaveStart->subDays(2)->format('d M').', 10:55 PM, clocked out '.$leaveStart->format('d M').', 4:07 AM) overlaps this leave.';
+
+    Livewire::actingAs($admin)->test(LeaveManagement::class, ['leave' => $request->public_id])
+        ->assertSee("This leave can't be approved yet", false)->assertSee($shift)
+        ->call('decide', 'approved')->assertHasErrors('decision');
+    expect($request->fresh()->status)->toBe('pending');
+});
+
+test('an unfinished clock-in on a leave day does not block approval and the day shows as leave', function (): void {
+    [$rider,$admin,$type,$data,$schedule] = leaveFixture();
+    $request = submitLeave($rider, $data);
+    $punch = Attendance::factory()->create(['rider_id' => $rider->staff_id, 'schedule_id' => $schedule->id, 'service_date' => $data['start_date'], 'raw_clock_in_at' => $schedule->scheduled_start_at, 'effective_clock_in_at' => $schedule->scheduled_start_at]);
+
+    Livewire::actingAs($admin)->test(LeaveManagement::class, ['leave' => $request->public_id])
+        ->assertSee('unfinished clock-in')->assertDontSee("This leave can't be approved yet", false)
+        ->call('decide', 'approved')->assertHasNoErrors();
+
+    expect($request->fresh()->status)->toBe('approved')->and($punch->fresh()->effective_clock_out_at)->toBeNull();
+    $register = app(AttendanceRegister::class)->query($admin, ['from' => $data['start_date'], 'until' => $data['end_date']])->first();
+    expect($register->result_status)->toBe('leave');
+});
+
+test('approved leave hides clock buttons and supersedes an unfinished clock-in on that day', function (): void {
+    [$rider,$admin,$type,$data,$schedule] = leaveFixture();
+    $this->travelTo(CarbonImmutable::parse($data['start_date'].' 10:00', 'Asia/Kuala_Lumpur'));
+    $punch = app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
+    $request = submitLeave($rider, $data);
+    app(ManageLeave::class)->decide($admin, $request, 'approved', 'Sent home sick', 0);
+
+    Livewire::actingAs($rider)->test(RiderAttendance::class)
+        ->assertSee('You are on approved leave today')->assertSee('On leave today')
+        ->assertDontSee("wire:click=\"clock('out')\"", false)->assertDontSee("wire:click=\"clock('in')\"", false);
+    expect(fn () => app(ClockAttendance::class)->punch($rider, 'out', (string) Str::uuid7(), $punch->public_id, 0))->toThrow(ValidationException::class);
+    expect($punch->fresh()->effective_clock_out_at)->toBeNull();
+
+    $this->travelTo(CarbonImmutable::parse($data['start_date'].' 10:00', 'Asia/Kuala_Lumpur')->addDay());
+    AttendanceSchedule::factory()->create(['rider_id' => $rider->staff_id, 'service_date' => now()->timezone('Asia/Kuala_Lumpur')->toDateString(), 'scheduled_start_at' => now()->subHour(), 'scheduled_end_at' => now()->addHours(8), 'authorized_by' => $admin->id]);
+    expect(app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7())->service_date->toDateString())->toBe(now()->timezone('Asia/Kuala_Lumpur')->toDateString());
+});
+
+test('a forgotten clock-out from before the leave cannot be clocked out during approved leave', function (): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    $earlier = CarbonImmutable::parse($data['start_date'], 'Asia/Kuala_Lumpur')->subDays(2)->setTime(12, 26);
+    $punch = Attendance::factory()->create(['rider_id' => $rider->staff_id, 'service_date' => $earlier->toDateString(), 'raw_clock_in_at' => $earlier->utc(), 'effective_clock_in_at' => $earlier->utc()]);
+    app(ManageLeave::class)->decide($admin, submitLeave($rider, $data), 'approved', '', 0);
+    $this->travelTo(CarbonImmutable::parse($data['start_date'].' 10:00', 'Asia/Kuala_Lumpur'));
+
+    Livewire::actingAs($rider)->test(RiderAttendance::class)
+        ->assertSee('You are on approved leave today')->assertSee('unfinished clock-in from '.$earlier->format('d M Y'))
+        ->assertDontSee("wire:click=\"clock('out')\"", false);
+    expect(fn () => app(ClockAttendance::class)->punch($rider, 'out', (string) Str::uuid7(), $punch->public_id, 0))->toThrow(ValidationException::class);
+});
+
+test('a forgotten clock-out on an earlier day is not treated as overlapping later leave', function (): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    $request = submitLeave($rider, $data);
+    $earlier = CarbonImmutable::parse($data['start_date'], 'Asia/Kuala_Lumpur')->subDays(3)->setTime(12, 26);
+    Attendance::factory()->create(['rider_id' => $rider->staff_id, 'service_date' => $earlier->toDateString(), 'raw_clock_in_at' => $earlier->utc(), 'effective_clock_in_at' => $earlier->utc()]);
+
+    expect(app(ManageLeave::class)->attendanceConflicts($request))->toBeEmpty()->and(app(ManageLeave::class)->unfinishedAttendance($request))->toBeEmpty();
+    app(ManageLeave::class)->decide($admin, $request, 'approved', '', 0);
+    expect($request->fresh()->status)->toBe('approved');
+});
 
 test('supporting documents are private scanned immutable and ownership protected', function (): void {
     [$rider,$admin,$type,$data] = leaveFixture();

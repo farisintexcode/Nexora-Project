@@ -39,8 +39,14 @@ class ClockAttendance
                 return $prior;
             }
             $now = now()->toImmutable();
-            $open = Attendance::query()->where('rider_id', $rider->id)->whereNull('effective_clock_out_at')->lockForUpdate()->first();
+            $open = Attendance::query()->where('rider_id', $rider->id)->openShift()->lockForUpdate()->first();
             if ($direction === 'out') {
+                $todayDate = $now->timezone(config('dcms.business_timezone'))->toDateString();
+                $onLeaveToday = LeaveRequest::query()->where('rider_id', $rider->id)->where('status', 'approved')->where('start_date', '<=', $todayDate)->where('end_date', '>=', $todayDate)->exists();
+                $supersededByLeave = $open === null && $record !== null && Attendance::query()->where('rider_id', $rider->id)->where('public_id', $record)->whereNull('effective_clock_out_at')->exists();
+                if ($onLeaveToday || $supersededByLeave) {
+                    throw ValidationException::withMessages(['clock' => 'You are on approved leave. Clocking out is not available; ask an administrator to correct the shift if needed.']);
+                }
                 if ($open === null || $open->public_id !== $record || $open->lock_version !== $version) {
                     throw ValidationException::withMessages(['clock' => 'This shift has changed or is already closed. Refresh attendance before retrying.']);
                 }

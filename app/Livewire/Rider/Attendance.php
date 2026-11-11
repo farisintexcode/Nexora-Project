@@ -83,7 +83,7 @@ class Attendance extends Component
 
     private function syncOpen(): void
     {
-        $open = Punch::query()->where('rider_id', auth()->user()->staff_id)->whereNull('effective_clock_out_at')->first();
+        $open = Punch::query()->where('rider_id', auth()->user()->staff_id)->openShift()->first();
         $this->openId = $open?->public_id;
         $this->openVersion = $open?->lock_version;
     }
@@ -142,7 +142,7 @@ class Attendance extends Component
             $error = $e->validator->errors()->first();
             $query = $register->query(auth()->user(), [], true)->whereRaw('false');
         }
-        $open = Punch::query()->with('schedule.policy')->where('rider_id', auth()->user()->staff_id)->whereNull('effective_clock_out_at')->first();
+        $open = Punch::query()->with('schedule.policy')->where('rider_id', auth()->user()->staff_id)->openShift()->first();
         $today = now()->timezone(config('dcms.business_timezone'))->toDateString();
         $todaySchedule = AttendanceSchedule::query()->with('policy')->where('rider_id', auth()->user()->staff_id)->where('service_date', $today)->first();
         $todayPunch = Punch::query()->where('rider_id', auth()->user()->staff_id)->where('service_date', $today)->first();

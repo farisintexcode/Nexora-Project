@@ -21,6 +21,13 @@ class LeaveDocumentController extends Controller
             abort(503, 'The supporting document is temporarily unavailable.');
         }
 
-        return response($bytes, 200, ['Content-Type' => $doc->mime_type, 'Content-Disposition' => 'attachment; filename="'.$doc->original_filename.'"', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff', 'Content-Security-Policy' => "default-src 'none'; sandbox"]);
+        $preview = $request->boolean('preview');
+        $headers = ['Content-Type' => $doc->mime_type, 'Content-Disposition' => ($preview ? 'inline' : 'attachment').'; filename="'.$doc->original_filename.'"', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff', 'Content-Security-Policy' => "default-src 'none'; sandbox"];
+        if ($preview && $doc->mime_type === 'application/pdf') {
+            $headers['Content-Security-Policy'] = "frame-ancestors 'self'";
+            $headers['X-Frame-Options'] = 'SAMEORIGIN';
+        }
+
+        return response($bytes, 200, $headers);
     }
 }

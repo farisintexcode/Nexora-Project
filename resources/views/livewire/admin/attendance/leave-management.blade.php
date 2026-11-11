@@ -3,12 +3,43 @@
 <x-page-header title="Leave Management" eyebrow="" description="Review leave applications and manage the organization’s leave types."><x-slot:actions>@if($canConfigure)<a class="btn btn-primary" href="{{ route('admin.leave.types') }}"><x-icon name="tag" />Leave Types &amp; Entitlements</a>@endif<a class="btn btn-secondary" href="{{ route('admin.attendance.index') }}"><x-icon name="clock" />Attendance</a>@if($selected)<a class="btn btn-secondary" href="{{ route('admin.leave.index') }}"><x-icon name="arrow-left" />All leave requests</a>@endif</x-slot:actions></x-page-header>
 @foreach($errors->all() as $error)<p role="alert" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ $error }}</p>@endforeach
 @if($selected)
-    <x-leave-details :request="$selected" :admin="true" />
-    @if($selectedBalance)<x-leave-balance :balance="$selectedBalance" :year="$selected->start_date->year" :name="$selected->rider->full_name.' · '.($selected->type_snapshot['name'] ?? 'Leave')" :tracked="$selected->type_snapshot['tracks_balance'] ?? false" :requested="0" />@endif
-    <section class="surface grid gap-4 p-5 sm:p-6"><h2 class="text-lg font-semibold">Review application</h2><p role="status" class="rounded-xl bg-brand-soft p-4 text-sm">{{ $conflicts }} recorded attendance {{ $conflicts===1?'conflict':'conflicts' }} in the requested service-date range. Calendar changes, overnight attendance and pending corrections are checked again when approving.</p>
-    @if($selected->status==='pending' && $canReview && auth()->id()!==$selected->requested_by && auth()->user()->staff_id!==$selected->rider_id)
-        <form wire:submit="decide" class="grid gap-5"><x-select name="decision" label="Decision" wire:model="decision" required><option value="">Select a decision</option><option value="approved">Approve</option><option value="rejected">Reject</option></x-select><div class="grid gap-2"><label for="reviewer-remarks" class="field-label">Admin Remarks / Rejection Reason</label><textarea id="reviewer-remarks" wire:model="remarks" class="field min-h-28" maxlength="5000"></textarea><p class="field-help">A rejection reason is required. Approval remarks are optional.</p></div><div class="hr-actions"><x-confirm-action label="Confirm Decision" title="Save this leave decision?" message="This is final. This application cannot be decided again." /></div></form>
-    @elseif($selected->status==='pending')<p class="text-sm text-ink-500">An independent administrator with attendance approval permission must review this request.</p>@else<p class="text-sm text-ink-500">This request has a final status. Its application and decision are read-only.</p>@endif</section>
+    @php($isOwnRequest = auth()->id() === $selected->requested_by || auth()->user()->staff_id === $selected->rider_id)
+    <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <x-leave-details :request="$selected" :admin="true" />
+        <aside class="grid gap-4 lg:sticky lg:top-6">
+            <section class="surface grid gap-4 p-5" aria-labelledby="review-heading">
+                <h2 id="review-heading" class="text-lg font-semibold">Review application</h2>
+                @if($conflicts->isNotEmpty())
+                    <div role="status" class="grid gap-2 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                        <p class="font-semibold">This leave can't be approved yet — the Rider has attendance on these dates.</p>
+                        <ul class="grid gap-1.5">@foreach($conflicts as $conflict)<li wire:key="conflict-{{ $conflict->public_id }}">{{ \App\Actions\Attendance\ManageLeave::describeConflict($conflict) }}@if($conflict->schedule) <a class="font-semibold underline underline-offset-2" href="{{ route('admin.attendance.show', $conflict->schedule->public_id) }}">Open attendance</a>@endif</li>@endforeach</ul>
+                        <p>Correct the clock times on that attendance record, or reject this leave and ask the Rider to apply again.</p>
+                    </div>
+                @endif
+                @if($unfinished->isNotEmpty())
+                    <div role="status" class="grid gap-2 rounded-xl bg-brand-soft p-3 text-xs leading-5 text-ink-700">
+                        <p class="font-semibold">The Rider has an unfinished clock-in on these dates. You can still approve.</p>
+                        <ul class="grid gap-1.5">@foreach($unfinished as $shift)<li wire:key="unfinished-{{ $shift->public_id }}">{{ \App\Actions\Attendance\ManageLeave::describeConflict($shift) }}@if($shift->schedule) <a class="font-semibold underline underline-offset-2" href="{{ route('admin.attendance.show', $shift->schedule->public_id) }}">Open attendance</a>@endif</li>@endforeach</ul>
+                        <p>Once approved, the day shows as leave. The clock-in record is kept as-is.</p>
+                    </div>
+                @endif
+                @if($selected->status==='pending' && $canReview && ! $isOwnRequest)
+                    <div class="grid gap-2"><label for="reviewer-remarks" class="field-label">Remarks <span class="font-normal text-ink-500">(required to reject)</span></label><textarea id="reviewer-remarks" wire:model="remarks" class="field min-h-28" maxlength="5000" placeholder="Optional note for approval, or the reason for rejection"></textarea>@error('remarks')<p class="text-xs text-red-700">{{ $message }}</p>@enderror @error('decision')<p class="text-xs text-red-700">{{ $message }}</p>@enderror</div>
+                    <div class="grid grid-cols-2 gap-3 [&_.btn]:w-full">
+                        <x-confirm-action label="Approve" variant="success" action="decide('approved')" confirmLabel="Approve leave" title="Approve this leave?" message="The Rider will be notified. This decision is final." />
+                        <x-confirm-action label="Reject" variant="danger" action="decide('rejected')" confirmLabel="Reject leave" title="Reject this leave?" message="Make sure you entered a rejection reason. The Rider will be notified. This decision is final." />
+                    </div>
+                @elseif($selected->status==='pending' && $isOwnRequest)
+                    <p class="text-sm text-ink-600">This is your own leave request. Another administrator must review it.</p>
+                @elseif($selected->status==='pending')
+                    <p class="text-sm text-ink-600">Your account doesn't have leave approval permission, so you can view this request but not approve or reject it. Ask a System Admin to grant your account the <code class="text-xs font-semibold">leave.approve</code> permission.</p>
+                @else
+                    <p class="text-sm text-ink-600">This request is {{ $selected->status }}. Its decision is final and read-only.</p>
+                @endif
+            </section>
+            @if($selectedBalance)<x-leave-balance :balance="$selectedBalance" :year="$selected->start_date->year" :name="$selected->rider->full_name.' · '.($selected->type_snapshot['name'] ?? 'Leave')" :tracked="$selected->type_snapshot['tracks_balance'] ?? false" :requested="0" />@endif
+        </aside>
+    </div>
 @else
     <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">@foreach(['all'=>'Total Leave Requests','pending'=>'Pending Approval','approved'=>'Approved Requests','rejected'=>'Rejected Requests'] as $key=>$label)<div class="surface p-5"><p class="text-xs text-ink-500">{{ $label }}</p><p class="mt-2 text-2xl font-semibold">{{ $key==='all'?$counts->sum():($counts[$key]??0) }}</p></div>@endforeach</div>
     <x-filter-bar name="leave" submit="filterRequests" :count="(int)($search !== '') + (int)($status !== '') + (int)($filterType !== '') + (int)($rider !== '') + (int)($from !== '' || $until !== '')">
