@@ -23,7 +23,6 @@
         <label class="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" wire:model="allow_past_dates" class="size-4 accent-brand-primary">Allow applications for past dates (attendance conflicts still require resolution)</label>
         <label class="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" wire:model="allow_pending_cancel" class="size-4 accent-brand-primary">Allow Rider to cancel a pending application</label>
         <label class="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" wire:model="is_active" class="size-4 accent-brand-primary">Available for new applications</label>
-        @error('type')<p role="alert" class="text-sm text-red-700">{{ $message }}</p>@enderror
         <div class="flex flex-wrap gap-3"><x-button wire:loading.attr="disabled" wire:target="saveType">Save Leave Type</x-button>@if($typeId)<button type="button" wire:click="newType" class="btn btn-secondary" wire:loading.attr="disabled">Cancel Editing</button>@endif</div>
     </form>
 </section>

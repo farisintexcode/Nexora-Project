@@ -991,12 +991,12 @@ Read [Plan.md](Plan.md) for evidence E01–E24 and unresolved G01–G08, [Module
 | Attribute | Specification |
 |---|---|
 | Module / scope / role | M05/M07; C; Admin / authorized operations user. |
-| Layout / components / mobile | Desktop KPI/filter bar and table; compact cards on small screens. Shared labels/focus/keyboard/320px rules apply; Admin tables become labelled cards where useful. |
-| Fields / filters | All/unassigned/assigned/in-progress/visited/pending completion/pending verification/completed/returned/overdue/cancelled; Rider/customer/category/date/batch/priority. |
-| Buttons / actions | Create; view/edit; assign one/selected; reassign; cancel with reason; verify; export. |
-| Validation / states | Columns customer/account/current Rider/status/review/priority/visit/due/latest event; selection count and conflict/result panel. |
+| Layout / components / mobile | Desktop KPI/filter bar and table; compact cards on small screens. Shared labels/focus/keyboard/320px rules apply; Admin tables become labelled cards where useful. Two-level table: the first view lists uploaded task Excel files (one row each); opening a file lists that file's customers. |
+| Fields / filters | Assignment; Excel File Name (files in the chosen assignment, plus "Created manually (no Excel file)"); Task ID; All/unassigned/assigned/in-progress/visited/pending completion/pending verification/completed/returned/overdue/cancelled; Rider/date/priority panel. With no file opened, a Task ID, status or panel filter lists matching customers across all files. |
+| Buttons / actions | Click an Excel File Name or View customers to open a file; Back to Excel files; Create; view/edit; assign one/selected; reassign; cancel with reason; verify; export. Opening a file clears task filters so every customer in it is shown. |
+| Validation / states | File list columns Excel File Name/assignment/uploaded time and uploader/customers/awaiting allocation/completed, with a Created manually row for tasks without a file. Customer columns customer/account/current Rider/status/review/priority/visit/due/latest event (Excel file column only in cross-file search results); file banner with name, customer count, assignment and upload time; selection count and conflict/result panel. An unknown file shows "Excel file not found" and no customers. |
 | Empty / loading / success / error | Unless detailed above: scoped empty-state explanation and allowed CTA; loading/progress disables duplicate submits; success confirms persisted state/reference; validation/permission/network/stale conflicts preserve safe input with retry or review. Never infer external delivery from queued/accepted. |
-| Navigation / expected interaction | UI07/sidebar/customer/Rider → monitor → UI56/UI16/UI18/UI19/UI42; filters persist; no implicit all-page selection. |
+| Navigation / expected interaction | UI07/sidebar/customer/Rider → monitor (Excel file list) → opened file's customers → UI56/UI16/UI18/UI19/UI42. Deep links with a status or Rider filter open straight to matching customers. Filters persist; no implicit all-page selection. |
 
 <a id="ui56"></a>
 

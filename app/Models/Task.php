@@ -31,6 +31,24 @@ class Task extends Model
         return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id');
     }
 
+    /** Excel file a manually created task was grouped with. */
+    public function importBatch(): BelongsTo
+    {
+        return $this->belongsTo(ImportBatch::class, 'import_batch_id');
+    }
+
+    /** Workbook row an imported task was created from. */
+    public function sourceRow(): BelongsTo
+    {
+        return $this->belongsTo(ImportRow::class, 'source_import_row_id');
+    }
+
+    /** The uploaded Excel file this task came from, whether imported or grouped manually. */
+    public function excelFile(): ?ImportBatch
+    {
+        return $this->importBatch ?? $this->sourceRow?->import;
+    }
+
     /** Tasks imported from one uploaded Excel file, or created manually and grouped with it. */
     public function scopeFromImport(Builder $query, int $importBatchId): void
     {

@@ -234,6 +234,23 @@ test('directory deactivation asks for the reason in a dialog for the selected st
     expect($staff->fresh()->is_active)->toBeFalse();
 });
 
+test('directory activation asks for confirmation in the shared dialog instead of a browser prompt', function (): void {
+    $actor = staffManager();
+    $staff = Staff::factory()->create(['is_active' => false]);
+
+    Livewire::actingAs($actor)->test(Index::class)->set('status', '')
+        ->assertSee('Activate '.$staff->full_name.'?')
+        ->assertSeeHtml('class="confirmation-dialog"')
+        ->assertSeeHtml('btn btn-success btn-sm')
+        ->assertDontSeeHtml('wire:confirm');
+});
+
+test('human resources pages use the shared confirmation dialog instead of browser prompts', function (): void {
+    foreach (['staff/index', 'staff/show', 'staff/editor', 'attendance/index', 'attendance/show', 'attendance/configuration', 'attendance/leave-management', 'attendance/leave-types'] as $page) {
+        expect(file_get_contents(resource_path("views/livewire/admin/{$page}.blade.php")))->not->toContain('wire:confirm', $page);
+    }
+});
+
 test('directory hides inactive staff by default but keeps them reachable through the status filter', function (): void {
     $actor = staffManager();
     Staff::factory()->create(['first_name' => 'Current', 'last_name' => 'Worker', 'is_rider' => true]);

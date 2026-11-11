@@ -104,6 +104,7 @@ test('manage task finds a task by its id and shows it', function (): void {
     numberedTask($assignment, 'FG002');
 
     Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', Index::MANUAL_FILE)
         ->assertSee('Task ID FG001')->assertSee('Task ID FG002')
         ->set('query', 'FG002')
         ->assertSee('Task ID FG002')->assertDontSee('Task ID FG001');
@@ -126,6 +127,7 @@ test('manage task shows three main filters and applies the rest only from the pa
     DB::table('tasks')->where('id', $task->id)->update(['priority_code' => 'urgent']);
 
     Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', Index::MANUAL_FILE)
         ->assertSee($assignment->refresh()->assignment_code.' - Filter assignment')
         ->assertSee('All assignments')
         ->assertDontSee('Assignment batch')
@@ -159,6 +161,9 @@ test('the task date in the panel filters by creation date and clear all resets e
         ->assertSet('status', 'all')
         ->assertSet('from', '')
         ->assertSet('draft.until', '')
+        ->assertSet('file', '')
+        ->assertViewHas('tasks', null)
+        ->call('showFile', Index::MANUAL_FILE)
         ->assertSee('Task ID FG001');
 });
 
@@ -173,6 +178,7 @@ test('manage task table wording and the review button colour follow the selectio
     $task = numberedTask(AssignmentBatch::factory()->create(), 'FG001');
 
     Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', Index::MANUAL_FILE)
         ->assertSee('Assignment / Task ID')
         ->assertDontSee('Batch / source')
         ->assertDontSee('Current Rider')
@@ -336,6 +342,95 @@ function taskFromFile(AssignmentBatch $assignment, ImportBatch $file, string $id
     return Task::factory()->create(['assignment_batch_id' => $assignment->id, 'source_task_id' => $id, 'source_task_number' => Task::numberFromId($id), 'origin_code' => 'import', 'source_import_row_id' => $row->id]);
 }
 
+test('manage task first lists the uploaded excel files with their customer counts, not the customers', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $other = AssignmentBatch::factory()->create();
+    $january = uploadedFile($assignment, 'january.xlsx');
+    $otherFile = uploadedFile($other, 'other.xlsx');
+    $first = taskFromFile($assignment, $january, 'FG001');
+    taskFromFile($assignment, $january, 'FG002');
+    numberedTask($assignment, 'FG003');
+
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->assertSee('Excel File Name')->assertSee('january.xlsx')->assertSee('other.xlsx')->assertSee('Created manually')
+        ->assertViewHas('fileList', fn ($files): bool => $files->firstWhere('id', $january->id)->customers_count === 2 && $files->firstWhere('id', $january->id)->unassigned_count === 2 && $files->firstWhere('id', $otherFile->id)->customers_count === 0)
+        ->assertViewHas('manualSummary', fn (array $summary): bool => $summary['customers'] === 1)
+        ->assertDontSee('Task ID FG001')->assertDontSee($first->customer->display_name_ciphertext)
+        ->set('batch', $other->public_id)
+        ->assertViewHas('excelFiles', fn ($files): bool => $files->pluck('public_id')->all() === [$otherFile->public_id])
+        ->assertViewHas('fileList', fn ($files): bool => $files->pluck('public_id')->all() === [$otherFile->public_id]);
+});
+
+test('clicking an excel file shows every customer from that file and back returns to the file list', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = uploadedFile($assignment, 'customers.xlsx');
+    $first = taskFromFile($assignment, $file, 'FG001');
+    taskFromFile($assignment, $file, 'FG002');
+    numberedTask($assignment, 'FG003');
+
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', $file->public_id)
+        ->assertSet('file', $file->public_id)
+        ->assertSet('batch', $assignment->public_id)
+        ->assertSee('2 customers from this file')
+        ->assertSee($first->customer->display_name_ciphertext)
+        ->assertSee('Task ID FG001')->assertSee('Task ID FG002')->assertDontSee('Task ID FG003')
+        ->call('backToFiles')
+        ->assertSet('file', '')
+        ->assertViewHas('tasks', null)
+        ->assertSee('customers.xlsx')->assertDontSee('Task ID FG001');
+});
+
+test('opening an excel file clears task filters that would hide some of its customers', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = uploadedFile($assignment, 'customers.xlsx');
+    taskFromFile($assignment, $file, 'FG001');
+    taskFromFile($assignment, $file, 'FG002');
+
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->set('status', 'completed')->set('query', 'FG001')
+        ->call('showFile', $file->public_id)
+        ->assertSet('status', 'all')->assertSet('query', '')
+        ->assertSee('Task ID FG001')->assertSee('Task ID FG002');
+});
+
+test('manually created tasks open from their own row in the file list', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = uploadedFile($assignment, 'customers.xlsx');
+    taskFromFile($assignment, $file, 'FG001');
+    numberedTask($assignment, 'FG002');
+
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', Index::MANUAL_FILE)
+        ->assertSee('Task ID FG002')->assertDontSee('Task ID FG001');
+});
+
+test('a task search or filter lists matching customers across all excel files', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = uploadedFile($assignment, 'customers.xlsx');
+    taskFromFile($assignment, $file, 'FG001');
+    numberedTask($assignment, 'FG002');
+
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->set('query', 'FG001')
+        ->assertSee('Search results across all Excel files')
+        ->assertSee('Task ID FG001')->assertDontSee('Task ID FG002')
+        ->call('backToFiles')
+        ->assertSet('query', '')
+        ->assertViewHas('tasks', null);
+});
+
+test('manage task ignores an unknown excel file instead of showing other tasks', function (): void {
+    numberedTask(AssignmentBatch::factory()->create(), 'FG001');
+
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', 'not-a-uuid')
+        ->assertSet('file', '')
+        ->set('file', '00000000-0000-0000-0000-000000000001')
+        ->assertSee('Excel file not found')
+        ->assertDontSee('Task ID FG001');
+});
+
 test('assign task lists only the excel files in the chosen assignment and clears the choice when it changes', function (): void {
     $assignment = AssignmentBatch::factory()->create();
     $other = AssignmentBatch::factory()->create();
@@ -491,7 +586,7 @@ test('manage task shows ten tasks on each page', function (): void {
         numberedTask($assignment, 'JAN'.$number);
     }
 
-    $tasks = Livewire::actingAs(staffManager())->test(Index::class)->viewData('tasks');
+    $tasks = Livewire::actingAs(staffManager())->test(Index::class)->call('showFile', Index::MANUAL_FILE)->viewData('tasks');
 
     expect($tasks->perPage())->toBe(10)->and($tasks->count())->toBe(10)->and($tasks->total())->toBe(11)->and($tasks->lastPage())->toBe(2);
 });
@@ -501,9 +596,10 @@ test('manage task shows bright work statuses, pastel priorities and an orange vi
     $task->forceFill(['priority_code' => 'urgent'])->save();
 
     Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', Index::MANUAL_FILE)
         ->assertSeeHtml('bg-slate-500 text-white')
         ->assertSeeHtml('bg-rose-200')
-        ->assertSeeHtml('class="btn btn-primary" href="'.route('admin.tasks.show', $task).'"');
+        ->assertSeeHtml('class="btn btn-primary btn-sm whitespace-nowrap" href="'.route('admin.tasks.show', $task).'"');
 });
 
 test('admin pages with editable dates use the shared calendars instead of browser date fields', function (): void {
@@ -552,7 +648,7 @@ test('assign to rider applies straight away, reports success and shows the rider
         ->and(BulkOperation::query()->sole()->status)->toBe('completed');
 
     session()->flush();
-    Livewire::actingAs(staffManager())->test(Index::class)->assertSeeHtml('<td>Abdul</td>')->assertDontSeeHtml('<td>Unassigned</td>');
+    Livewire::actingAs(staffManager())->test(Index::class)->call('showFile', Index::MANUAL_FILE)->assertSeeHtml('<td>Abdul</td>')->assertDontSeeHtml('<td>Unassigned</td>');
 });
 
 test('assign to rider warns when some tasks could not be changed and says why', function (): void {
