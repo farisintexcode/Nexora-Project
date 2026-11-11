@@ -28,6 +28,10 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'malaysia_calendar' => [
+        'url' => env('MALAYSIA_CALENDAR_API_URL', 'https://mycal-api.huijun00100101.workers.dev/v1'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

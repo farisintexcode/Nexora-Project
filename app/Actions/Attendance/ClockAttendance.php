@@ -8,6 +8,7 @@ use App\Models\LeaveRequest;
 use App\Models\Staff;
 use App\Models\User;
 use App\Services\Attendance\AttendanceStatus;
+use App\Services\Attendance\WorkCalendar;
 use App\Services\AuditWriter;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -16,7 +17,7 @@ use Illuminate\Validation\ValidationException;
 
 class ClockAttendance
 {
-    public function __construct(private AttendanceStatus $status, private AuditWriter $audit) {}
+    public function __construct(private AttendanceStatus $status, private AuditWriter $audit, private WorkCalendar $calendar) {}
 
     /** M10/UI53: lock the existing Rider, never accept a client-supplied clock time. */
     public function punch(User $actor, string $direction, string $requestId, ?string $record = null, ?int $version = null, ?string $remarks = null): Attendance
@@ -56,6 +57,11 @@ class ClockAttendance
                 throw ValidationException::withMessages(['clock' => 'You already have an open shift. Clock out or request a correction first.']);
             }
             $today = $now->timezone(config('dcms.business_timezone'))->startOfDay();
+            try {
+                $this->calendar->ensure($rider->id, $today->subDay()->toDateString(), $today->toDateString());
+            } catch (ValidationException) {
+                // A conflicting shift leaves the day unscheduled; the punch is still recorded for review.
+            }
             $overnight = AttendanceSchedule::query()->where('rider_id', $rider->id)->where('day_type', 'scheduled')->where('service_date', $today->subDay()->toDateString())
                 ->where('scheduled_start_at', '<=', $now)->where('scheduled_end_at', '>', $now)->first();
             $schedule = $overnight ?? AttendanceSchedule::query()->where('rider_id', $rider->id)->where('service_date', $today->toDateString())->where('day_type', 'scheduled')->first();

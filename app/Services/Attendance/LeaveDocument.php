@@ -16,16 +16,34 @@ class LeaveDocument
 {
     public function __construct(private MalwareScanner $scanner) {}
 
+    public static function disk(): string
+    {
+        return config('attendance.document_disk') === 'local' ? 'local' : 's3';
+    }
+
+    /** Production always scans, whatever the setting says. */
+    public static function scanRequired(): bool
+    {
+        return config('attendance.document_scan_required') || app()->isProduction();
+    }
+
+    public static function bucket(): ?string
+    {
+        return self::disk() === 's3' ? config('filesystems.disks.s3.bucket') : 'local';
+    }
+
     public function store(User $actor, UploadedFile $file, string $key): Document
     {
         Validator::make(['support' => $file], ['support' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120']])->validate();
-        if (! config('filesystems.disks.s3.bucket')) {
+        if (! self::bucket()) {
             throw ValidationException::withMessages(['support' => 'Private document storage is unavailable. Please contact your administrator.']);
         }
-        try {
-            $this->scanner->scan($file->getRealPath());
-        } catch (\RuntimeException) {
-            throw ValidationException::withMessages(['support' => 'The document security check failed or is unavailable. Try again with a valid document.']);
+        if (self::scanRequired()) {
+            try {
+                $this->scanner->scan($file->getRealPath());
+            } catch (\RuntimeException) {
+                throw ValidationException::withMessages(['support' => 'The document security check failed or is unavailable. Try again with a valid document.']);
+            }
         }
         $bytes = file_get_contents($file->getRealPath());
         $mime = $file->getMimeType();
@@ -60,7 +78,7 @@ class LeaveDocument
             throw ValidationException::withMessages(['support' => 'The processed document must be no larger than 5 MB.']);
         }
         try {
-            $saved = Storage::disk('s3')->put($key, Crypt::encryptString($bytes), ['visibility' => 'private']);
+            $saved = Storage::disk(self::disk())->put($key, Crypt::encryptString($bytes), ['visibility' => 'private']);
         } catch (\Throwable) {
             $saved = false;
         }
@@ -68,17 +86,19 @@ class LeaveDocument
             throw ValidationException::withMessages(['support' => 'Your document could not be saved. Try again later.']);
         }
         $doc = new Document;
-        $doc->forceFill(['owner_type' => 'user', 'owner_id' => $actor->id, 'uploaded_by' => $actor->id, 'disk' => 's3', 'bucket' => config('filesystems.disks.s3.bucket'), 'object_key' => $key, 'original_filename' => $mime === 'application/pdf' ? 'support.pdf' : 'support.jpg', 'mime_type' => $mime, 'size_bytes' => strlen($bytes), 'sha256' => hash('sha256', $bytes), 'document_type_code' => 'leave_support', 'scan_status' => 'clean'])->save();
+        $doc->forceFill(['owner_type' => 'user', 'owner_id' => $actor->id, 'uploaded_by' => $actor->id, 'disk' => self::disk(), 'bucket' => self::bucket(), 'object_key' => $key, 'original_filename' => $mime === 'application/pdf' ? 'support.pdf' : 'support.jpg', 'mime_type' => $mime, 'size_bytes' => strlen($bytes), 'sha256' => hash('sha256', $bytes), 'document_type_code' => 'leave_support', 'scan_status' => self::scanRequired() ? 'clean' : 'skipped'])->save();
 
         return $doc;
     }
 
     public function bytes(Document $doc): string
     {
-        if ($doc->disk !== 's3' || $doc->bucket !== config('filesystems.disks.s3.bucket') || $doc->scan_status !== 'clean' || $doc->document_type_code !== 'leave_support' || $doc->size_bytes > 5242880 || ! in_array($doc->mime_type, ['application/pdf', 'image/jpeg'], true)) {
+        $expectedBucket = $doc->disk === 's3' ? config('filesystems.disks.s3.bucket') : 'local';
+        $scanAccepted = $doc->scan_status === 'clean' || ($doc->scan_status === 'skipped' && ! self::scanRequired());
+        if (! in_array($doc->disk, ['s3', 'local'], true) || blank($expectedBucket) || $doc->bucket !== $expectedBucket || ! $scanAccepted || $doc->document_type_code !== 'leave_support' || $doc->size_bytes > 5242880 || ! in_array($doc->mime_type, ['application/pdf', 'image/jpeg'], true)) {
             throw new \RuntimeException('Invalid document');
         }
-        $encrypted = Storage::disk('s3')->get($doc->object_key);
+        $encrypted = Storage::disk($doc->disk)->get($doc->object_key);
         if (! is_string($encrypted) || strlen($encrypted) > 14000000) {
             throw new \RuntimeException('Unavailable document');
         }

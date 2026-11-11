@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Actions\Tasks\TaskProof;
 use App\Models\ImportTemplate;
 use App\Models\ReferenceValue;
+use App\Services\Attendance\LeaveDocument;
 use App\Services\Customers\CustomerSearch;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -137,7 +138,7 @@ class Doctor extends Command
 
     private function checkStorage(): void
     {
-        foreach (['Excel file storage' => ['imports.disk', 'IMPORT_DISK'], 'Rider proof storage' => ['task_execution.disk', 'PROOF_DISK']] as $label => [$key, $setting]) {
+        foreach (['Excel file storage' => ['imports.disk', 'IMPORT_DISK'], 'Rider proof storage' => ['task_execution.disk', 'PROOF_DISK'], 'Leave document storage' => ['attendance.document_disk', 'LEAVE_DOCUMENT_DISK']] as $label => [$key, $setting]) {
             $disk = config($key);
             if ($disk === 's3' && blank(config('filesystems.disks.s3.bucket'))) {
                 $this->record($label, "S3 is not configured. On a development computer, set {$setting}=local in .env.");
@@ -160,6 +161,7 @@ class Doctor extends Command
         $required = array_filter([
             'IMPORT_SCAN_REQUIRED' => config('imports.scan_required') || app()->isProduction(),
             'PROOF_SCAN_REQUIRED' => TaskProof::scanRequired(),
+            'LEAVE_DOCUMENT_SCAN_REQUIRED' => LeaveDocument::scanRequired(),
         ]);
         if ($required === []) {
             $this->record('Malware scanner', 'Scanning is off. This is fine on a development computer only.', 'WARN');

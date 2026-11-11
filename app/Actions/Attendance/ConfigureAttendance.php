@@ -32,7 +32,10 @@ class ConfigureAttendance
                 'rules.break_minutes' => ['required', 'integer', 'between:0,720'], 'rules.grace_minutes' => ['required', 'integer', 'between:0,240'],
                 'rules.present_minutes' => ['required', 'integer', 'between:1,1440'], 'rules.half_day_minutes' => ['required', 'integer', 'min:1', 'lt:rules.present_minutes'],
                 'rules.overnight_allowed' => ['required', 'boolean'],
-            ])->validate();
+                'is_default' => ['sometimes', 'boolean'],
+                'effective_from' => ['nullable', 'required_if_accepted:is_default', 'date_format:Y-m-d', 'after_or_equal:'.now()->timezone(config('dcms.business_timezone'))->toDateString()],
+            ], ['effective_from.after_or_equal' => 'Choose today or a later start date. Days that already started keep their version.'])->validate();
+            $isDefault = (bool) ($data['is_default'] ?? false);
             $rules = $data['rules'];
             DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', ['attendance.policy:'.$data['code']]);
             foreach (['break_minutes', 'grace_minutes', 'present_minutes', 'half_day_minutes'] as $key) {
@@ -45,8 +48,8 @@ class ConfigureAttendance
                 throw ValidationException::withMessages(['rules.present_minutes' => 'Present minutes cannot exceed the configured shift less unpaid break.']);
             }
             $policy = new AttendancePolicy;
-            $policy->forceFill(['code' => $data['code'], 'version' => 1 + (int) AttendancePolicy::query()->where('code', $data['code'])->max('version'), 'timezone' => config('dcms.business_timezone'), 'rules' => $rules, 'is_active' => true, 'approved_by' => $actor->id, 'approved_at' => now()])->save();
-            $this->audit->record($actor, 'attendance.policy_published', $policy->public_id, ['status' => 'approved'], module: 'M10', entityType: 'attendance_policy');
+            $policy->forceFill(['code' => $data['code'], 'version' => 1 + (int) AttendancePolicy::query()->where('code', $data['code'])->max('version'), 'timezone' => config('dcms.business_timezone'), 'rules' => $rules, 'is_active' => true, 'approved_by' => $actor->id, 'approved_at' => now(), 'is_default' => $isDefault, 'effective_from' => $isDefault ? $data['effective_from'] : null])->save();
+            $this->audit->record($actor, 'attendance.policy_published', $policy->public_id, ['status' => 'approved', 'is_default' => $isDefault, 'effective_from' => $policy->effective_from?->toDateString()], module: 'M10', entityType: 'attendance_policy');
 
             return $policy;
         }, 3);

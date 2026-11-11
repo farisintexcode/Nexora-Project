@@ -701,10 +701,32 @@
     .btn-soft-blue { @apply border-sky-200 bg-sky-100 text-sky-900 hover:border-sky-300 hover:bg-sky-200 active:bg-sky-300; }
     .btn-dark-orange { @apply border-orange-700 bg-orange-700 text-white hover:border-orange-800 hover:bg-orange-800 active:bg-orange-900; }
     .hr-actions { @apply flex flex-wrap items-center gap-3; }
+    .info-tile { @apply flex min-w-0 items-start gap-3 rounded-xl border border-transparent p-3 transition-colors duration-150; }
+    .info-tile:hover, .info-tile:focus-within { @apply border-ink-200 bg-brand-soft/60; }
+    .info-tile-icon { @apply inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-ink-200 bg-brand-soft text-brand-dark transition-transform duration-150; }
+    .info-tile:hover .info-tile-icon { transform: scale(1.06); }
+    .info-copy { @apply inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-500 opacity-0 transition hover:text-brand-dark focus-visible:opacity-100; }
+    .info-copy:hover { background-color: var(--surface); }
+    .info-tile:hover .info-copy, .info-tile:focus-within .info-copy { opacity: 1; }
+    @media (hover: none) { .info-copy { opacity: 1; } }
+    .status-card { @apply grid min-w-0 cursor-pointer gap-3 p-4 text-left disabled:cursor-wait; --tone: var(--color-brand-primary); transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+    .status-card:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--tone); box-shadow: 0 12px 24px -16px var(--tone); }
+    .status-card:active:not(:disabled) { transform: translateY(0); }
+    .status-card:focus-visible { outline: 2px solid var(--tone); outline-offset: 2px; }
+    .status-card[aria-pressed='true'] { border-color: var(--tone); background-color: color-mix(in srgb, var(--tone) 8%, var(--surface)); box-shadow: inset 0 0 0 1px var(--tone); }
+    .status-chip { @apply inline-flex size-8 shrink-0 items-center justify-center rounded-xl; color: var(--tone); background-color: color-mix(in srgb, var(--tone) 12%, transparent); transition: transform .15s ease; }
+    .status-card:hover .status-chip { transform: scale(1.08); }
+    .status-hint { @apply flex items-center gap-1 text-[11px] font-medium text-ink-500 transition-colors; }
+    .status-card:hover .status-hint, .status-card[aria-pressed='true'] .status-hint { color: var(--tone); }
+    .status-card:hover .status-hint svg[data-icon='arrow-right'] { transform: translateX(2px); }
+    .status-hint svg { transition: transform .15s ease; }
+    .btn-ghost { @apply min-h-9 rounded-lg border-transparent bg-transparent px-3 py-1.5 text-xs text-ink-600 shadow-none hover:bg-brand-soft hover:text-brand-dark; }
 }
 @layer utilities {
     .dark .btn-soft-blue { border-color: rgb(56 189 248 / 35%); background-color: rgb(56 189 248 / 16%); color: var(--color-sky-200); }
     .dark .btn-soft-blue:hover:not(:disabled) { background-color: rgb(56 189 248 / 26%); }
+    .dark .btn-ghost { background-color: transparent; color: var(--color-ink-600); }
+    .dark .btn-ghost:hover { background-color: var(--color-ink-100); color: var(--foreground); }
 }
 
 /* Manage Task: Excel file name that filters the table to that file's customers. */
