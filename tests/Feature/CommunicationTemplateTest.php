@@ -69,7 +69,8 @@ test('three approved owner defaults seed idempotently without fabricating approv
 test('template workspace enforces administrative communication grants', function (): void {
     $this->get(route('admin.communications.index'))->assertRedirect(route('login'));
     $actor = staffManager();
-    $this->actingAs($actor)->get(route('admin.communications.index'))->assertOk()->assertSee('Communications')->assertSee('View approved option 1')->assertSee('Friendly Payment Reminder');
+    $this->actingAs($actor)->get(route('admin.communications.index'))->assertOk()->assertSee('Communications')->assertSee('View approved option 1')->assertSee('Friendly Payment Reminder')
+        ->assertSee('From wording to delivery')->assertSee('Sending readiness')->assertSee('Preview only')->assertSee('Example · not a real message');
     $this->get(route('admin.communications.templates.edit', templateDefault()))->assertOk()->assertSee('Saved wording');
     $this->get(route('admin.communications.templates.edit', ['template' => templateDefault()->public_id, 'customer' => (string) Str::uuid7()]))->assertNotFound();
     $actor->syncRoles([]);

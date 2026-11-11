@@ -170,7 +170,8 @@
     .sidebar-link[aria-current='page'] svg, .sidebar-link[data-active-parent] > svg:first-child { color: var(--color-brand-accent); }
     .sidebar-label { @apply min-w-0; }
     .sidebar-tag { @apply ml-auto rounded border px-1.5 py-0.5 text-[9px] font-normal; border-color: rgb(255 255 255 / 16%); }
-    .sidebar-count { @apply ml-auto min-w-5 rounded-full bg-brand-accent px-1.5 py-0.5 text-center text-[10px] leading-4 font-semibold text-brand-dark tabular-nums; }
+    .btn-sm { @apply min-h-9 rounded-lg px-3 py-1.5 text-xs; }
+    .sidebar-count {@apply ml-auto min-w-5 rounded-full bg-brand-accent px-1.5 py-0.5 text-center text-[10px] leading-4 font-semibold text-brand-dark tabular-nums; }
     .sidebar-count-dot { @apply absolute top-3 left-7 hidden size-2 rounded-full bg-brand-accent ring-2; --tw-ring-color: var(--color-brand-primary); }
     .sidebar-compact .sidebar-count-dot { display: block; }
     .sidebar-planned { @apply cursor-default; color: #a6c0d0; }

@@ -39,6 +39,8 @@
     @case('tag')<path d="M3 3h8l10 10-8 8L3 11Z"/><circle cx="7" cy="7" r="1"/>@break
     @case('info')<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.01"/>@break
     @case('chart')<path d="M4 3v18h17M9 17v-6M14 17V7M19 17V4"/>@break
+    @case('message')<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/>@break
+    @case('send')<path d="m21 3-9.5 9.5M21 3l-6.5 18-3-8.5L3 9.5Z"/>@break
     @case('download')<path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/>@break
     @case('external')<path d="M14 4h6v6m0-6-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>@break
     @case('file')<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>@break

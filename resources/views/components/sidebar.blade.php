@@ -37,8 +37,8 @@
         @endcanany
         <div class="sidebar-divider" x-show="!query.trim()"></div>
         <p class="sidebar-section sidebar-label" x-show="!query.trim()">Supporting modules</p>
-        @can('viewAny',\App\Models\CollectionActivity::class)<x-sidebar-item label="Call Centre" icon="phone" :href="route('admin.calls.index')" :active="request()->routeIs('admin.calls.*')" />@endcan
-        @can('viewAny',\App\Models\CommunicationTemplate::class)<x-sidebar-item label="Communications" icon="mail" :href="route('admin.communications.index')" :active="request()->routeIs('admin.communications.*')" />@endcan
+        @can('viewAny',\App\Models\CollectionActivity::class)<x-sidebar-item label="Call Centre" tag="Upcoming" icon="phone" :href="route('admin.calls.index')" :active="request()->routeIs('admin.calls.*')" />@endcan
+        @can('viewAny',\App\Models\CommunicationTemplate::class)<x-sidebar-item label="Communications" tag="Upcoming" icon="mail" :href="route('admin.communications.index')" :active="request()->routeIs('admin.communications.*')" />@endcan
     @else
         <div class="rider-menu-profile sidebar-label"><span class="rider-avatar"><x-profile-photo /></span><div class="min-w-0"><p class="font-semibold">{{ auth()->user()->name }}</p><p class="mt-1 break-all text-xs">{{ auth()->user()->email }}</p></div></div>
         <p class="sidebar-section sidebar-label" x-show="!query.trim()">Your workspace</p>

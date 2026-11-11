@@ -58,6 +58,18 @@ test('call routes enforce permissions', function (): void {
     $this->get(route('admin.calls.index'))->assertForbidden();
 });
 
+test('call centre hub shows my activity recent calls tap-to-dial and upcoming channels', function (): void {
+    [$actor, $customer, $contact] = callFixture();
+    recordTestCall($actor, $customer, ['contact' => $contact->public_id], (string) Str::uuid7());
+
+    Livewire::actingAs($actor)->test(Index::class)
+        ->assertViewHas('stats', fn (array $stats): bool => $stats['callsToday'] === 1 && $stats['callsWeek'] === 1)
+        ->assertViewHas('recentCalls', fn ($calls): bool => $calls->count() === 1)
+        ->assertSee('My recent calls')->assertSee('WhatsApp chat & calling')->assertSee('Coming soon');
+    $this->actingAs($actor)->get(route('admin.calls.show', $customer))->assertOk()
+        ->assertSee('Reach this customer')->assertSee('href="tel:+60123456789"', false);
+});
+
 test('taskless calls are encrypted append-only idempotent and auditable', function (): void {
     [$actor, $customer, $contact] = callFixture();
     $key = (string) Str::uuid7();
