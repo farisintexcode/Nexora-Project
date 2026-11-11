@@ -2,6 +2,7 @@
 
 use App\Actions\Tasks\ReviewSubmission;
 use App\Actions\Tasks\RiderWork;
+use App\Livewire\Admin\NotificationBell;
 use App\Livewire\Admin\Verification\Show;
 use App\Models\AuditLog;
 use App\Models\Document;
@@ -12,6 +13,7 @@ use App\Models\TaskAllocation;
 use App\Models\TaskReview;
 use App\Models\TaskSubmission;
 use App\Models\User;
+use App\Notifications\TaskSubmitted;
 use App\Services\Reports\TaskReports;
 use App\Services\Tasks\CompletionChecklist;
 use Database\Seeders\DatabaseSeeder;
@@ -60,6 +62,35 @@ test('verification routes require reviewer permission', function (): void {
     $this->actingAs($rider)->get(route('admin.verification.index'))->assertForbidden();
     $this->actingAs($reviewer)->get(route('admin.verification.index'))->assertOk()->assertSee('Task verification');
     $this->get(route('admin.verification.show', $submission))->assertOk()->assertSee('Synthetic submitted visit');
+});
+
+test('submitting a task notifies verifiers through the admin bell and live counts', function (): void {
+    [$reviewer,$rider,$task,$submission] = reviewFixture();
+    $notification = $reviewer->notifications()->where('type', TaskSubmitted::class)->sole();
+    expect($notification->data)->toMatchArray(['task' => $task->public_id, 'submission' => $submission->public_id])
+        ->and($notification->data['message'])->toBe($rider->staff->full_name.' submitted a task for verification.')
+        ->and($rider->notifications()->where('type', TaskSubmitted::class)->exists())->toBeFalse();
+
+    $this->actingAs($reviewer)->get(route('admin.home'))->assertOk()->assertSee('Notifications, 1 unread')->assertSeeHtml('sidebar-count');
+    $bell = Livewire::actingAs($reviewer)->test(NotificationBell::class)->assertSee('submitted a task for verification')
+        ->assertSet('pendingCounts', ['tasks' => 1, 'leave' => 0]);
+    $bell->call('refreshCounts')->assertDispatched('pending-reviews', tasks: 1, leave: 0)->assertNotDispatched('pending-reviews-changed');
+    app(ReviewSubmission::class)->confirm($reviewer, verificationPreview($reviewer, $submission, 'approved', 'Checked'));
+    $bell->call('refreshCounts')->assertDispatched('pending-reviews-changed')->assertSet('pendingCounts', ['tasks' => 0, 'leave' => 0]);
+
+    $bell->call('open', $notification->id)->assertRedirect(route('admin.verification.show', $submission->public_id));
+    expect($notification->fresh()->read_at)->not->toBeNull();
+    $other = User::factory()->create();
+    $other->assignRole('Admin');
+    Livewire::actingAs($other)->test(NotificationBell::class)->call('open', $notification->id)->assertNotFound();
+});
+
+test('mark all as read clears the admin bell', function (): void {
+    [$reviewer] = reviewFixture();
+    reviewFixture($reviewer);
+    expect($reviewer->unreadNotifications()->count())->toBe(2);
+    Livewire::actingAs($reviewer)->test(NotificationBell::class)->call('markAllRead')->assertDontSee('Mark all as read');
+    expect($reviewer->unreadNotifications()->count())->toBe(0);
 });
 
 test('independent approval completes exact submitted version and persists immutable decision audit history and notice', function (): void {

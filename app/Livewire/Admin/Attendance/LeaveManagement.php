@@ -13,6 +13,8 @@ use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -28,6 +30,7 @@ class LeaveManagement extends Component
     #[Locked]
     public int $requestVersion = 0;
 
+    #[Url]
     public string $status = '';
 
     public string $search = '';
@@ -73,6 +76,10 @@ class LeaveManagement extends Component
         $this->resetPage();
         $this->resetValidation();
     }
+
+    /** Re-render the list when the header bell sees new leave waiting. */
+    #[On('pending-reviews-changed')]
+    public function refreshRequests(): void {}
 
     public function render(LeaveAccess $access): View
     {

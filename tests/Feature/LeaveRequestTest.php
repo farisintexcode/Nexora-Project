@@ -4,6 +4,7 @@ use App\Actions\Attendance\ClockAttendance;
 use App\Actions\Attendance\CorrectAttendance;
 use App\Actions\Attendance\ManageLeave;
 use App\Livewire\Admin\Attendance\LeaveManagement;
+use App\Livewire\Admin\NotificationBell;
 use App\Livewire\Rider\Attendance as RiderAttendance;
 use App\Livewire\Rider\LeaveRequests;
 use App\Models\Attendance;
@@ -14,7 +15,9 @@ use App\Models\Staff;
 use App\Models\User;
 use App\Notifications\LeaveUpdated;
 use App\Services\Attendance\AttendanceRegister;
+use App\Services\AttentionQueue;
 use App\Services\Imports\MalwareScanner;
+use App\Services\PendingReviews;
 use Carbon\CarbonImmutable;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
@@ -259,6 +262,25 @@ test('approved leave hides clock buttons and supersedes an unfinished clock-in o
     $this->travelTo(CarbonImmutable::parse($data['start_date'].' 10:00', 'Asia/Kuala_Lumpur')->addDay());
     AttendanceSchedule::factory()->create(['rider_id' => $rider->staff_id, 'service_date' => now()->timezone('Asia/Kuala_Lumpur')->toDateString(), 'scheduled_start_at' => now()->subHour(), 'scheduled_end_at' => now()->addHours(8), 'authorized_by' => $admin->id]);
     expect(app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7())->service_date->toDateString())->toBe(now()->timezone('Asia/Kuala_Lumpur')->toDateString());
+});
+
+test('pending leave alerts reviewers on the dashboard and sidebar but not the requester or viewers', function (): void {
+    [$rider,$admin,$type,$data] = leaveFixture();
+    submitLeave($rider, $data);
+
+    $items = collect(app(AttentionQueue::class)->forUser($admin))->keyBy('key');
+    expect($items['pending_leave'])->toMatchArray(['count' => 1, 'label' => 'Leave requests to review', 'href' => route('admin.leave.index', ['status' => 'pending'])]);
+    $this->actingAs($admin)->get(route('admin.home'))->assertOk()->assertSee('Leave requests to review')->assertSeeHtml('waiting: 1')->assertSee('Notifications, 1 unread');
+    Livewire::actingAs($admin)->test(NotificationBell::class)->assertSee('A leave request is awaiting review.')
+        ->call('open', $admin->notifications()->where('type', LeaveUpdated::class)->value('id'))->assertRedirect(route('admin.leave.show', LeaveRequest::firstOrFail()->public_id));
+    Livewire::withQueryParams(['status' => 'pending'])->actingAs($admin)->test(LeaveManagement::class)->assertSet('status', 'pending')->assertSee($rider->staff->full_name);
+
+    $viewer = User::factory()->create();
+    $viewer->givePermissionTo(['admin.access', 'attendance.view_all']);
+    expect(collect(app(AttentionQueue::class)->forUser($viewer))->pluck('key'))->not->toContain('pending_leave')
+        ->and(app(PendingReviews::class)->counts($viewer)['leave'])->toBeNull();
+    $rider->givePermissionTo(['admin.access', 'attendance.view_all', 'leave.approve']);
+    expect(app(PendingReviews::class)->leave($rider->fresh())->count())->toBe(0);
 });
 
 test('a forgotten clock-out from before the leave cannot be clocked out during approved leave', function (): void {
