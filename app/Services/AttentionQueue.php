@@ -17,7 +17,7 @@ class AttentionQueue
 {
     public const UNFINISHED_IMPORTS = ['mapping', 'ready', 'failed'];
 
-    public function __construct(private TaskAccess $tasks, private CallAccess $calls) {}
+    public function __construct(private TaskAccess $tasks, private CallAccess $calls, private PendingReviews $reviews) {}
 
     /** @return list<array{key: string, label: string, count: int, detail: string, href: string, urgent: bool}> */
     public function forUser(User $user): array
@@ -25,7 +25,7 @@ class AttentionQueue
         $items = [];
         if (Gate::forUser($user)->allows('viewAny', Task::class)) {
             $scope = Task::query();
-            $pending = (clone $scope)->where('work_status', 'submitted')->where('review_status', 'pending');
+            $pending = $this->reviews->tasks($user);
             $oldest = (clone $pending)->min('submitted_at');
             $items[] = [
                 'key' => 'pending_verification', 'label' => 'Waiting for verification', 'count' => (clone $pending)->count(),
@@ -36,6 +36,16 @@ class AttentionQueue
             $items[] = ['key' => 'overdue', 'label' => 'Overdue tasks', 'count' => $this->tasks->overdue(clone $scope)->count(), 'detail' => 'Past due and not finished', 'href' => route('admin.tasks.index', ['status' => 'overdue']), 'urgent' => true];
             $items[] = ['key' => 'unassigned', 'label' => 'Tasks without a Rider', 'count' => (clone $scope)->whereDoesntHave('currentAllocation')->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'detail' => 'Not yet allocated', 'href' => route('admin.tasks.index', ['status' => 'unassigned']), 'urgent' => false];
             $items[] = ['key' => 'returned', 'label' => 'Returned tasks', 'count' => (clone $scope)->where('review_status', 'returned')->count(), 'detail' => 'Sent back for correction', 'href' => route('admin.tasks.index', ['status' => 'returned']), 'urgent' => false];
+        }
+        $leave = $this->reviews->leave($user);
+        if ($leave !== null) {
+            $oldestLeave = (clone $leave)->min('submitted_at');
+            $items[] = [
+                'key' => 'pending_leave', 'label' => 'Leave requests to review', 'count' => (clone $leave)->count(),
+                'detail' => $oldestLeave ? 'Oldest waiting '.CarbonImmutable::parse($oldestLeave)->diffForHumans(syntax: CarbonInterface::DIFF_ABSOLUTE) : 'Nothing waiting',
+                'href' => route('admin.leave.index', ['status' => 'pending']),
+                'urgent' => false,
+            ];
         }
         if (Gate::forUser($user)->allows('viewAny', CollectionActivity::class)) {
             $items[] = [

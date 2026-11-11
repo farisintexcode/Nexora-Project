@@ -11,12 +11,14 @@ use App\Models\TaskStatusHistory;
 use App\Models\TaskSubmission;
 use App\Models\TaskSubmissionDocument;
 use App\Models\User;
+use App\Notifications\TaskSubmitted;
 use App\Services\AuditWriter;
 use App\Services\Tasks\CompletionChecklist;
 use App\Services\Tasks\RiderAccess;
 use App\Support\Money;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -197,9 +199,21 @@ class RiderWork
             }
             $task->submitted_at = now();
             $this->change($actor, $task, 'submitted', 'submitted', 'pending', $submission->id);
+            $this->notifyVerifiers($actor, $task, $submission);
 
             return $submission;
         }, 3);
+    }
+
+    /** Active verifiers other than the submitter who can open this submission. */
+    private function notifyVerifiers(User $actor, Task $task, TaskSubmission $submission): void
+    {
+        $riderName = $actor->staff?->full_name ?: $actor->name;
+        foreach (User::permission('tasks.verify')->where('id', '<>', $actor->id)->get() as $verifier) {
+            if ($verifier->isActive() && $verifier->can('admin.access') && Gate::forUser($verifier)->allows('view', $submission)) {
+                $verifier->notify(new TaskSubmitted($task->public_id, $submission->public_id, $riderName));
+            }
+        }
     }
 
     public function change(User $actor, Task $task, string $event, string $work, string $review, ?int $submission = null): void

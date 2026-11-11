@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -24,6 +25,10 @@ class Home extends Component
 
     #[Url]
     public string $assignment = '';
+
+    /** Re-render the attention cards when the header bell sees new tasks or leave waiting. */
+    #[On('pending-reviews-changed')]
+    public function refreshAttention(): void {}
 
     public function updatedPeriod(): void
     {

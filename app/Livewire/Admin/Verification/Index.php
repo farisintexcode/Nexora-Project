@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -98,6 +99,10 @@ class Index extends Component
         session()->forget('verification_search.'.Auth::id());
         $this->filtersChanged();
     }
+
+    /** Re-render the queue when the header bell sees new submissions. */
+    #[On('pending-reviews-changed')]
+    public function refreshQueue(): void {}
 
     public function render(): View
     {

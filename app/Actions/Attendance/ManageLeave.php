@@ -16,6 +16,7 @@ use App\Services\Attendance\LeaveDocument;
 use App\Services\Attendance\WorkCalendar;
 use App\Services\AuditWriter;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -137,7 +138,7 @@ class ManageLeave
                     $request->schedules()->attach($day['id'], ['service_date' => $day['service_date'], 'charged' => $day['day_type'] === 'scheduled']);
                 }
                 $this->audit->record($actor, 'leave.submitted', $request->public_id, ['status' => 'pending'], module: 'M10', entityType: 'leave_request');
-                foreach (User::permission('attendance.approve_correction')->get() as $reviewer) {
+                foreach (User::permission('leave.approve')->get() as $reviewer) {
                     if ($reviewer->id !== $actor->id && $reviewer->staff_id !== $actor->staff_id && $this->access->review($reviewer) && $this->access->view($reviewer, $request)) {
                         $reviewer->notify(new LeaveUpdated($request->public_id, 'pending', true));
                     }
@@ -179,12 +180,9 @@ class ManageLeave
                     throw ValidationException::withMessages(['decision' => 'The attendance calendar changed after submission. Reject this request and ask the Rider to apply again.']);
                 }
                 $this->overlap($request->rider_id, $data, $request->id);
-                $start = CarbonImmutable::parse($data['start_date'], config('dcms.business_timezone'))->startOfDay()->utc();
-                $end = CarbonImmutable::parse($data['end_date'], config('dcms.business_timezone'))->addDay()->startOfDay()->utc();
-                if (Attendance::query()->where('rider_id', $request->rider_id)->where(function ($q) use ($data, $start, $end): void {
-                    $q->whereBetween('service_date', [$data['start_date'], $data['end_date']])->orWhere(fn ($overlap) => $overlap->where('raw_clock_in_at', '<', $end)->where(fn ($out) => $out->whereNull('effective_clock_out_at')->orWhere('effective_clock_out_at', '>', $start)));
-                })->exists()) {
-                    throw ValidationException::withMessages(['decision' => 'Recorded attendance overlaps these dates. Resolve the attendance conflict before approving.']);
+                $conflict = $this->attendanceConflicts($request)->first();
+                if ($conflict) {
+                    throw ValidationException::withMessages(['decision' => self::describeConflict($conflict).' Correct that attendance record before approving, or reject this leave.']);
                 }
                 if (AttendanceAdjustment::query()->whereIn('schedule_id', array_column($calendar, 'id'))->where('status', 'pending')->exists()) {
                     throw ValidationException::withMessages(['decision' => 'A calendar correction is pending. Resolve it before reviewing leave.']);
@@ -196,6 +194,55 @@ class ManageLeave
 
             return $request;
         }, 3);
+    }
+
+    /**
+     * Completed shifts (clocked in and out) that overlap the leave. These block approval because the Rider actually worked.
+     *
+     * @return Collection<int, Attendance>
+     */
+    public function attendanceConflicts(LeaveRequest $request): Collection
+    {
+        return $this->overlappingAttendance($request)->filter(fn (Attendance $attendance): bool => $attendance->effective_clock_out_at !== null)->values();
+    }
+
+    /**
+     * Unfinished shifts (clocked in, never clocked out) on the leave dates. They do not block approval; approved leave takes precedence.
+     *
+     * @return Collection<int, Attendance>
+     */
+    public function unfinishedAttendance(LeaveRequest $request): Collection
+    {
+        return $this->overlappingAttendance($request)->filter(fn (Attendance $attendance): bool => $attendance->effective_clock_out_at === null)->values();
+    }
+
+    /**
+     * All recorded attendance touching the leave: shifts dated inside it, plus earlier shifts whose recorded clock-out falls inside it.
+     * A shift that was never clocked out only counts on its own date; a missing clock-out is not treated as work continuing.
+     *
+     * @return Collection<int, Attendance>
+     */
+    private function overlappingAttendance(LeaveRequest $request): Collection
+    {
+        $timezone = config('dcms.business_timezone');
+        $startDate = $request->start_date->toDateString();
+        $endDate = $request->end_date->toDateString();
+        $start = CarbonImmutable::parse($startDate, $timezone)->startOfDay()->utc();
+        $end = CarbonImmutable::parse($endDate, $timezone)->addDay()->startOfDay()->utc();
+
+        return Attendance::query()->with('schedule')->where('rider_id', $request->rider_id)->where(function ($q) use ($startDate, $endDate, $start, $end): void {
+            $q->whereBetween('service_date', [$startDate, $endDate])->orWhere(fn ($overlap) => $overlap->where('raw_clock_in_at', '<', $end)->where('effective_clock_out_at', '>', $start));
+        })->orderBy('service_date')->get();
+    }
+
+    public static function describeConflict(Attendance $attendance): string
+    {
+        $timezone = config('dcms.business_timezone');
+        $clockIn = $attendance->raw_clock_in_at?->timezone($timezone)->format('d M, g:i A');
+        $clockOut = $attendance->effective_clock_out_at?->timezone($timezone)->format('d M, g:i A');
+        $times = $clockIn ? ' (clocked in '.$clockIn.', '.($clockOut ? 'clocked out '.$clockOut : 'never clocked out').')' : '';
+
+        return 'The '.$attendance->service_date->format('d M Y').' shift'.$times.' overlaps this leave.';
     }
 
     public function cancel(User $actor, LeaveRequest $target, int $version): LeaveRequest

@@ -33,7 +33,7 @@ class Home extends Component
 
         $notices = auth()->user()->notifications()->where('type', TaskReviewed::class)->latest()->limit(5)->get();
 
-        $openAttendance = Attendance::query()->where('rider_id', auth()->user()->staff_id)->whereNull('effective_clock_out_at')->first();
+        $openAttendance = Attendance::query()->where('rider_id', auth()->user()->staff_id)->openShift()->first();
         $latestAttendance = Attendance::query()->where('rider_id', auth()->user()->staff_id)->latest('service_date')->latest('id')->first();
 
         return view('livewire.rider.home', compact('counts', 'next', 'notices', 'openAttendance', 'latestAttendance', 'assignmentsCount'));

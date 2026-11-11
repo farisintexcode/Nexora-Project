@@ -29,7 +29,7 @@ return [
         'tasks.view', 'tasks.create', 'tasks.update', 'tasks.assign', 'tasks.reassign',
         'tasks.cancel', 'tasks.delete', 'tasks.monitor', 'tasks.submit', 'tasks.verify',
         'attendance.clock', 'attendance.view_own', 'attendance.view_all', 'attendance.correct',
-        'attendance.approve_correction', 'attendance.export', 'attendance.configure',
+        'attendance.approve_correction', 'attendance.export', 'attendance.configure', 'leave.approve',
         'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override', 'calls.record', 'communications.view', 'communications.compose', 'communications.send',
         'communications.bulk_send', 'communications.generate_letter', 'templates.manage', 'templates.approve',
         'whatsapp.message', 'whatsapp.call', 'reports.view', 'reports.export',
@@ -37,6 +37,6 @@ return [
     ],
     'rider_permissions' => ['rider.access', 'tasks.view', 'tasks.submit', 'attendance.clock', 'attendance.view_own'],
     'rider_only_permissions' => ['rider.access', 'tasks.submit', 'attendance.clock', 'attendance.view_own'],
-    'reserved_permissions' => ['communications.generate_letter', 'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override', 'roles.manage', 'scopes.manage', 'templates.approve', 'attendance.approve_correction', 'integrations.manage', 'customers.view_sensitive', 'users.invite', 'assignments.reopen'],
+    'reserved_permissions' => ['communications.generate_letter', 'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override', 'roles.manage', 'scopes.manage', 'templates.approve', 'integrations.manage', 'customers.view_sensitive', 'users.invite', 'assignments.reopen'],
     'queues' => ['default', 'imports', 'exports', 'email', 'whatsapp', 'webhooks', 'media'],
 ];

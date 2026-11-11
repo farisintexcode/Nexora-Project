@@ -47,8 +47,20 @@ class Index extends Component
         Gate::authorize('viewAny', CollectionActivity::class);
         $customers = $access->search(auth()->user(), $this->only(['query', 'searchBy', 'rider']))->orderBy('customer_reference')->orderBy('id')->paginate(25);
         $canTasks = Gate::allows('viewAny', Task::class);
+        $actor = auth()->user();
+        $todayStart = now()->timezone(config('dcms.business_timezone'))->startOfDay()->utc();
+        $myCalls = CollectionActivity::query()->where('performed_by', $actor->id)->where('activity_type_code', 'call');
+        $pendingFollowUps = $access->followUps($actor)->where('status', 'pending');
 
         return view('livewire.admin.calls.index', [
+            'stats' => [
+                'callsToday' => (clone $myCalls)->where('occurred_at', '>=', $todayStart)->count(),
+                'callsWeek' => (clone $myCalls)->where('occurred_at', '>=', $todayStart->subDays(6))->count(),
+                'myFollowUps' => (clone $pendingFollowUps)->where('assigned_to', $actor->id)->count(),
+                'overdue' => (clone $pendingFollowUps)->where('due_at', '<', now())->count(),
+            ],
+            'recentCalls' => (clone $myCalls)->with('customer')->latest('occurred_at')->limit(5)->get(),
+            'searching' => trim($this->query) !== '' || $this->rider !== '',
             'customers' => $customers,
             'riders' => $canTasks ? Staff::query()->where('is_rider', true)->orderBy('staff_no')->limit(200)->get() : collect(),
             'canTasks' => $canTasks,

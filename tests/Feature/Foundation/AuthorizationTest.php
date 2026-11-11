@@ -30,14 +30,15 @@ test('rider cannot enter admin or gain admin through a login payload', function 
     expect($user->fresh()->hasRole('Admin'))->toBeFalse();
 });
 
-test('admin bundle does not imply rider eligibility or approval authority', function (): void {
+test('admin bundle approves leave and attendance corrections but does not imply rider eligibility or reserved authority', function (): void {
     $user = User::factory()->create();
     $user->assignRole('Admin');
 
     $this->actingAs($user)->get(route('admin.home'))->assertOk();
     $this->get(route('rider.home'))->assertForbidden();
 
-    expect($user->can('attendance.approve_correction'))->toBeFalse();
+    expect($user->can('leave.approve'))->toBeTrue();
+    expect($user->can('attendance.approve_correction'))->toBeTrue();
     expect($user->can('templates.approve'))->toBeFalse();
     expect($user->can('roles.manage'))->toBeFalse();
 });

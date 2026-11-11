@@ -3,7 +3,6 @@
 namespace App\Livewire\Admin\Attendance;
 
 use App\Actions\Attendance\ManageLeave;
-use App\Models\Attendance;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Notifications\LeaveUpdated;
@@ -14,6 +13,8 @@ use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -29,6 +30,7 @@ class LeaveManagement extends Component
     #[Locked]
     public int $requestVersion = 0;
 
+    #[Url]
     public string $status = '';
 
     public string $search = '';
@@ -40,8 +42,6 @@ class LeaveManagement extends Component
     public string $from = '';
 
     public string $until = '';
-
-    public string $decision = '';
 
     public string $remarks = '';
 
@@ -56,11 +56,11 @@ class LeaveManagement extends Component
         }
     }
 
-    public function decide(ManageLeave $workflow, LeaveAccess $access): void
+    public function decide(string $decision, ManageLeave $workflow, LeaveAccess $access): void
     {
         $request = $access->scope(auth()->user())->where('public_id', $this->requestId)->firstOrFail();
-        $workflow->decide(auth()->user(), $request, $this->decision, $this->remarks, $this->requestVersion);
-        session()->flash('status', 'The leave decision has been saved.');
+        $workflow->decide(auth()->user(), $request, $decision, $this->remarks, $this->requestVersion);
+        session()->flash('status', $decision === 'approved' ? 'Leave approved. The Rider has been notified.' : 'Leave rejected. The Rider has been notified.');
         $this->redirectRoute('admin.leave.show', ['leave' => $request->public_id]);
     }
 
@@ -76,6 +76,10 @@ class LeaveManagement extends Component
         $this->resetPage();
         $this->resetValidation();
     }
+
+    /** Re-render the list when the header bell sees new leave waiting. */
+    #[On('pending-reviews-changed')]
+    public function refreshRequests(): void {}
 
     public function render(LeaveAccess $access): View
     {
@@ -103,10 +107,12 @@ class LeaveManagement extends Component
             }
         }
         $counts = (clone $query)->reorder()->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status');
-        $conflicts = $selected ? Attendance::query()->where('rider_id', $selected->rider_id)->whereBetween('service_date', [$selected->start_date, $selected->end_date])->count() : 0;
+        $isPending = $selected?->status === 'pending';
+        $conflicts = $isPending ? app(ManageLeave::class)->attendanceConflicts($selected) : collect();
+        $unfinished = $isPending ? app(ManageLeave::class)->unfinishedAttendance($selected) : collect();
 
         $selectedBalance = $selected?->leaveType ? app(LeaveBalance::class)->forStaff($selected->rider_id, $selected->leaveType, $selected->start_date->year) : null;
 
-        return view('livewire.admin.attendance.leave-management', ['selectedBalance' => $selectedBalance, 'riders' => app(AttendanceAccess::class)->riders($actor)->orderBy('staff_no')->get(), 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $counts, 'canReview' => $access->review($actor), 'canConfigure' => $access->configure($actor), 'conflicts' => $conflicts, 'updates' => $actor->notifications()->where('type', LeaveUpdated::class)->latest()->limit(5)->get()]);
+        return view('livewire.admin.attendance.leave-management', ['selectedBalance' => $selectedBalance, 'riders' => app(AttendanceAccess::class)->riders($actor)->orderBy('staff_no')->get(), 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $counts, 'canReview' => $access->review($actor), 'canConfigure' => $access->configure($actor), 'conflicts' => $conflicts, 'unfinished' => $unfinished, 'updates' => $actor->notifications()->where('type', LeaveUpdated::class)->latest()->limit(5)->get()]);
     }
 }
