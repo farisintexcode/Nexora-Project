@@ -64,7 +64,7 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await page.getByLabel('Password',{exact:true}).fill(password!);
     await page.getByRole('button',{name:'Sign in',exact:true}).click();
     await expect(page).toHaveURL(/\/admin$/,{timeout:90000});
-    await page.goto('/admin/attendance');
+    await page.goto('/admin/attendance?view=records');
     await chooseDateRange(page,'service-date','Service date',localDate(-3),localDate(0));
     await page.getByLabel('Attendance status',{exact:true}).selectOption('pending_correction');
     await page.getByRole('button', {name: /^Filters/}).click();

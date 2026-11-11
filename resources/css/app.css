@@ -244,6 +244,8 @@
     .dark .bg-green-50 { background-color: #122e23; }
     .dark .bg-red-50 { background-color: #3b1c22; }
     .dark .bg-amber-50 { background-color: #49341e; }
+    .dark .bg-sky-50 { background-color: #10324a; }
+    .dark .text-sky-800 { color: #a9dcf7; }
     .dark .text-green-800, .dark .text-green-900 { color: #a5e5bd; }
     .dark .text-red-700, .dark .text-red-800, .dark .text-red-900 { color: #ffb4b4; }
     .dark .text-amber-800, .dark .text-amber-900, .dark .text-amber-950 { color: #ffd3a0; }

@@ -3,11 +3,13 @@
 use App\Actions\Attendance\ClockAttendance;
 use App\Actions\Attendance\ConfigureAttendance;
 use App\Actions\Attendance\CorrectAttendance;
+use App\Livewire\Admin\Attendance\Index as AttendanceIndex;
 use App\Models\Attendance;
 use App\Models\AttendanceAdjustment;
 use App\Models\AttendancePolicy;
 use App\Models\AttendanceSchedule;
 use App\Models\AuditLog;
+use App\Models\PublicHoliday;
 use App\Models\Staff;
 use App\Models\User;
 use App\Services\Attendance\AttendanceRegister;
@@ -19,6 +21,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(LazilyRefreshDatabase::class);
@@ -301,6 +304,24 @@ test('an independently approved planned-shift correction preserves the previous 
     $correct->review($checker, $request, 'approved', 'Changed shift checked');
     expect($punch->refresh()->is_late)->toBeFalse()->and($punch->worked_minutes)->toBe(480)->and($schedule->refresh()->scheduled_start_at->format('H:i'))->toBe('02:00')
         ->and($request->refresh()->before_values['scheduled_start_at'])->toBe('2026-10-19T01:00:00.000000Z');
+});
+
+test('today board groups riders by clock state and the month calendar marks Malaysian holidays', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 10:00', 'Asia/Kuala_Lumpur'));
+    [$admin,$rider,$schedule] = attendanceFixture();
+    $waiting = User::factory()->for(Staff::factory()->state(['first_name' => 'Waiting', 'last_name' => 'Rider']))->create();
+    AttendanceSchedule::factory()->create(['rider_id' => $waiting->staff_id, 'policy_id' => $schedule->policy_id, 'authorized_by' => $admin->id, 'scheduled_start_at' => $schedule->scheduled_start_at, 'scheduled_end_at' => $schedule->scheduled_end_at]);
+    app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
+    PublicHoliday::factory()->create(['holiday_date' => '2026-10-20', 'name' => 'Deepavali']);
+
+    Livewire::actingAs($admin)->test(AttendanceIndex::class)->assertSet('view', 'today')
+        ->assertViewHas('groups', fn (array $groups): bool => $groups['working']->pluck('rider_name')->all() === [$rider->staff->full_name] && $groups['waiting']->pluck('rider_name')->all() === ['Waiting Rider'])
+        ->assertSee("Today's work")->assertSee('Not in yet')
+        ->call('shiftDay', 1)->assertSee('Public holiday · Deepavali')
+        ->set('view', 'calendar')->assertSee('October 2026')->assertSee('Deepavali')
+        ->assertViewHas('days', fn ($days): bool => (int) $days->get('2026-10-19')->clocked_in === 1)
+        ->call('showDay', '2026-10-19')->assertSet('view', 'today')->assertSet('day', '2026-10-19');
+    $this->actingAs($admin)->get(route('admin.attendance.index', ['view' => 'records']))->assertOk()->assertSee('Download CSV');
 });
 
 test('malformed attendance filters return usable validation instead of database errors', function (): void {

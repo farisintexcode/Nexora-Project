@@ -13,7 +13,7 @@ test('compact Admin filters expand clear and fit mobile and dark mode', async ({
     await signIn(page, 'hr-admin@example.test');
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
-    for (const [path, advanced] of [['/admin/attendance', 'Rider name or staff number'], ['/admin/leave', 'Rider Name or Employee ID'], ['/admin/staff', 'Personnel']]) {
+    for (const [path, advanced] of [['/admin/attendance?view=records', 'Rider name or staff number'], ['/admin/leave', 'Rider Name or Employee ID'], ['/admin/staff', 'Personnel']]) {
         await page.goto(path);
         const toggle = page.getByRole('button', { name: /^Filters/ });
         await expect(toggle).toHaveAttribute('aria-expanded', 'false');
