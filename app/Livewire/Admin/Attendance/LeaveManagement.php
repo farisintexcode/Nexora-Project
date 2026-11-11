@@ -9,6 +9,7 @@ use App\Models\LeaveType;
 use App\Notifications\LeaveUpdated;
 use App\Services\Attendance\AttendanceAccess;
 use App\Services\Attendance\LeaveAccess;
+use App\Services\Attendance\LeaveBalance;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
@@ -80,7 +81,7 @@ class LeaveManagement extends Component
     {
         $actor = auth()->user();
         abort_unless($access->admin($actor), 403);
-        $selected = $this->requestId ? $access->scope($actor)->with('rider', 'requester', 'reviewer', 'document')->where('public_id', $this->requestId)->firstOrFail() : null;
+        $selected = $this->requestId ? $access->scope($actor)->with('rider', 'requester', 'reviewer', 'document', 'schedules', 'leaveType')->where('public_id', $this->requestId)->firstOrFail() : null;
         $query = $access->scope($actor)->with('rider');
         if (Str::isUuid($this->rider)) {
             $query->whereHas('rider', fn ($q) => $q->where('public_id', $this->rider));
@@ -104,6 +105,8 @@ class LeaveManagement extends Component
         $counts = (clone $query)->reorder()->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status');
         $conflicts = $selected ? Attendance::query()->where('rider_id', $selected->rider_id)->whereBetween('service_date', [$selected->start_date, $selected->end_date])->count() : 0;
 
-        return view('livewire.admin.attendance.leave-management', ['riders' => app(AttendanceAccess::class)->riders($actor)->orderBy('staff_no')->get(), 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $counts, 'canReview' => $access->review($actor), 'canConfigure' => $access->configure($actor), 'conflicts' => $conflicts, 'updates' => $actor->notifications()->where('type', LeaveUpdated::class)->latest()->limit(5)->get()]);
+        $selectedBalance = $selected?->leaveType ? app(LeaveBalance::class)->forStaff($selected->rider_id, $selected->leaveType, $selected->start_date->year) : null;
+
+        return view('livewire.admin.attendance.leave-management', ['selectedBalance' => $selectedBalance, 'riders' => app(AttendanceAccess::class)->riders($actor)->orderBy('staff_no')->get(), 'selected' => $selected, 'requests' => $query->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20), 'types' => LeaveType::query()->orderBy('name')->get(), 'counts' => $counts, 'canReview' => $access->review($actor), 'canConfigure' => $access->configure($actor), 'conflicts' => $conflicts, 'updates' => $actor->notifications()->where('type', LeaveUpdated::class)->latest()->limit(5)->get()]);
     }
 }

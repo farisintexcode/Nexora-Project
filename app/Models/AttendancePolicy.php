@@ -19,7 +19,13 @@ class AttendancePolicy extends Model
 
     protected function casts(): array
     {
-        return ['rules' => 'array', 'is_active' => 'boolean', 'approved_at' => 'immutable_datetime'];
+        return ['rules' => 'array', 'is_active' => 'boolean', 'approved_at' => 'immutable_datetime', 'is_default' => 'boolean', 'effective_from' => 'immutable_date'];
+    }
+
+    /** The default policy version applying to every Rider on a business date, if any. */
+    public static function defaultOn(string $date): ?self
+    {
+        return static::query()->where('is_default', true)->where('is_active', true)->where('effective_from', '<=', $date)->orderByDesc('effective_from')->orderByDesc('id')->first();
     }
 
     public function schedules(): HasMany

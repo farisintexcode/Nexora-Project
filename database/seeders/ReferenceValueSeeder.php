@@ -23,7 +23,7 @@ class ReferenceValueSeeder extends Seeder
             'address_type' => ['billing' => 'Billing', 'contact' => 'Contact'],
             'image_category' => ['street_sign' => 'Street (Sign Board)', 'premise_1' => 'Premise 1', 'premise_2' => 'Premise 2', 'meter' => 'Meter'],
         ];
-        foreach (['Johor', 'Kedah', 'Kelantan', 'Kuala Lumpur', 'Melaka', 'Negeri Sembilan', 'Pahang', 'Perak', 'Perlis', 'Pulau Pinang', 'Selangor', 'Terengganu', 'Sabah', 'Sarawak'] as $state) {
+        foreach (['Johor', 'Kedah', 'Kelantan', 'Kuala Lumpur', 'Melaka', 'Negeri Sembilan', 'Pahang', 'Perak', 'Perlis', 'Pulau Pinang', 'Selangor', 'Terengganu', 'Sabah', 'Sarawak', 'Putrajaya', 'Labuan'] as $state) {
             $categories['state'][str_replace(' ', '_', mb_strtolower($state))] = $state;
         }
         foreach ($categories as $category => $values) {

@@ -12,41 +12,55 @@ use Illuminate\Validation\ValidationException;
 /** M10/UI59: yearly entitlement, immutable adjustments and canonical charged request days. */
 class LeaveBalance
 {
-    /** @return array{entitlement:?int,adjustments:int,used:int,pending:int,available:?int} */
+    /**
+     * Yearly balance in the leave type's unit: working days charged from the calendar, or applications
+     * (each pending or approved request counts once, in the year it starts).
+     *
+     * @return array{unit: string, entitlement: ?int, adjustments: int, used: int, pending: int, available: ?int}
+     */
     public function forStaff(int $staff, LeaveType $type, int $year): array
     {
         $entitlement = DB::table('leave_entitlements')->where('leave_type_id', $type->id)->where('leave_year', $year)->value('days');
         $adjustments = (int) DB::table('leave_balance_adjustments')->where('rider_id', $staff)->where('leave_type_id', $type->id)->where('leave_year', $year)->sum('days');
-        $usage = DB::table('leave_request_days as d')->join('leave_requests as r', 'r.id', '=', 'd.leave_request_id')
-            ->where('r.rider_id', $staff)->where('r.leave_type_id', $type->id)->where('d.charged', true)
-            ->whereBetween('d.service_date', ["$year-01-01", "$year-12-31"])->whereIn('r.status', ['pending', 'approved'])
-            ->whereRaw("r.type_snapshot->>'tracks_balance' = 'true'")
-            ->selectRaw('r.status,count(*) as days')->groupBy('r.status')->pluck('days', 'status');
+        $requests = DB::table('leave_requests as r')->where('r.rider_id', $staff)->where('r.leave_type_id', $type->id)
+            ->whereIn('r.status', ['pending', 'approved'])->whereRaw("r.type_snapshot->>'tracks_balance' = 'true'");
+        $usage = $type->limitsApplications()
+            ? $requests->whereBetween('r.start_date', ["$year-01-01", "$year-12-31"])->selectRaw('r.status,count(*) as total')->groupBy('r.status')->pluck('total', 'status')
+            : $requests->join('leave_request_days as d', 'd.leave_request_id', '=', 'r.id')->where('d.charged', true)
+                ->whereBetween('d.service_date', ["$year-01-01", "$year-12-31"])->selectRaw('r.status,count(*) as total')->groupBy('r.status')->pluck('total', 'status');
         $used = (int) ($usage['approved'] ?? 0);
         $pending = (int) ($usage['pending'] ?? 0);
 
-        return ['entitlement' => $entitlement === null ? null : (int) $entitlement, 'adjustments' => $adjustments, 'used' => $used, 'pending' => $pending, 'available' => $entitlement === null ? null : (int) $entitlement + $adjustments - $used - $pending];
+        return ['unit' => $type->limit_unit ?? 'days', 'entitlement' => $entitlement === null ? null : (int) $entitlement, 'adjustments' => $adjustments, 'used' => $used, 'pending' => $pending, 'available' => $entitlement === null ? null : (int) $entitlement + $adjustments - $used - $pending];
     }
 
     /**
      * Submission holds the staff and type locks until all yearly reservations commit.
      *
      * @param  array<int, array{id:int,service_date:string,day_type:string,version:int,policy_id:int,start:?string,end:?string}>  $calendar
-     * @return array<int, array{entitlement:?int,adjustments:int,used:int,pending:int,available:?int,requested:int}>
+     * @return array<int, array{unit: string, entitlement:?int,adjustments:int,used:int,pending:int,available:?int,requested:int}>
      */
     public function check(int $staff, LeaveType $type, array $calendar): array
     {
         if (! $type->tracks_balance) {
             return [];
         }
-        $years = collect($calendar)->where('day_type', 'scheduled')->groupBy(fn (array $day): string => substr($day['service_date'], 0, 4));
+        $requested = $type->limitsApplications()
+            ? [substr((string) collect($calendar)->min('service_date'), 0, 4) => 1]
+            : collect($calendar)->where('day_type', 'scheduled')->groupBy(fn (array $day): string => substr($day['service_date'], 0, 4))->map->count()->all();
         $snapshots = [];
-        foreach ($years as $year => $days) {
+        foreach ($requested as $year => $count) {
             $balance = $this->forStaff($staff, $type, (int) $year);
-            if ($balance['available'] === null || $balance['available'] < $days->count()) {
-                throw ValidationException::withMessages(['type' => "Insufficient leave balance or annual entitlement not configured for $year. Contact your administrator."]);
+            if ($balance['available'] === null) {
+                throw ValidationException::withMessages(['type' => "{$type->name} has no yearly limit set for $year yet. Ask your administrator to set it under Leave Types."]);
             }
-            $snapshots[$year] = [...$balance, 'requested' => $days->count()];
+            if ($balance['available'] < $count) {
+                $limit = $balance['entitlement'] + $balance['adjustments'];
+                throw ValidationException::withMessages(['type' => $type->limitsApplications()
+                    ? "You have already used all $limit {$type->name} applications for $year (including requests waiting for approval)."
+                    : "Not enough {$type->name} left for $year: this request needs $count working ".($count === 1 ? 'day' : 'days').", but only {$balance['available']} ".($balance['available'] === 1 ? 'is' : 'are').' left.']);
+            }
+            $snapshots[$year] = [...$balance, 'requested' => $count];
         }
 
         return $snapshots;

@@ -4,9 +4,13 @@ namespace App\Livewire\Admin\Tasks;
 
 use App\Actions\Tasks\DeleteTasks;
 use App\Models\AssignmentBatch;
+use App\Models\ImportBatch;
+use App\Models\ImportRow;
 use App\Models\Staff;
 use App\Models\Task;
 use App\Services\Tasks\TaskAccess;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -25,11 +29,17 @@ class Index extends Component
 
     private const ADVANCED_FILTERS = ['priority', 'rider', 'from', 'until'];
 
+    /** File filter value for tasks created manually without an Excel file. */
+    public const MANUAL_FILE = 'manual';
+
     #[Url]
     public string $status = 'all';
 
     #[Url]
     public string $batch = '';
+
+    #[Url]
+    public string $file = '';
 
     #[Url]
     public string $rider = '';
@@ -64,6 +74,9 @@ class Index extends Component
     {
         if (str_starts_with($property, 'draft')) {
             return;
+        }
+        if ($property === 'batch') {
+            $this->file = '';
         }
         if ($property !== 'selected' && ! str_starts_with($property, 'selected.')) {
             $this->selected = [];
@@ -101,11 +114,48 @@ class Index extends Component
 
     public function resetFilters(): void
     {
-        $this->reset([...self::ADVANCED_FILTERS, 'query', 'status', 'batch']);
+        $this->reset([...self::ADVANCED_FILTERS, 'query', 'status', 'batch', 'file']);
         $this->syncDraft();
         session()->forget('task_search.'.Auth::id());
         $this->selected = [];
         $this->resetPage();
+    }
+
+    /** Open one uploaded Excel file (or the manually created tasks) and list every customer in it. */
+    public function showFile(string $publicId): void
+    {
+        if ($publicId !== self::MANUAL_FILE) {
+            $excelFile = $this->taskFiles()->where('public_id', $this->validUuid($publicId))->first();
+            if (! $excelFile) {
+                return;
+            }
+        }
+        $this->clearTaskFilters();
+        $this->file = $publicId === self::MANUAL_FILE ? self::MANUAL_FILE : $excelFile->public_id;
+        $this->batch = $publicId === self::MANUAL_FILE ? $this->batch : ($excelFile->assignment?->public_id ?? '');
+    }
+
+    /** Return to the first view: the list of uploaded Excel files. */
+    public function backToFiles(): void
+    {
+        $this->clearTaskFilters();
+        $this->file = '';
+    }
+
+    private function clearTaskFilters(): void
+    {
+        $this->reset([...self::ADVANCED_FILTERS, 'query', 'status']);
+        session()->forget('task_search.'.Auth::id());
+        $this->syncDraft();
+        $this->selected = [];
+        $this->resetPage();
+    }
+
+    /** Customers are listed once a file is open or a task search/filter is applied; otherwise the Excel files are listed. */
+    private function showsCustomers(): bool
+    {
+        return $this->file !== '' || trim($this->query) !== '' || $this->status !== 'all'
+            || array_filter([$this->priority, $this->rider, $this->from, $this->until], fn (string $value): bool => $value !== '') !== [];
     }
 
     public function allocate(): void
@@ -143,6 +193,12 @@ class Index extends Component
         if ($this->batch !== '') {
             $tasks->whereHas('batch', fn ($q) => $q->where('public_id', $this->validUuid($this->batch)));
         }
+        $activeFile = in_array($this->file, ['', self::MANUAL_FILE], true) ? null : $this->taskFiles()->where('public_id', $this->validUuid($this->file))->first();
+        if ($this->file === self::MANUAL_FILE) {
+            $tasks->whereNull('import_batch_id')->whereNull('source_import_row_id');
+        } elseif ($this->file !== '') {
+            $activeFile ? $tasks->fromImport($activeFile->id) : $tasks->whereRaw('false');
+        }
         if ($this->rider !== '') {
             $tasks->whereHas('currentAllocation.collector', fn ($q) => $q->where('public_id', $this->validUuid($this->rider)));
         }
@@ -158,7 +214,50 @@ class Index extends Component
             $tasks->when($this->from !== '', fn ($q) => $q->where('tasks.created_at', '>=', Carbon::parse($this->from, config('dcms.business_timezone'))->utc()))->when($this->until !== '', fn ($q) => $q->where('tasks.created_at', '<', Carbon::parse($this->until, config('dcms.business_timezone'))->addDay()->utc()));
         }
 
-        return view('livewire.admin.tasks.index', ['tasks' => $tasks->with(['batch', 'account', 'customer', 'currentAllocation.collector', 'latestBalance'])->withMax('history', 'occurred_at')->latest('id')->paginate(10), 'batches' => AssignmentBatch::query()->where('status', 'active')->latest('id')->limit(200)->get(), 'riders' => Staff::query()->where('is_rider', true)->orderBy('first_name')->limit(200)->get(), 'activeFilterCount' => count(array_filter([$this->priority, $this->rider, $this->from.$this->until], fn (string $value): bool => $value !== '')), 'metrics' => ['active' => (clone $scope)->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'unassigned' => (clone $scope)->whereDoesntHave('currentAllocation')->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'assigned' => (clone $scope)->whereHas('currentAllocation')->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'pending' => (clone $scope)->where('work_status', 'submitted')->where('review_status', 'pending')->count()]]);
+        $selectedAssignment = $this->batch === '' ? null : AssignmentBatch::query()->where('public_id', $this->validUuid($this->batch))->first();
+        $assignmentId = $this->batch === '' ? null : ($selectedAssignment?->id ?? 0);
+        $excelFiles = $this->taskFiles()->when($assignmentId !== null, fn ($query) => $query->where('assignment_batch_id', $assignmentId))->limit(200)->get();
+        $showsCustomers = $this->showsCustomers();
+        $manualTasks = Task::query()->whereNull('import_batch_id')->whereNull('source_import_row_id')->when($assignmentId !== null, fn ($query) => $query->where('assignment_batch_id', $assignmentId));
+
+        return view('livewire.admin.tasks.index', [
+            'showsCustomers' => $showsCustomers,
+            'activeFile' => $activeFile,
+            'excelFiles' => $excelFiles,
+            'fileList' => $showsCustomers ? null : $this->fileList($assignmentId),
+            'manualSummary' => $showsCustomers ? null : ['customers' => (clone $manualTasks)->count(), 'unassigned' => (clone $manualTasks)->whereDoesntHave('currentAllocation')->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'completed' => (clone $manualTasks)->where('work_status', 'completed')->count()],
+            'tasks' => $showsCustomers ? $tasks->with(['batch', 'account', 'customer', 'currentAllocation.collector', 'latestBalance', 'importBatch.source', 'sourceRow' => fn ($query) => $query->select('id', 'import_batch_id'), 'sourceRow.import.source'])->withMax('history', 'occurred_at')->latest('id')->paginate(10) : null, 'batches' => AssignmentBatch::query()->where('status', 'active')->latest('id')->limit(200)->get(), 'riders' => Staff::query()->where('is_rider', true)->orderBy('first_name')->limit(200)->get(), 'activeFilterCount' => count(array_filter([$this->priority, $this->rider, $this->from.$this->until], fn (string $value): bool => $value !== '')), 'metrics' => ['active' => (clone $scope)->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'unassigned' => (clone $scope)->whereDoesntHave('currentAllocation')->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'assigned' => (clone $scope)->whereHas('currentAllocation')->whereNotIn('work_status', ['completed', 'cancelled'])->count(), 'pending' => (clone $scope)->where('work_status', 'submitted')->where('review_status', 'pending')->count()]]);
+    }
+
+    /**
+     * First view: uploaded Excel files with how many customers each created and their progress.
+     *
+     * @return LengthAwarePaginator<int, ImportBatch>
+     */
+    private function fileList(?int $assignmentId): LengthAwarePaginator
+    {
+        $tasksInFile = fn (): Builder => Task::query()->selectRaw('count(*)')->where(fn ($query) => $query->whereColumn('tasks.import_batch_id', 'import_batches.id')
+            ->orWhereIn('tasks.source_import_row_id', ImportRow::query()->select('import_rows.id')->whereColumn('import_rows.import_batch_id', 'import_batches.id')));
+
+        return $this->taskFiles()->with('uploader')
+            ->when($assignmentId !== null, fn ($query) => $query->where('assignment_batch_id', $assignmentId))
+            ->select('import_batches.*')
+            ->addSelect([
+                'customers_count' => $tasksInFile(),
+                'unassigned_count' => $tasksInFile()->whereDoesntHave('currentAllocation')->whereNotIn('work_status', ['completed', 'cancelled']),
+                'completed_count' => $tasksInFile()->where('work_status', 'completed'),
+            ])
+            ->paginate(10);
+    }
+
+    /**
+     * Uploaded Excel files that created tasks, newest first.
+     *
+     * @return Builder<ImportBatch>
+     */
+    private function taskFiles(): Builder
+    {
+        return ImportBatch::query()->with(['source', 'assignment'])->where('kind', 'task')->where('processed_count', '>', 0)->latest('id');
     }
 
     private function validUuid(string $value): string

@@ -54,6 +54,7 @@ test('manage task offers delete beside review and removes the ticked tasks', fun
     deletableTask('FG002', $assignment);
 
     Livewire::actingAs(staffManager())->test(Index::class)
+        ->call('showFile', Index::MANUAL_FILE)
         ->assertSeeHtml('wire:click="deleteSelected"')
         ->assertDontSeeHtml('btn-danger')
         ->set('selected', [$gone->public_id])
@@ -91,7 +92,7 @@ test('only admins with the delete permission can delete', function (): void {
 
     expect(fn () => app(DeleteTasks::class)->handle($viewer, [$task->public_id]))->toThrow(HttpException::class);
     expect(Task::query()->find($task->id))->not->toBeNull();
-    Livewire::actingAs($viewer)->test(Index::class)->assertDontSeeHtml('wire:click="deleteSelected"');
+    Livewire::actingAs($viewer)->test(Index::class)->call('showFile', Index::MANUAL_FILE)->assertDontSeeHtml('wire:click="deleteSelected"');
 });
 
 test('deleted tasks leave assignment counts', function (): void {

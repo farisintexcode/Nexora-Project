@@ -14,6 +14,7 @@
             </x-select>
             <x-select name="data.is_active" label="Staff Status" wire:model="data.is_active" required><option value="1">Active</option><option value="0">Inactive</option></x-select>
             <x-select name="data.gender_code" label="Gender (optional)" wire:model="data.gender_code"><option value="">Not specified</option>@foreach($genders as $gender)<option value="{{ $gender->code }}">{{ $gender->label }}</option>@endforeach</x-select>
+            <x-select name="data.work_state_code" label="Work state (for public holidays)" wire:model="data.work_state_code"><option value="">Not set (national holidays only)</option>@foreach($states as $state)<option value="{{ $state->code }}">{{ $state->label }}</option>@endforeach</x-select>
             @if($staffId)
                 <x-input name="data.phone" label="Work / mobile phone (optional)" wire:model="data.phone" maxlength="40" />
             @else
@@ -21,7 +22,7 @@
             @endif
             <x-input name="data.home_phone" label="Home phone (optional)" wire:model="data.home_phone" maxlength="40" />
             <div class="sm:col-span-2"><x-textarea name="data.address" label="Address (optional)" wire:model="data.address" maxlength="2000" /></div>
-            <p class="field-help sm:col-span-2">System Role controls the login permission bundle. Rider access also sets staff Rider eligibility. System Admin grants require roles.manage.</p>
+            <p class="field-help sm:col-span-2">System Role controls the login permission bundle. Rider access also sets staff Rider eligibility. System Admin grants require roles.manage. Work state decides which state public holidays apply; Kedah, Kelantan and Terengganu also follow a Friday–Saturday weekend.</p>
         </fieldset>
         <fieldset class="form-section grid gap-5">
             <legend>System Account Setup</legend>
@@ -43,6 +44,6 @@
         <fieldset class="form-section grid gap-5"><legend>Record Information</legend>
             <dl class="grid gap-4 text-sm sm:grid-cols-2"><div><dt>Created At</dt><dd>{{ $staff?->created_at?->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') ?? 'Generated automatically when saved' }}</dd></div>@if($staff)<div><dt>Updated At</dt><dd>{{ $staff->updated_at->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') }}</dd></div>@endif</dl><p class="field-help">Record timestamps are read-only and displayed in Asia/Kuala_Lumpur.</p>
         </fieldset>
-        <div class="surface hr-actions sticky bottom-4 z-10 p-4"><x-button wire:loading.attr="disabled" wire:target="save"><x-icon name="check" />Save staff</x-button><a class="btn btn-secondary" href="{{ route('admin.staff.index') }}"><x-icon name="close" />Cancel</a><span wire:loading wire:target="save" class="text-xs text-ink-500">Saving staff...</span></div>
+        <div class="surface hr-actions sticky bottom-4 z-10 p-4"><x-button wire:loading.attr="disabled" wire:target="save">Save staff</x-button><a class="btn btn-secondary" href="{{ route('admin.staff.index') }}">Cancel</a><span wire:loading wire:target="save" class="text-xs text-ink-500">Saving staff...</span></div>
     </form>
 </section>

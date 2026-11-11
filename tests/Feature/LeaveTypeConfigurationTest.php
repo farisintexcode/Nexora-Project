@@ -2,6 +2,7 @@
 
 use App\Actions\Attendance\ManageLeave;
 use App\Livewire\Admin\Attendance\LeaveTypes;
+use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Models\Staff;
 use App\Models\User;
@@ -127,4 +128,20 @@ test('sample command refuses unauthorized actors and production', function (): v
     app()->detectEnvironment(fn (): string => 'production');
     $this->artisan('dcms:seed-leave-samples', ['actor' => $actor->email])->assertFailed();
     $this->assertDatabaseCount('leave_types', 0);
+});
+
+test('an unused leave type can be deleted but one with applications is kept for history', function (): void {
+    $admin = leavePolicyAdministrator();
+    $unused = app(ManageLeave::class)->configure($admin, leavePolicyInput(['name' => 'Unused leave']));
+    $used = app(ManageLeave::class)->configure($admin, leavePolicyInput(['name' => 'Used leave']));
+    LeaveRequest::factory()->create(['leave_type_id' => $used->id]);
+
+    Livewire::actingAs($admin)->test(LeaveTypes::class)
+        ->assertDontSee('>Activate<', false)->assertDontSee('>Deactivate<', false)
+        ->call('deleteType', $unused->public_id)->assertHasNoErrors()
+        ->call('deleteType', $used->public_id)->assertHasErrors('delete');
+
+    expect(LeaveType::query()->whereKey($unused->id)->exists())->toBeFalse()
+        ->and(LeaveType::query()->whereKey($used->id)->exists())->toBeTrue();
+    $this->assertDatabaseHas('audit_logs', ['action' => 'leave.type_deleted', 'entity_id' => $unused->public_id]);
 });
