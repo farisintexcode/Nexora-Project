@@ -5,7 +5,7 @@
 <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:bg-white focus:p-4">Skip to content</a>
 <header :inert="menuOpen" class="rider-header"><div class="rider-header-inner">
     <div class="flex min-w-0 items-center gap-2"><button x-ref="menuToggle" type="button" aria-label="Menu" aria-controls="rider-navigation" :aria-expanded="menuOpen" @click="openMenu()" class="rider-header-control"><x-icon name="menu" /></button><a href="{{ route('rider.home') }}" class="rider-header-brand" aria-label="Nexora Rider home"><x-brand compact /><span class="rider-brand-label">Nexora<span>Rider workspace</span></span></a></div>
-    <div class="flex shrink-0 items-center gap-2"><a href="{{ route('rider.notifications') }}" aria-label="Notifications" title="Notifications" class="rider-header-control"><x-icon name="bell" /></a><x-rider.account-menu /></div>
+    <div class="flex shrink-0 items-center gap-2"><livewire:rider.notification-bell /><x-rider.account-menu /></div>
 </div></header>
 <x-sidebar portal="rider" />
 <main :inert="menuOpen" id="main-content" class="rider-main">{{ $slot }}<footer class="rider-page-footer">Nexora · Debt Collection Management System<span>{{ config('dcms.business_timezone') }}</span></footer></main>

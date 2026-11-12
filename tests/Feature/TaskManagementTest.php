@@ -8,6 +8,8 @@ use App\Enums\BatchStatus;
 use App\Jobs\ProcessTaskOperation;
 use App\Livewire\Admin\Tasks\Editor;
 use App\Livewire\Admin\Tasks\Index;
+use App\Livewire\Rider\NotificationBell;
+use App\Livewire\Rider\Notifications;
 use App\Models\AccountParty;
 use App\Models\AssignmentBatch;
 use App\Models\BulkOperation;
@@ -20,6 +22,8 @@ use App\Models\Staff;
 use App\Models\Task;
 use App\Models\TaskAllocation;
 use App\Models\User;
+use App\Notifications\TasksAssigned;
+use App\Notifications\TasksWithdrawn;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
@@ -377,4 +381,31 @@ test('customer management pages and permissions are gone', function (): void {
         ->and(Permission::query()->whereIn('name', ['customers.create', 'customers.update', 'customers.categorize', 'customers.manage_categories', 'customers.view_sensitive'])->exists())->toBeFalse()
         ->and(Schema::hasTable('customer_categories'))->toBeFalse()
         ->and(Schema::hasColumn('import_rows', 'target_customer_id'))->toBeFalse();
+});
+
+test('riders are told once when work arrives or leaves, and the bell counts what they have not seen', function (): void {
+    [$actor,$customer,$account,$batch] = taskContext();
+    $task = app(SaveTask::class)->handle($actor, taskInput($batch, $account, $customer));
+    $one = eligibleRider();
+    $two = eligibleRider();
+    foreach ([['new', $one], ['reassign', $two], ['cancel', null]] as [$code, $rider]) {
+        $preview = taskPreview($actor, $task, $code, $rider);
+        app(TaskOperation::class)->confirm($actor, $preview, $preview->preview_digest);
+        app(TaskOperation::class)->process($preview->id);
+        app(TaskOperation::class)->process($preview->id);
+        $task->refresh();
+    }
+    $first = $one->user->fresh();
+    $second = $two->user->fresh();
+
+    expect($first->notifications()->pluck('type')->sort()->values()->all())->toBe([TasksAssigned::class, TasksWithdrawn::class])
+        ->and($first->notifications()->where('type', TasksWithdrawn::class)->sole()->data['message'])->toContain('moved to another rider')
+        ->and($second->notifications()->pluck('type')->sort()->values()->all())->toBe([TasksAssigned::class, TasksWithdrawn::class])
+        ->and($second->notifications()->where('type', TasksWithdrawn::class)->sole()->data['message'])->toContain('cancelled');
+
+    Livewire::actingAs($first)->test(NotificationBell::class)->assertSeeHtml('aria-label="Notifications, 2 unread"');
+    Livewire::actingAs($first)->test(Notifications::class)->call('markSeen')
+        ->assertDispatched('rider-notifications-read')->assertSee('Tasks removed')->assertSee('New');
+    expect($first->unreadNotifications()->count())->toBe(0);
+    Livewire::actingAs($first)->test(NotificationBell::class)->assertSeeHtml('aria-label="Notifications"');
 });

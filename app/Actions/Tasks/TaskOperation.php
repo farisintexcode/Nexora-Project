@@ -13,6 +13,7 @@ use App\Models\Task;
 use App\Models\TaskAllocation;
 use App\Models\User;
 use App\Notifications\TasksAssigned;
+use App\Notifications\TasksWithdrawn;
 use App\Services\AuditWriter;
 use App\Services\Tasks\TaskHistory;
 use App\Services\Tasks\TaskIdSelection;
@@ -181,7 +182,7 @@ class TaskOperation
             $operation->status = $operation->items()->where('state', 'failed')->exists() ? 'failed' : 'completed';
             $this->counts($operation);
             app(AuditWriter::class)->record(User::query()->find($operation->requested_by), 'task_operation_reconciled', $operation->public_id, ['status' => $operation->status], module: 'M05', entityType: 'bulk_operation');
-            $this->notifyRider($operation, $batch);
+            $this->notifyRiders($operation, $batch);
             if ($operation->operation_code === 'cancel') {
                 app(ArchiveFinishedBatch::class)->handle(User::query()->find($operation->requested_by), $batch->id);
             }
@@ -210,23 +211,42 @@ class TaskOperation
             } $operation->items()->where('state', 'pending')->update(['state' => 'failed', 'result_code' => 'worker_interrupted']);
             $operation->status = 'failed';
             $this->counts($operation);
+            $this->notifyRiders($operation, $batch);
         });
     }
 
-    /** Tell the Rider who received work, once per run, counting only the tasks that were actually allocated. */
-    private function notifyRider(BulkOperation $operation, AssignmentBatch $batch): void
+    /**
+     * Once per run, tell the Rider who received work and every Rider who lost work, counting only tasks actually changed.
+     * Lost work = allocations this run released: same reason, released after the run was prepared (a newer change would
+     * have made this run's preview stale, so no other run's release can match).
+     */
+    private function notifyRiders(BulkOperation $operation, AssignmentBatch $batch): void
     {
-        if (! in_array($operation->operation_code, ['new', 'replace', 'reassign'], true) || ! $operation->target_collector_id) {
-            return;
-        }
         $taskIds = $operation->items()->where('state', 'applied')->pluck('task_id');
-        $rider = User::query()->where('staff_id', $operation->target_collector_id)->first();
-        if ($taskIds->isEmpty() || ! $rider?->canUseRiderInterface()) {
+        if ($taskIds->isEmpty()) {
             return;
         }
         $label = trim($batch->assignment_code.' - '.$batch->name, ' -');
-        $singleTask = $taskIds->count() === 1 ? Task::query()->whereKey($taskIds->first())->value('public_id') : null;
-        $rider->notify(new TasksAssigned($batch->public_id, $label, $taskIds->count(), $singleTask));
+        $riderFor = fn (int $staffId): ?User => User::query()->where('staff_id', $staffId)->first();
+
+        if (in_array($operation->operation_code, ['new', 'replace', 'reassign'], true) && $operation->target_collector_id) {
+            $rider = $riderFor($operation->target_collector_id);
+            if ($rider?->canUseRiderInterface()) {
+                $singleTask = $taskIds->count() === 1 ? Task::query()->whereKey($taskIds->first())->value('public_id') : null;
+                $rider->notify(new TasksAssigned($batch->public_id, $label, $taskIds->count(), $singleTask));
+            }
+        }
+
+        TaskAllocation::query()->whereIn('task_id', $taskIds)->whereNotNull('released_at')
+            ->where('released_at', '>=', $operation->created_at)->where('release_reason', $operation->reason)
+            ->when($operation->target_collector_id, fn ($query) => $query->where('collector_id', '<>', $operation->target_collector_id))
+            ->get(['task_id', 'collector_id'])->groupBy('collector_id')
+            ->each(function ($released, int $collectorId) use ($operation, $batch, $label, $riderFor): void {
+                $previous = $riderFor($collectorId);
+                if ($previous?->canUseRiderInterface()) {
+                    $previous->notify(new TasksWithdrawn($batch->public_id, $label, $released->unique('task_id')->count(), $operation->operation_code));
+                }
+            });
     }
 
     private function rider(int $id): Staff
