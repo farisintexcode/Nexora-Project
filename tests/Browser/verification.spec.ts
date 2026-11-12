@@ -29,7 +29,7 @@ test('Admin independently approves or returns frozen submissions and Rider sees 
         await page.getByRole('button',{name:'Prepare review preview',exact:true}).click();
         await expect(page.getByRole('heading',{name:'Confirm exact review selection',exact:true})).toBeVisible();
         await page.getByRole('button',{name:'Confirm verification decision',exact:true}).click();
-        const dialog=page.getByRole('dialog',{name:'Commit this review?',exact:true});
+        const dialog=page.getByRole('dialog',{name:'Confirm this review?',exact:true});
         await expect(dialog).toBeVisible();
         await dialog.getByRole('button',{name:'Confirm',exact:true}).click();
         await expect(page.getByRole('heading',{name:'Recorded verification decision',exact:true})).toBeVisible();
