@@ -37,7 +37,7 @@ class SystemOverview extends Component
             'statusCounts' => collect(AccountStatus::cases())->mapWithKeys(fn (AccountStatus $status): array => [$status->value => (int) ($statusCounts[$status->value] ?? 0)]),
             'roleCounts' => $this->roleCounts(),
             'lockedAccounts' => User::query()->where('status', AccountStatus::Locked)->with('staff:id,public_id')->orderBy('name')->limit(5)->get(['id', 'name', 'email', 'staff_id']),
-            'staffWithoutLogin' => Staff::query()->where('is_active', true)->whereDoesntHave('user')->count(),
+            'staffWithoutLogin' => Staff::query()->where('is_active', true)->where('is_rider', false)->whereDoesntHave('user')->count(),
             'failedLogins' => AuditLog::query()->where('action', 'login_failed')->where('occurred_at', '>=', now()->subDay())->count(),
             'failedJobs' => Schema::hasTable('failed_jobs') ? DB::table('failed_jobs')->count() : null,
             'activity' => Gate::allows('audit.view') ? AuditLog::query()->whereIn('action', array_keys(self::ACCOUNT_EVENTS))->with('actor:id,name')->orderByDesc('id')->limit(8)->get() : collect(),

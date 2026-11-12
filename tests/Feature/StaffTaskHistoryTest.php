@@ -98,5 +98,6 @@ test('staff managers without task monitoring see no task data', function (): voi
     $manager->givePermissionTo(['admin.access', 'riders.manage']);
 
     Livewire::actingAs($manager)->test(Show::class, ['staff' => $staff])->set('tab', 'assigned')
-        ->assertSee('Task access required')->assertDontSee('FG501')->assertViewHas('performance', null);
+        ->assertViewHas('activeTab', 'profile')->assertViewHas('tabs', fn (array $tabs): bool => array_keys($tabs) === ['profile', 'activity'])
+        ->assertDontSee('FG501')->assertViewHas('performance', null);
 });

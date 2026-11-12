@@ -1,4 +1,4 @@
-<section class="grid gap-7">
+<section class="grid gap-7" wire:poll.30s>
     <x-feedback />
     <x-page-header class="dashboard-heading" :title="'Welcome, '.auth()->user()->name" eyebrow="Your workspace, at a glance" description="What needs attention today and how field work is progressing.">
         <x-slot:actions><span class="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-3 text-xs text-ink-600"><x-icon name="calendar" class="size-4" />{{ now()->timezone(config('dcms.business_timezone'))->format('D, d M Y') }}</span></x-slot:actions>

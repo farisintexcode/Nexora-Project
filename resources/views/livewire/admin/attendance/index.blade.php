@@ -1,4 +1,4 @@
-<section class="hr-page grid min-w-0 gap-6">
+<section class="hr-page grid min-w-0 gap-6" wire:poll.30s>
 <x-feedback /><x-page-header title="Attendance" eyebrow="People & operations" description="See who is working today, who is on leave, and every rider's month at a glance.">
 <x-slot:actions>@can('configure',\App\Models\Attendance::class)<a class="btn btn-primary" href="{{ route('admin.attendance.configuration') }}">Add schedule & policies</a>@endcan</x-slot:actions>
 </x-page-header>
@@ -14,7 +14,7 @@
         <div class="w-full sm:w-72"><x-select name="rider" label="Rider" wire:model.live="rider"><option value="">All riders</option>@foreach($riders as $option)<option value="{{ $option->public_id }}">{{ $option->staff_no }} - {{ $option->full_name }}</option>@endforeach</x-select></div>
     @endif
 </div>
-<div wire:loading.delay role="status" class="rounded-xl bg-brand-soft p-3 text-sm">Updating attendance…</div>
+<div wire:loading.delay wire:target.except="$refresh" role="status" class="rounded-xl bg-brand-soft p-3 text-sm">Updating attendance…</div>
 
 @if($view === 'today')
     @php($counts = collect($groups)->map->count())

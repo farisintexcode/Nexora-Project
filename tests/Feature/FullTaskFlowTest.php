@@ -8,12 +8,14 @@ use App\Livewire\Admin\Assignments\Editor as AssignmentEditor;
 use App\Livewire\Admin\Imports\Index as UploadTask;
 use App\Livewire\Admin\Imports\Review;
 use App\Livewire\Admin\Tasks\Allocation;
+use App\Livewire\Rider\Notifications as RiderNotifications;
 use App\Models\AssignmentBatch;
 use App\Models\ImportBatch;
 use App\Models\ImportField;
 use App\Models\Staff;
 use App\Models\Task;
 use App\Models\User;
+use App\Notifications\TasksAssigned;
 use App\Services\Tasks\CompletionChecklist;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -108,6 +110,9 @@ test('one task travels from add assignment through upload, assign, rider work an
         ->call('assign')->assertHasNoErrors()->assertRedirect(route('admin.tasks.index'));
     expect(session('status'))->toBe('1 task assigned to Abdul.')
         ->and($task->refresh()->currentAllocation->collector_id)->toBe($staff->id);
+    $assignedNotice = $rider->notifications()->where('type', TasksAssigned::class)->sole();
+    expect($assignedNotice->data['count'])->toBe(1)->and($assignedNotice->data['task'])->toBe($task->public_id);
+    Livewire::actingAs($rider)->test(RiderNotifications::class)->assertSee('New tasks')->assertSee('A new task was assigned to you')->assertSee('View Task');
 
     app(RiderWork::class)->start($rider, $task, $task->lock_version);
     $input = ['purpose' => 'site_visit', 'business_applicable' => false, 'signboard_available' => '', 'occurred_at' => '', 'site_address' => '10 Synthetic site', 'availability' => 'available', 'visit_status' => 'operating', 'contact_result' => 'customer_contacted', 'outcome' => 'payment_claimed', 'paid_amount' => '500.00', 'visit_remarks' => 'Synthetic visit', 'collection_remarks' => 'Synthetic collection', 'customer_remarks' => 'Synthetic customer'];

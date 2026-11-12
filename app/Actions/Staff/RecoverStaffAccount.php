@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /** M01/M10: System Admin account recovery — reset links and unlocking, always audited, never exposing secrets. */
@@ -38,7 +39,7 @@ class RecoverStaffAccount
         try {
             $status = Password::broker()->sendResetLink(['email' => $account->email, 'status' => AccountStatus::Active->value]);
         } catch (\Throwable $exception) {
-            Log::warning('Password reset mail transport failed.', ['user_id' => $account->public_id, 'exception_type' => $exception::class]);
+            Log::warning('Password reset mail transport failed.', ['user_id' => $account->public_id, 'exception_type' => $exception::class, 'reason' => Str::limit($exception->getMessage(), 300)]);
             $this->audit->record($actor, 'account_password_reset_failed', $target->public_id, ['status' => 'delivery_failed'], module: 'M10', entityType: 'staff');
 
             return 'delivery_failed';

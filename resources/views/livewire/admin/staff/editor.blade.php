@@ -8,9 +8,11 @@
             <x-input name="data.email" label="Email Address" type="email" wire:model="data.email" maxlength="254" required />
             <x-input name="data.first_name" label="First Name" wire:model="data.first_name" maxlength="100" required />
             <x-input name="data.last_name" label="Last Name" wire:model="data.last_name" maxlength="100" required />
-            <x-select name="data.system_role" label="Role" wire:model="data.system_role" required>
+            @php($accountLocked = $staff?->user && ! auth()->user()->can('manageAccount', $staff))
+            @php($invitableRoles = \App\Actions\Staff\InviteStaffAccount::invitableRoles(auth()->user()))
+            <x-select name="data.system_role" label="Role" wire:model="data.system_role" required :disabled="$accountLocked">
                 <option value="" disabled>Role</option>
-                @foreach(config('dcms.staff_roles') as $role)<option value="{{ $role }}">{{ $role }}</option>@endforeach
+                @foreach(config('dcms.staff_roles') as $role)@if($role !== 'System Admin' || auth()->user()->can('roles.manage'))<option value="{{ $role }}">{{ $role }}</option>@endif @endforeach
             </x-select>
             <x-select name="data.is_active" label="Staff Status" wire:model="data.is_active" required><option value="1">Active</option><option value="0">Inactive</option></x-select>
             <x-select name="data.gender_code" label="Gender (optional)" wire:model="data.gender_code"><option value="">Not specified</option>@foreach($genders as $gender)<option value="{{ $gender->code }}">{{ $gender->label }}</option>@endforeach</x-select>
@@ -28,15 +30,19 @@
             <legend>System Account Setup</legend>
             @if($staff?->user)
                 <p class="field-help">Linked login: {{ $staff->user->email }}. Staff email changes do not change an existing login email.</p>
-                <x-select name="data.account_status" label="Account Status" wire:model="data.account_status">
+                <x-select name="data.account_status" label="Account Status" wire:model="data.account_status" :disabled="$accountLocked">
                     @if($staff->user->status->value === 'invited' || !$staff->user->email_verified_at)<option value="invited">Invited - password setup required</option>@endif
                     @if($staff->user->status->value === 'locked')<option value="locked">Locked</option>@endif
                     <option value="active">Active</option><option value="disabled">Disabled</option>
                 </x-select>
-                <p class="field-help">Invited accounts become active only after the user sets and confirms a personal password. Changing a role requires permission authority.</p>
+                <p class="field-help">@if($accountLocked)Role and account status are managed by a System Admin.@else Invited accounts become active only after the user sets and confirms a personal password. Changing a role requires permission authority.@endif</p>
             @else
+                @if($invitableRoles !== [])
                 <label class="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" wire:model="data.create_account" class="size-4 accent-brand-primary">Create system login account</label>
-                <p class="field-help">Requires users.invite. A single-use activation link lets the user choose a personal password. Inactive staff cannot activate; activate staff and reissue the invitation first.</p>
+                <p class="field-help">You send logins for <strong>{{ implode(' and ', $invitableRoles) }}</strong>. {{ in_array('Rider', $invitableRoles, true) ? 'Administrative logins are sent by a System Admin.' : 'Rider logins are sent by Administrative staff.' }} A single-use activation link lets the person choose their own password.</p>
+                @else
+                <p class="rounded-xl bg-brand-soft p-3 text-xs leading-5">This saves the staff record only. The login invitation is sent afterwards from the staff page.</p>
+                @endif
             @endif
             @if(!config('dcms.terms_version') || !config('dcms.privacy_url'))<p role="status" class="field-help">Account setup requires the approved terms version and privacy URL to be configured.</p>@endif
             @if($staffId)<p class="field-help">{{ $outstanding ?? 0 }} outstanding current tasks. Resolve allocations before reducing availability.</p><x-textarea name="data.reason" label="Availability change reason" wire:model="data.reason" maxlength="1000" />@endif
@@ -44,6 +50,6 @@
         <fieldset class="form-section grid gap-5"><legend>Record Information</legend>
             <dl class="grid gap-4 text-sm sm:grid-cols-2"><div><dt>Created At</dt><dd>{{ $staff?->created_at?->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') ?? 'Generated automatically when saved' }}</dd></div>@if($staff)<div><dt>Updated At</dt><dd>{{ $staff->updated_at->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') }}</dd></div>@endif</dl><p class="field-help">Record timestamps are read-only and displayed in Asia/Kuala_Lumpur.</p>
         </fieldset>
-        <div class="surface hr-actions sticky bottom-4 z-10 p-4"><x-button wire:loading.attr="disabled" wire:target="save">Save staff</x-button><a class="btn btn-secondary" href="{{ route('admin.staff.index') }}">Cancel</a><span wire:loading wire:target="save" class="text-xs text-ink-500">Saving staff...</span></div>
+        <div class="surface hr-actions sticky bottom-4 z-10 p-4"><x-button wire:loading.attr="disabled" wire:target="save">{{ $staffId ? 'Save staff' : 'Add staff' }}</x-button><a class="btn btn-secondary" href="{{ route('admin.staff.index') }}">Cancel</a><span wire:loading wire:target="save" class="text-xs text-ink-500">Saving staff...</span></div>
     </form>
 </section>

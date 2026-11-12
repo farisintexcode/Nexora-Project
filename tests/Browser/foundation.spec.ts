@@ -39,7 +39,7 @@ test('synthetic credentials open only the intended workspace and sign out', asyn
         }
     }
     await page.screenshot({ path: test.info().outputPath('workspace.png'), fullPage: true });
-    await page.getByRole('link', { name: mobile ? 'Profile' : 'Account', exact: true }).click();
+    await page.getByRole('link', mobile ? { name: 'Profile', exact: true } : { name: /, account settings$/ }).click();
     await expect(page.getByRole('heading', { name: 'Account settings' })).toBeVisible();
     if (mobile) await page.getByRole('button', { name: 'Menu', exact: true }).click();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();

@@ -24,7 +24,7 @@ return [
     'permissions' => [
         'admin.access', 'rider.access', 'dashboard.view',
         'customers.view', 'customers.update_contacts',
-        'riders.manage', 'users.invite',
+        'riders.manage', 'users.invite', 'riders.invite',
         'assignments.view', 'assignments.manage', 'assignments.reopen', 'imports.view', 'imports.map', 'imports.confirm',
         'tasks.view', 'tasks.create', 'tasks.update', 'tasks.assign', 'tasks.reassign',
         'tasks.cancel', 'tasks.delete', 'tasks.monitor', 'tasks.submit', 'tasks.verify',

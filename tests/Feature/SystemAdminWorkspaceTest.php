@@ -2,12 +2,15 @@
 
 use App\Enums\AccountStatus;
 use App\Livewire\Admin\Home;
+use App\Livewire\Admin\Staff\Editor;
 use App\Livewire\Admin\Staff\Index as StaffIndex;
+use App\Livewire\Admin\Staff\Show as StaffShow;
 use App\Livewire\Admin\SystemOverview;
 use App\Models\Staff;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 
 uses(LazilyRefreshDatabase::class);
@@ -79,4 +82,58 @@ test('staff management lists login accounts without a staff record under System 
         ->set('role', 'Rider')->assertDontSee('Root Operator')
         ->set('role', 'System Admin')->assertSee('Root Operator')
         ->set('role', '')->set('accountStatus', 'locked')->assertDontSee('Root Operator');
+});
+
+test('the admin header names the signed-in person instead of saying Account', function (): void {
+    $administrative = workspaceUser('Administrative', Staff::factory()->create(['first_name' => 'Nadia', 'last_name' => 'Rahman', 'is_rider' => false]));
+    $admin = workspaceUser('System Admin');
+    $admin->forceFill(['name' => 'System Admin'])->save();
+
+    expect($administrative->firstName())->toBe('Nadia')->and($admin->firstName())->toBe('System Admin');
+    $this->actingAs($administrative)->get(route('admin.home'))->assertOk()
+        ->assertSee('Nadia</span><span class="sr-only">, account settings</span>', false);
+});
+
+test('office staff pages show only the profile, while rider pages keep the sections the viewer can use', function (): void {
+    $admin = workspaceUser('System Admin');
+    $office = Staff::factory()->create(['is_rider' => false]);
+    $rider = Staff::factory()->create(['is_rider' => true]);
+
+    Livewire::actingAs($admin)->test(StaffShow::class, ['staff' => $office])->set('tab', 'attendance')
+        ->assertViewHas('tabs', ['profile' => 'Profile'])->assertViewHas('activeTab', 'profile')->assertDontSeeHtml('aria-label="Staff sections"');
+    Livewire::actingAs($admin)->test(StaffShow::class, ['staff' => $rider])
+        ->assertViewHas('tabs', fn (array $tabs): bool => array_keys($tabs) === ['profile', 'activity']);
+    Livewire::actingAs(workspaceUser('Administrative', Staff::factory()->create(['is_rider' => false])))->test(StaffShow::class, ['staff' => $rider])
+        ->assertViewHas('tabs', fn (array $tabs): bool => array_keys($tabs) === ['profile', 'assigned', 'completed', 'activity', 'attendance', 'performance']);
+});
+
+test('Administrative staff management never shows System Admin accounts', function (): void {
+    $administrative = workspaceUser('Administrative', Staff::factory()->create(['first_name' => 'Office', 'last_name' => 'Clerk', 'is_rider' => false]));
+    $rootAccount = workspaceUser('System Admin');
+    $rootAccount->forceFill(['name' => 'Root Operator'])->save();
+    $linkedAdmin = workspaceUser('System Admin', $linkedStaff = Staff::factory()->create(['first_name' => 'Linked', 'last_name' => 'Sysadmin', 'is_rider' => false]));
+
+    Livewire::actingAs($administrative)->test(StaffIndex::class)->set('kind', 'all')
+        ->assertSee('Office Clerk')->assertDontSee('Linked Sysadmin')->assertDontSee('System accounts')->assertDontSee('Root Operator')
+        ->assertDontSeeHtml('<option value="System Admin">');
+    $this->actingAs($administrative)->get(route('admin.staff.show', $linkedStaff))->assertForbidden();
+    $this->actingAs($administrative)->get(route('admin.staff.edit', $linkedStaff))->assertForbidden();
+
+    Livewire::actingAs($rootAccount)->test(StaffIndex::class)->assertSee('Linked Sysadmin')->assertSee('System accounts');
+});
+
+test('Administrative can add a rider record without being offered a login invitation', function (): void {
+    Notification::fake();
+    config(['dcms.terms_version' => 'test-v1', 'dcms.privacy_url' => 'https://example.test/privacy', 'mail.default' => 'array']);
+    $administrative = workspaceUser('Administrative', Staff::factory()->create(['is_rider' => false]));
+
+    $editor = Livewire::actingAs($administrative)->test(Editor::class)
+        ->assertSet('data.create_account', false)->assertDontSee('Create system login account')->assertSee('A System Admin sends the login invitation');
+    $editor->set('data', [...$editor->get('data'), ...staffInput(['system_role' => 'Rider', 'create_account' => true, 'email' => 'new.rider@example.test'])])
+        ->call('save')->assertHasNoErrors();
+
+    $rider = Staff::query()->where('email', 'new.rider@example.test')->sole();
+    expect($rider->is_rider)->toBeTrue()->and($rider->user()->exists())->toBeFalse()
+        ->and(session('status'))->toContain('A System Admin sends the login invitation');
+    Notification::assertNothingSent();
 });

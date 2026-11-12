@@ -92,7 +92,7 @@ test('Admin navigation supports search groups collapse tooltips and mobile keybo
         await page.setViewportSize({ width, height: 850 });
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), { message: `No overflow at ${width}px after responsive layout settles` }).toBe(true);
     }
-    await expect(page.locator('header').getByRole('link', { name: 'Account', exact: true })).toBeVisible();
+    await expect(page.locator('header').getByRole('link', { name: /, account settings$/ })).toBeVisible();
     await expect(page.locator('header').getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
     expect(errors).toEqual([]);
 });

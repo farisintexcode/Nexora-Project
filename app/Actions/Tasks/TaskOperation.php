@@ -12,6 +12,7 @@ use App\Models\Staff;
 use App\Models\Task;
 use App\Models\TaskAllocation;
 use App\Models\User;
+use App\Notifications\TasksAssigned;
 use App\Services\AuditWriter;
 use App\Services\Tasks\TaskHistory;
 use App\Services\Tasks\TaskIdSelection;
@@ -180,6 +181,7 @@ class TaskOperation
             $operation->status = $operation->items()->where('state', 'failed')->exists() ? 'failed' : 'completed';
             $this->counts($operation);
             app(AuditWriter::class)->record(User::query()->find($operation->requested_by), 'task_operation_reconciled', $operation->public_id, ['status' => $operation->status], module: 'M05', entityType: 'bulk_operation');
+            $this->notifyRider($operation, $batch);
             if ($operation->operation_code === 'cancel') {
                 app(ArchiveFinishedBatch::class)->handle(User::query()->find($operation->requested_by), $batch->id);
             }
@@ -209,6 +211,22 @@ class TaskOperation
             $operation->status = 'failed';
             $this->counts($operation);
         });
+    }
+
+    /** Tell the Rider who received work, once per run, counting only the tasks that were actually allocated. */
+    private function notifyRider(BulkOperation $operation, AssignmentBatch $batch): void
+    {
+        if (! in_array($operation->operation_code, ['new', 'replace', 'reassign'], true) || ! $operation->target_collector_id) {
+            return;
+        }
+        $taskIds = $operation->items()->where('state', 'applied')->pluck('task_id');
+        $rider = User::query()->where('staff_id', $operation->target_collector_id)->first();
+        if ($taskIds->isEmpty() || ! $rider?->canUseRiderInterface()) {
+            return;
+        }
+        $label = trim($batch->assignment_code.' - '.$batch->name, ' -');
+        $singleTask = $taskIds->count() === 1 ? Task::query()->whereKey($taskIds->first())->value('public_id') : null;
+        $rider->notify(new TasksAssigned($batch->public_id, $label, $taskIds->count(), $singleTask));
     }
 
     private function rider(int $id): Staff

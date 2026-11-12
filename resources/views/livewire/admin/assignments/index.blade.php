@@ -1,4 +1,4 @@
-<section class="grid gap-6">
+<section class="grid gap-6" wire:poll.30s>
     <x-feedback />
     <x-page-header title="Assignment" eyebrow="Recovery work packages" description="Organize assignments, schedules and routing metadata before importing tasks."><x-slot:actions>@can('create', \App\Models\AssignmentBatch::class)<a class="btn btn-primary" href="{{ route('admin.assignments.create') }}"><x-icon name="plus" class="size-4" />New assignment</a>@endcan</x-slot:actions></x-page-header>
     <nav aria-label="Assignment register" class="segment-tabs"><a class="segment-tab" href="{{ route('admin.assignments.index') }}" @if($status === 'active') aria-current="page" @endif>Active assignments</a><a class="segment-tab" href="{{ route('admin.assignments.index', ['status'=>'overdue']) }}" @if($status === 'overdue') aria-current="page" @endif>Overdue assignments</a><a class="segment-tab" href="{{ route('admin.assignments.index', ['status'=>'archived']) }}" @if($status === 'archived') aria-current="page" @endif>Archived assignments</a></nav>
@@ -35,7 +35,7 @@
                 <div class="flex items-center gap-2"><label for="perPage" class="field-label whitespace-nowrap">Per page</label><select id="perPage" name="perPage" class="field min-h-10 w-auto py-2 text-sm" wire:model.live="perPage">@foreach(['10', '25', '50', '100'] as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach</select></div>
             </div>
         </div>
-        <x-loading wire:loading.delay label="Loading assignments…" />
+        <x-loading wire:loading.delay wire:target.except="$refresh" label="Loading assignments…" />
         @if($batches->isEmpty())
             <x-empty-state icon="briefcase" title="No assignments found" message="Try adjusting your search or filters to find what you're looking for."><button type="button" class="btn btn-secondary" wire:click="resetFilters">Clear filters</button></x-empty-state>
         @else

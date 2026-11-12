@@ -1,4 +1,4 @@
-<section class="grid gap-6">
+<section class="grid gap-6" wire:poll.20s>
 <x-feedback />
 <x-page-header title="Task monitoring" eyebrow="Operations workspace" description="Open an uploaded Excel file to review its customers, schedules and allocation history. Completion is recorded only through the verification workflow."><x-slot:actions>@can('tasks.create')<a class="btn btn-primary" href="{{ route('admin.tasks.create') }}"><x-icon name="plus" class="size-4" />Create task</a>@endcan<a class="btn btn-secondary" href="{{ route('admin.tasks.allocate') }}">Assign Task</a></x-slot:actions></x-page-header>
 <div><p class="mb-3 text-xs text-ink-500">Portfolio totals · {{ now()->timezone(config('dcms.business_timezone'))->format('d M Y, H:i') }} MYT</p><div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">@foreach(['active'=>['Active work','activity','bg-blue-600'],'unassigned'=>['Awaiting allocation','clock','bg-brand-accent'],'assigned'=>['Assigned work','users','bg-green-600'],'pending'=>['Pending verification','shield','bg-brand-primary']] as $key=>[$label,$icon,$tile])<article class="metric-card flex items-center gap-4"><span class="grid size-14 shrink-0 place-items-center rounded-xl text-white {{ $tile }}"><x-icon :name="$icon" class="size-6" /></span><div class="min-w-0 flex-1"><p class="text-xs font-medium text-ink-600">{{ $label }}</p><p class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{{ $metrics[$key] }}</p></div></article>@endforeach</div></div>
@@ -19,7 +19,7 @@
 <div class="flex flex-wrap items-center justify-between gap-3"><button type="button" class="min-h-11 text-xs font-semibold text-ink-700 underline decoration-ink-300 underline-offset-4 hover:decoration-brand-accent" wire:click="resetFilters">Clear all filters</button><div class="flex flex-wrap gap-3"><button type="button" class="btn btn-secondary min-h-11 py-2" wire:click="resetAdvancedFilters">Reset</button><button type="submit" class="btn assignment-apply min-h-11 py-2">Apply filters</button></div></div>
 </div>
 </form>
-<x-loading wire:loading.delay label="Updating task monitoring…" />
+<x-loading wire:loading.delay wire:target.except="$refresh" label="Updating task monitoring…" />
 
 @if(!$showsCustomers)
 {{-- First view: one row per uploaded Excel file. Opening a file lists its customers. --}}

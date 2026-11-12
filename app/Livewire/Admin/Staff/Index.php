@@ -114,7 +114,8 @@ class Index extends Component
     public function render(): View
     {
         Gate::authorize('viewAny', Staff::class);
-        $query = Staff::query()->with('user.roles');
+        $query = Staff::query()->with('user.roles')
+            ->when(! Auth::user()->can('roles.manage'), fn ($query) => $query->whereDoesntHave('user', fn ($account) => $account->permission('roles.manage')));
         if ($this->role !== '') {
             if (in_array($this->role, config('dcms.staff_roles'), true)) {
                 $query->whereHas('user', function ($q): void {
@@ -176,12 +177,13 @@ class Index extends Component
 
     /**
      * Login accounts with no staff record (for example the first System Admin), filtered like the directory where it applies.
+     * Only people who manage roles see them, since they are System Admin accounts.
      *
      * @return Collection<int, User>
      */
     private function systemAccounts(): Collection
     {
-        if ($this->role === 'Rider' || $this->accountStatus === 'none' || ($this->role !== '' && ! in_array($this->role, config('dcms.staff_roles'), true))) {
+        if (! Auth::user()->can('roles.manage') || $this->role === 'Rider' || $this->accountStatus === 'none' || ($this->role !== '' && ! in_array($this->role, config('dcms.staff_roles'), true))) {
             return collect();
         }
         $term = mb_strtolower(trim($this->query));

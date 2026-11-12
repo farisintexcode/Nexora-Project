@@ -1,4 +1,4 @@
-<section class="rider-page rider-attendance-page nexora-attendance">
+<section class="rider-page rider-attendance-page nexora-attendance" wire:poll.30s>
 @php
     $serverNow = now()->timezone(config('dcms.business_timezone'));
     $shift = $open?->schedule ?? $todaySchedule;

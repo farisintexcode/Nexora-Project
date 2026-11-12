@@ -4,6 +4,7 @@ use App\Actions\Staff\InviteStaffAccount;
 use App\Actions\Staff\SaveStaff;
 use App\Enums\AccountStatus;
 use App\Models\AuditLog;
+use App\Models\Staff;
 use App\Models\User;
 use App\Notifications\StaffInvitation;
 use Database\Seeders\DatabaseSeeder;
@@ -56,7 +57,8 @@ test('authorized Rider invitation creates only the selected role and a single-us
 });
 
 test('staff management alone cannot issue invitations or escalate the requested role', function (): void {
-    $actor = staffManager();
+    $actor = User::factory()->create();
+    $actor->givePermissionTo(['admin.access', 'riders.manage']);
     $staff = app(SaveStaff::class)->handle($actor, staffInput());
     expect(fn () => app(InviteStaffAccount::class)->handle($actor, $staff, 'Rider', $staff->revision()))->toThrow(AuthorizationException::class);
     $actor->givePermissionTo('users.invite');
@@ -198,4 +200,18 @@ test('stale invitation and staff deactivation cannot activate an old pending lin
     app(SaveStaff::class)->handle($actor, staffInput(['is_active' => false, 'reason' => 'Invitation withdrawn with employment status']), $staff, $staff->revision());
 
     expect(Password::tokenExists($account, $token))->toBeFalse()->and($account->fresh()->status)->toBe(AccountStatus::Invited);
+});
+
+test('invitation email is Nexora branded, names the role and carries the logo inline', function (): void {
+    $staff = Staff::factory()->create(['first_name' => 'Aina', 'is_rider' => false]);
+    $account = User::factory()->for($staff)->create(['status' => AccountStatus::Invited, 'email_verified_at' => null]);
+
+    $account->notify(new StaffInvitation(Password::createToken($account), 'Administrative'));
+
+    $sent = app('mailer')->getSymfonyTransport()->messages()->last()->getOriginalMessage();
+    $html = $sent->getHtmlBody();
+    expect($sent->getSubject())->toBe('Activate your Nexora account')
+        ->and($html)->toContain('Hi Aina,')->toContain('<strong>Administrative</strong>')->toContain('Activate my account')
+        ->toContain('Regards,<br>Nexora')->not->toContain('DebtOps')->toContain('#fb8500')
+        ->and(collect($sent->getAttachments())->map->getName()->all())->toContain('nexora-logo');
 });

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Notifications\StaffInvitation;
 use App\Services\AuditWriter;
 use App\Services\Staff\AccountMailTransport;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -18,12 +19,43 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/** M01/M10/M12 / UI31–32: users.invite; System Admin additionally requires roles.manage. */
+/** M01/M10/M12 / UI31–32: Administrative staff invite Riders (riders.invite); System Admins invite office accounts (users.invite, + roles.manage for System Admin). */
 class InviteStaffAccount
 {
     public string $deliveryStatus = 'prepared';
 
     public function __construct(private AuditWriter $audit, private AccountMailTransport $transport) {}
+
+    /** Delivery outcomes where no activation email reached the person, so the screen must warn rather than report success. */
+    public static function needsAttention(?string $delivery): bool
+    {
+        return in_array($delivery, ['delivery_failed', 'unsafe_transport', 'local_capture', 'inactive_staff'], true);
+    }
+
+    /**
+     * Roles this person may send login invitations for.
+     *
+     * @return list<string>
+     */
+    public static function invitableRoles(User $actor): array
+    {
+        return array_values(array_filter(config('dcms.staff_roles'), fn (string $role): bool => match ($role) {
+            'Rider' => $actor->can('riders.invite'),
+            'Administrative' => $actor->can('users.invite'),
+            'System Admin' => $actor->can('users.invite') && $actor->can('roles.manage'),
+            default => false,
+        }));
+    }
+
+    /**
+     * Roles this person may invite this staff member as: Riders get a Rider login, office staff an office login.
+     *
+     * @return list<string>
+     */
+    public static function invitableRolesFor(User $actor, Staff $staff): array
+    {
+        return array_values(array_intersect(self::invitableRoles($actor), $staff->is_rider ? ['Rider'] : ['Administrative', 'System Admin']));
+    }
 
     public function handle(User $actor, Staff $target, string $role, string $revision): string
     {
@@ -42,9 +74,10 @@ class InviteStaffAccount
                     throw ValidationException::withMessages(['invitation' => 'A valid employment email is required.']);
                 }
                 Validator::make(['role' => $role], ['role' => ['required', Rule::in(config('dcms.staff_roles'))]])->validate();
-                if ($role === 'System Admin') {
-                    Gate::forUser($actor)->authorize('roles.manage');
-                } elseif ($role === 'Rider' && ! $staff->is_rider) {
+                if (! in_array($role, self::invitableRoles($actor), true)) {
+                    throw new AuthorizationException($role === 'Rider' ? 'Rider logins are sent by Administrative staff.' : 'Administrative and System Admin logins are sent by a System Admin.');
+                }
+                if ($role === 'Rider' && ! $staff->is_rider) {
                     throw ValidationException::withMessages(['invitation' => 'Rider access requires active Rider eligibility.']);
                 }
                 $account = $staff->user()->first();
@@ -83,7 +116,7 @@ class InviteStaffAccount
                 $token = Password::createToken($account);
                 $this->audit->record($actor, 'account_invitation_prepared', $staff->public_id,
                     ['status' => 'invited', 'role' => $role], module: 'M10', entityType: 'staff');
-                DB::afterCommit(function () use ($account, $token, &$delivery): void {
+                DB::afterCommit(function () use ($account, $token, $role, &$delivery): void {
                     if (! $account->staff()->where('is_active', true)->exists()) {
                         $delivery = $this->deliveryStatus = 'inactive_staff';
 
@@ -95,11 +128,11 @@ class InviteStaffAccount
                         return;
                     }
                     try {
-                        $account->notify(new StaffInvitation($token));
+                        $account->notify(new StaffInvitation($token, $role));
                         $delivery = $this->deliveryStatus = config('mail.default') === 'array' ? 'local_capture' : 'mail_accepted';
                     } catch (\Throwable $exception) {
                         $delivery = $this->deliveryStatus = 'delivery_failed';
-                        Log::warning('Staff invitation mail transport failed.', ['user_id' => $account->public_id, 'exception_type' => $exception::class]);
+                        Log::warning('Staff invitation mail transport failed.', ['user_id' => $account->public_id, 'exception_type' => $exception::class, 'reason' => Str::limit($exception->getMessage(), 300)]);
                     }
                 });
             }, 3);

@@ -7,6 +7,7 @@ use App\Actions\Staff\RecoverStaffAccount;
 use App\Models\AuditLog;
 use App\Models\Staff;
 use App\Models\Task;
+use App\Services\Attendance\AttendanceAccess;
 use App\Services\Staff\StaffAssignments;
 use App\Services\Staff\StaffTasks;
 use App\Services\Tasks\WorkVolume;
@@ -55,6 +56,10 @@ class Show extends Component
         if ($this->invitationRole === 'Admin') {
             $this->invitationRole = $staff->user->can('roles.manage') ? 'System Admin' : 'Administrative';
         }
+        $choices = InviteStaffAccount::invitableRolesFor(Auth::user(), $staff);
+        if ($this->invitationRole === '' && count($choices) === 1) {
+            $this->invitationRole = $choices[0];
+        }
     }
 
     public function updatedTab(): void
@@ -86,7 +91,7 @@ class Show extends Component
         $staff = Staff::query()->findOrFail($this->staffId);
         $status = $invite->handle(Auth::user(), $staff, $this->invitationRole, $this->revision);
         $this->revision = $staff->revision();
-        session()->flash('status', match ($status) {
+        session()->flash(InviteStaffAccount::needsAttention($status) ? 'warning' : 'status', match ($status) {
             'mail_accepted' => 'Invitation accepted by the mail transport. This does not confirm inbox delivery.',
             'local_capture' => 'Invitation prepared for local capture only. No email was delivered; configure Mailpit or an approved transport for activation.',
             'delivery_failed' => 'The account invitation is prepared, but mail transport failed. Wait for the resend interval, then reissue the invitation.',
@@ -121,14 +126,15 @@ class Show extends Component
     {
         $staff = Staff::query()->with(['position', 'gender', 'workState', 'user'])->findOrFail($this->staffId);
         Gate::authorize('view', $staff);
-        $tab = in_array($this->tab, ['profile', 'assigned', 'completed', 'activity', 'attendance', 'performance'], true) ? $this->tab : 'profile';
-        $taskFilter = array_key_exists($this->taskFilter, StaffTasks::ASSIGNED_FILTERS) ? $this->taskFilter : 'open';
         $canViewTasks = Gate::allows('viewAny', Task::class);
+        $tabs = $this->sections($staff, $canViewTasks);
+        $tab = array_key_exists($this->tab, $tabs) ? $this->tab : 'profile';
+        $taskFilter = array_key_exists($this->taskFilter, StaffTasks::ASSIGNED_FILTERS) ? $this->taskFilter : 'open';
         $trendPeriod = array_key_exists($this->period, WorkVolume::RANGES) ? $this->period : 'daily';
         $trendRange = in_array((int) $this->range, WorkVolume::RANGES[$trendPeriod], true) ? (int) $this->range : WorkVolume::RANGES[$trendPeriod][1];
 
         return view('livewire.admin.staff.show', [
-            'staff' => $staff, 'activeTab' => $tab, 'outstanding' => $assignments->outstanding($staff),
+            'staff' => $staff, 'tabs' => $tabs, 'activeTab' => $tab, 'invitableRoles' => InviteStaffAccount::invitableRolesFor(Auth::user(), $staff), 'outstanding' => $assignments->outstanding($staff),
             'activity' => $tab === 'activity' ? AuditLog::query()->where('module', 'M10')->where('entity_type', 'staff')->where('entity_id', $staff->public_id)->with('actor:id,name')->orderByDesc('id')->paginate(25) : null,
             'canViewTasks' => $canViewTasks, 'taskFilters' => StaffTasks::ASSIGNED_FILTERS, 'activeTaskFilter' => $taskFilter,
             'tasks' => $canViewTasks ? match ($tab) {
@@ -139,6 +145,28 @@ class Show extends Component
             'performance' => $canViewTasks && in_array($tab, ['assigned', 'completed', 'performance'], true) ? $tasks->performance($staff) : null,
             'trend' => $canViewTasks && $tab === 'performance' ? $tasks->trend($staff, $trendPeriod, $trendRange) : null,
             'trendPeriod' => $trendPeriod, 'trendRange' => $trendRange,
+        ]);
+    }
+
+    /**
+     * Sections shown for this staff member. Office staff (Administrative, System Admin) do no field work, so only Rider
+     * records have task, activity, attendance and performance sections, and each also needs the viewer's own access.
+     *
+     * @return array<string, string>
+     */
+    private function sections(Staff $staff, bool $canViewTasks): array
+    {
+        if (! $staff->is_rider) {
+            return ['profile' => 'Profile'];
+        }
+
+        return array_filter([
+            'profile' => 'Profile',
+            'assigned' => $canViewTasks ? 'Assigned tasks' : null,
+            'completed' => $canViewTasks ? 'Completed tasks' : null,
+            'activity' => 'Activity',
+            'attendance' => app(AttendanceAccess::class)->visible(Auth::user(), $staff->id) ? 'Attendance' : null,
+            'performance' => $canViewTasks ? 'Performance' : null,
         ]);
     }
 }

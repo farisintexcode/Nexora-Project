@@ -1,9 +1,9 @@
-<section class="hr-page grid gap-6">
+<section class="hr-page grid gap-6" wire:poll.30s>
     <x-feedback />
     <x-page-header title="Staff Management" eyebrow="Human Resources" description="Employment records, linked accounts and access status."><x-slot:actions><a class="btn btn-primary" href="{{ route('admin.staff.create') }}"><x-icon name="plus" class="size-4" />Add New Staff</a></x-slot:actions></x-page-header>
     <x-filter-bar name="staff" :count="(int)($query !== '') + (int)($role !== '') + (int)($status !== 'active') + (int)($accountStatus !== '')">
         <x-input name="query" label="Search staff" wire:model.live.debounce.400ms="query" maxlength="200" placeholder="Staff ID, name or email" />
-        <x-select name="role" label="System Role" wire:model.live="role"><option value="">All roles</option>@foreach(config('dcms.staff_roles') as $role)<option value="{{ $role }}">{{ $role }}</option>@endforeach</x-select>
+        <x-select name="role" label="System Role" wire:model.live="role"><option value="">All roles</option>@foreach(config('dcms.staff_roles') as $role)@if($role !== 'System Admin' || auth()->user()->can('roles.manage'))<option value="{{ $role }}">{{ $role }}</option>@endif @endforeach</x-select>
         <x-select name="status" label="Staff Status" wire:model.live="status"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></x-select>
 <x-slot:advanced><div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">        <x-select name="kind" label="Personnel" wire:model.live="kind"><option value="rider">Riders</option><option value="office">Office staff</option><option value="all">All staff</option></x-select>
         <x-select name="accountStatus" label="Account Status" wire:model.live="accountStatus"><option value="">All accounts</option>@foreach(['invited','active','disabled','locked','none'] as $state)<option value="{{ $state }}">{{ ucfirst($state) }}</option>@endforeach</x-select>
@@ -12,7 +12,7 @@
         <x-select name="perPage" label="Staff per page" wire:model.live="perPage"><option value="25">25</option><option value="50">50</option><option value="100">100</option></x-select></div></x-slot:advanced>
 </x-filter-bar>
     @if($filterError)<p role="alert" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs">{{ $filterError }}</p>@endif
-    <x-loading wire:loading.delay label="Loading staff..." />
+    <x-loading wire:loading.delay wire:target.except="$refresh" label="Loading staff..." />
     @if($staffMembers->isEmpty())<x-empty-state icon="users" title="No staff match these filters" message="Try another search, select All staff, or change Staff Status to include inactive staff." />@else
     <div class="surface overflow-x-auto"><table class="data-table"><caption class="sr-only">Staff directory</caption><thead><tr>@foreach(['Staff ID','Full Name','Email','System Role','Staff Status','Account Status','Created At','Actions'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
         <tbody>@foreach($staffMembers as $member)<tr wire:key="staff-{{ $member->public_id }}">
@@ -42,7 +42,7 @@
         <form wire:submit="changeAvailability('{{ $deactivatingStaff->public_id }}', false)" class="p-6 sm:p-8">
             <div class="text-center"><span class="icon-tile border-red-200 bg-red-50 text-red-800"><x-icon name="info" /></span><h2 class="mt-5 text-xl font-semibold">Deactivate {{ $deactivatingStaff->full_name }}?</h2><p class="mt-3 text-sm leading-6 text-ink-600">Staff ID {{ $deactivatingStaff->staff_no }}. Resolve outstanding allocations first. History is retained and the login account status is not changed.</p></div>
             <div class="mt-5 text-left"><x-textarea name="data.reason" label="Deactivation reason" wire:model="reason" maxlength="1000" required autofocus /></div>
-            <div class="mt-7 flex flex-wrap justify-center gap-3"><x-button type="button" variant="secondary" wire:click="cancelDeactivation">Cancel</x-button><x-button variant="danger" wire:loading.attr="disabled">Deactivate</x-button></div>
+            <div class="mt-7 flex flex-wrap justify-center gap-3"><x-button type="button" variant="secondary" wire:click="cancelDeactivation">Cancel</x-button><x-button variant="danger" wire:loading.attr="disabled" wire:target.except="$refresh">Deactivate</x-button></div>
         </form>
     </dialog>
     @endif

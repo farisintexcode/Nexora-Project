@@ -1,4 +1,4 @@
-<section class="hr-page grid gap-6">
+<section class="hr-page grid gap-6" wire:poll.20s>
 <x-feedback />
 <x-page-header title="Leave Management" eyebrow="" description="Review leave applications and manage the organization’s leave types."><x-slot:actions>@if($canConfigure)<a class="btn btn-primary" href="{{ route('admin.leave.types') }}">Leave Types &amp; Entitlements</a>@endif<a class="btn btn-secondary" href="{{ route('admin.attendance.index') }}">Attendance</a>@if($selected)<a class="btn btn-secondary" href="{{ route('admin.leave.index') }}"><x-icon name="arrow-left" class="size-4" />All leave requests</a>@endif</x-slot:actions></x-page-header>
 @if($selected)

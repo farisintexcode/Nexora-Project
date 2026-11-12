@@ -1,4 +1,4 @@
-<section class="grid min-w-0 gap-6">
+<section class="grid min-w-0 gap-6" wire:poll.15s>
 <x-feedback />
 <x-page-header title="Task verification" eyebrow="Independent review" description="Review immutable Rider submissions. Only verified work becomes Completed." />
 <form class="surface grid min-w-0 gap-5 p-4 sm:p-5" wire:submit="applyFilters" data-start-open="{{ $activeFilterCount > 0 ? '1' : '0' }}" x-data="{ filtersOpen: $el.dataset.startOpen === '1' }">
@@ -17,7 +17,7 @@
 </div>
 </form>
 @if($dateError)<p role="alert" class="rounded-xl bg-amber-50 p-4 text-sm text-amber-950">{{ $dateError }}</p>@endif
-<div wire:loading.delay role="status" class="rounded-xl bg-brand-soft p-3 text-sm">Updating verification workspace…</div>
+<div wire:loading.delay wire:target.except="$refresh" role="status" class="rounded-xl bg-brand-soft p-3 text-sm">Updating verification workspace…</div>
 <div class="grid gap-4 xl:grid-cols-2">
 @forelse($submissions as $submission)
 <article class="surface grid gap-4 p-5" wire:key="verify-{{ $submission->public_id }}"><div class="flex flex-wrap items-center justify-between gap-3"><x-badge :tone="$submission->review?->decision==='approved'?'success':($submission->review?'warning':'brand')">{{ $submission->review?->decision??'Pending verification' }}</x-badge></div>

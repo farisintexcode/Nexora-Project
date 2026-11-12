@@ -1,4 +1,4 @@
-<section class="rider-page">
+<section class="rider-page" @unless($applying) wire:poll.15s @endunless>
 <x-feedback />
 <x-page-header :title="$applying ? 'Apply for Leave' : ($selected ? 'Leave Request Details' : 'Leave Request')" eyebrow="" description="Plan your time away and follow your applications."><x-slot:actions><a class="btn btn-secondary" href="{{ $applying || $selected ? route('rider.leave.index') : route('rider.attendance') }}"><x-icon name="arrow-left" class="size-4" />{{ $applying || $selected ? 'My leave requests' : 'Attendance' }}</a></x-slot:actions></x-page-header>
 @foreach($errors->all() as $error)<p role="alert" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ $error }}</p>@endforeach

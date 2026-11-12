@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Staff;
 
+use App\Actions\Staff\InviteStaffAccount;
 use App\Actions\Staff\SaveStaff;
 use App\Models\ReferenceValue;
 use App\Models\Staff;
@@ -56,6 +57,7 @@ class Editor extends Component
 
         if (! $staff?->exists) {
             $this->data['staff_no'] = app(StaffNumberGenerator::class)->next();
+            $this->data['create_account'] = InviteStaffAccount::invitableRoles(Auth::user()) !== [];
 
             return;
         }
@@ -113,7 +115,9 @@ class Editor extends Component
         unset($input['position_code']);
 
         $input['system_role'] ??= '';
-        $input['create_account'] ??= true;
+        /** A login is created only for a role this person may invite (Administrative: Riders; System Admin: office accounts). */
+        $wantsAccount = (bool) ($input['create_account'] ?? true);
+        $input['create_account'] = $wantsAccount && in_array($input['system_role'], InviteStaffAccount::invitableRoles(Auth::user()), true);
 
         $staff = $save->handle(
             Auth::user(),
@@ -126,7 +130,7 @@ class Editor extends Component
         $this->reset('data');
 
         session()->flash(
-            'status',
+            InviteStaffAccount::needsAttention($save->invitationDelivery) ? 'warning' : 'status',
             'Staff record saved. '.match ($save->invitationDelivery) {
                 'local_capture' => 'Account invited, but the array mailer captures locally and does not deliver email. Configure Mailpit or an approved transport, then reissue.',
 
@@ -138,7 +142,12 @@ class Editor extends Component
 
                 'inactive_staff' => 'Account provisioned. Activate staff and reissue the invitation before password setup.',
 
-                default => 'Invited accounts require personal password setup before access.',
+                default => match (true) {
+                    $staff->user()->exists() => 'Invited accounts require personal password setup before access.',
+                    $wantsAccount && $input['system_role'] === 'Rider' => 'No login account yet: Rider logins are sent by Administrative staff from this staff page.',
+                    $wantsAccount => 'No login account yet: Administrative logins are sent by a System Admin from this staff page.',
+                    default => 'No login account was created. Send the invitation from this staff page when needed.',
+                },
             }
         );
 

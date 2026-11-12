@@ -29,7 +29,7 @@ class ManageStaffAccount
 
     private function update(User $actor, Staff $staff, string $role, string $status): void
     {
-        Gate::forUser($actor)->authorize('invite', $staff);
+        Gate::forUser($actor)->authorize('manageAccount', $staff);
         Validator::make(['role' => $role, 'status' => $status], [
             'role' => ['required', Rule::in(config('dcms.staff_roles'))],
             'status' => ['required', Rule::in(['active', 'disabled', 'invited'])],

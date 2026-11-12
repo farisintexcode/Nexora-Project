@@ -22,7 +22,7 @@ test('staff directory create edit eligibility and activity stay usable on deskto
     await expect(page.getByLabel('Employment Position', { exact: true })).toHaveCount(0);
     await page.getByLabel('Create system login account', { exact: true }).uncheck();
     await page.getByLabel('Work / mobile phone (optional)', { exact: true }).fill('+60123456789');
-    await page.getByRole('button', { name: 'Save staff', exact: true }).click();
+    await page.getByRole('button', { name: 'Add staff', exact: true }).click();
     await expect(page.getByRole('heading', { name: `Nadia ${suffix}`, exact: true })).toBeVisible();
     await expect(page.locator('main')).toContainText('No login account is provisioned');
     await expect(page.getByRole('button', { name: 'Invite account', exact: true })).toBeVisible();

@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Staff\InviteStaffAccount;
 use App\Actions\Staff\ManageStaffAccount;
 use App\Actions\Staff\RecoverStaffAccount;
 use App\Actions\Staff\SaveStaff;
@@ -32,7 +33,7 @@ beforeEach(function (): void {
 test('staff registration provisions one invited linked account for each selectable role', function (string $role): void {
     Notification::fake();
     $actor = User::factory()->create();
-    $actor->assignRole('System Admin');
+    $actor->assignRole($role === 'Rider' ? 'Administrative' : 'System Admin');
     $this->travelTo(now()->startOfSecond());
 
     $staff = app(SaveStaff::class)->handle($actor, staffInput(['system_role' => $role, 'create_account' => true, 'created_at' => '2000-01-01']));
@@ -45,9 +46,30 @@ test('staff registration provisions one invited linked account for each selectab
     $this->assertDatabaseHas('audit_logs', ['action' => 'account_invitation_prepared', 'entity_id' => $staff->public_id]);
 })->with(['System Admin', 'Administrative', 'Rider']);
 
+test('System Admins invite office accounts and Administrative staff invite Riders, never the other way round', function (): void {
+    Notification::fake();
+    $systemAdmin = User::factory()->create();
+    $systemAdmin->assignRole('System Admin');
+    $administrative = User::factory()->create();
+    $administrative->assignRole('Administrative');
+    $rider = Staff::factory()->create(['is_rider' => true]);
+    $office = Staff::factory()->create(['is_rider' => false]);
+
+    expect(InviteStaffAccount::invitableRoles($systemAdmin))->toBe(['System Admin', 'Administrative'])
+        ->and(InviteStaffAccount::invitableRoles($administrative))->toBe(['Rider'])
+        ->and(fn () => app(InviteStaffAccount::class)->handle($systemAdmin, $rider, 'Rider', $rider->revision()))->toThrow(AuthorizationException::class, 'Administrative staff')
+        ->and(fn () => app(InviteStaffAccount::class)->handle($administrative, $office, 'Administrative', $office->revision()))->toThrow(AuthorizationException::class, 'System Admin');
+
+    Livewire::actingAs($systemAdmin)->test(Show::class, ['staff' => $rider])->assertSee('Rider logins are sent by Administrative staff.')->assertDontSee('Invite account');
+    Livewire::actingAs($administrative)->test(Show::class, ['staff' => $rider])->assertSet('invitationRole', 'Rider')->call('invite')->assertHasNoErrors();
+    Livewire::actingAs($administrative)->test(Show::class, ['staff' => $office])->assertSee('Administrative and System Admin logins are sent by a System Admin.');
+    expect($rider->user()->first()?->getRoleNames()->all())->toBe(['Rider'])->and($office->user()->exists())->toBeFalse();
+});
+
 test('account provisioning failure rolls back the staff and audit writes', function (): void {
     Notification::fake();
-    $actor = staffManager();
+    $actor = User::factory()->create();
+    $actor->givePermissionTo(['admin.access', 'riders.manage']);
     $auditCount = AuditLog::query()->count();
 
     expect(fn () => app(SaveStaff::class)->handle($actor, staffInput(['system_role' => 'Rider', 'create_account' => true])))->toThrow(AuthorizationException::class);
@@ -80,7 +102,7 @@ test('duplicate account email prevents staff persistence', function (): void {
 test('inactive staff accounts stay invited and cannot activate or receive an invitation', function (): void {
     Notification::fake();
     $actor = User::factory()->create();
-    $actor->assignRole('System Admin');
+    $actor->assignRole('Administrative');
     $staff = app(SaveStaff::class)->handle($actor, staffInput(['system_role' => 'Rider', 'create_account' => true, 'is_active' => false]));
     $account = $staff->user;
     $token = Password::createToken($account);
@@ -108,7 +130,7 @@ test('invited accounts cannot access direct dashboards or a previously opened Li
 test('activation sends each role to its dashboard only after password confirmation', function (string $role, string $destination): void {
     Notification::fake();
     $actor = User::factory()->create();
-    $actor->assignRole('System Admin');
+    $actor->assignRole($role === 'Rider' ? 'Administrative' : 'System Admin');
     $staff = app(SaveStaff::class)->handle($actor, staffInput(['system_role' => $role, 'create_account' => true]));
     $account = $staff->user;
     $token = basename(parse_url(Notification::sent($account, StaffInvitation::class)->last()->toMail($account)->actionUrl, PHP_URL_PATH));
@@ -291,7 +313,7 @@ test('directory filters linked roles account states and Kuala Lumpur creation da
 test('staff form provisions each system role without an employment position', function (string $role): void {
     Notification::fake();
     $actor = User::factory()->create();
-    $actor->assignRole('System Admin');
+    $actor->assignRole($role === 'Rider' ? 'Administrative' : 'System Admin');
     $input = staffInput(['system_role' => $role, 'create_account' => true]);
     unset($input['position_code']);
 
@@ -409,3 +431,32 @@ test('unlocking needs a reason, restores the right status and is audited', funct
     expect($audit->reason)->toBe('Identity confirmed by phone')->and($audit->previous_values_redacted['status'])->toBe('locked');
     expect(fn () => app(RecoverStaffAccount::class)->unlock($actor, $staff, 'Again'))->toThrow(ValidationException::class, 'not locked');
 })->with(['password already set' => true, 'password never set' => false]);
+
+test('an invitation that does not reach the mailbox warns instead of reporting success', function (): void {
+    Notification::fake();
+    config(['mail.default' => 'log']);
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => false]);
+    $account = User::factory()->for($staff)->create(['status' => AccountStatus::Invited, 'email_verified_at' => null]);
+    $account->assignRole('Administrative');
+
+    Livewire::actingAs($actor)->test(Show::class, ['staff' => $staff])->set('invitationRole', 'Administrative')->call('invite')->assertHasNoErrors();
+
+    expect(session('warning'))->toContain('log transport')->and(session('status'))->toBeNull();
+    Notification::assertNothingSent();
+});
+
+test('the staff page keeps checking an invited account and stops once it is active', function (): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => false]);
+    $account = User::factory()->for($staff)->create(['status' => AccountStatus::Invited, 'email_verified_at' => null]);
+    $account->assignRole('Administrative');
+
+    $page = Livewire::actingAs($actor)->test(Show::class, ['staff' => $staff])->assertSeeHtml('wire:poll.10s')->assertSee('Invited');
+
+    $account->forceFill(['status' => AccountStatus::Active, 'email_verified_at' => now()])->save();
+
+    $page->call('$refresh')->assertSee('Active')->assertDontSeeHtml('wire:poll.10s')->assertSee('Send password reset link');
+});

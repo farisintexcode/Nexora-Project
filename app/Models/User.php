@@ -51,6 +51,14 @@ class User extends Authenticatable
         return $this->can('roles.manage') && ! $this->can('tasks.view');
     }
 
+    /** Short name for the header: the linked staff member's first name, else the account name (accounts without a staff record). */
+    public function firstName(): string
+    {
+        $firstName = $this->staff_id ? $this->staff()->value('first_name') : null;
+
+        return filled($firstName) ? $firstName : $this->name;
+    }
+
     public function profilePhoto(): HasOne
     {
         return $this->hasOne(Document::class, 'owner_id')->ofMany(['id' => 'max'], function (Builder $query): void {

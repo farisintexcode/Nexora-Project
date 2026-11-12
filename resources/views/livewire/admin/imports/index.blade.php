@@ -1,4 +1,4 @@
-<section class="grid gap-6">
+<section class="grid gap-6" @unless($file) wire:poll.20s @endunless>
     <x-feedback />
     <x-page-header title="Excel imports" eyebrow="Controlled data intake" description="Upload an Excel file to an assignment, then check its columns and preview its rows before the tasks are created."/>
     <div class="surface grid gap-6 p-5 sm:p-7">
@@ -14,7 +14,7 @@
         @else<p class="text-sm text-ink-500">Your access allows viewing import history. Mapping permission is required to upload workbooks.</p>@endcan
         <div class="field-help border-t border-ink-200 pt-4"><p class="font-semibold">Note:</p><ol class="mt-2 grid list-decimal gap-1 pl-5"><li>Required columns: task_id, account_number, customer_reference and outstanding_balance.</li><li>Optional columns: customer_name, phone, email, monthly_charge, balance_date, address, building, postcode, state_code, priority_code and instructions.</li><li>Put the column headers in row 1 of the first sheet. Common names such as Account No or Customer Ref are detected automatically, and you can change any match during review.</li><li>A new customer reference also needs customer_name, at least on its first row. New customers and accounts are created automatically.</li><li>task_id must end in a number that is unique within the assignment. FG001 is read as 1.</li><li>Each account can have one open task per assignment.</li><li>Tasks use the type and dates of the selected assignment.</li></ol></div>
     </div>
-    <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="text-lg font-semibold">Import history</h2><p class="mt-1 text-xs text-ink-500">{{ $imports->total() }} jobs</p></div><x-loading wire:loading.delay label="Updating import history…" /></div>
+    <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="text-lg font-semibold">Import history</h2><p class="mt-1 text-xs text-ink-500">{{ $imports->total() }} jobs</p></div><x-loading wire:loading.delay wire:target.except="$refresh" label="Updating import history…" /></div>
     <div class="surface grid gap-4 p-5 lg:grid-cols-4">
         <div class="min-w-0 lg:col-span-2"><x-input name="search" label="Search" type="search" wire:model.live.debounce.400ms="search" placeholder="Excel file name" maxlength="255" /></div>
         <x-select name="status" label="Status" wire:model.live="status"><option value="">All statuses</option>@foreach(\App\Livewire\Admin\Imports\Index::STATUSES as $statusOption)<option value="{{ $statusOption }}">{{ ucfirst($statusOption) }}</option>@endforeach</x-select>

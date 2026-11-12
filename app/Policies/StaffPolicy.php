@@ -13,9 +13,10 @@ class StaffPolicy
         return $user->isActive() && $user->can('admin.access') && $user->can('riders.manage');
     }
 
+    /** System Admin accounts are visible only to people who can manage roles themselves. */
     public function view(User $user, Staff $staff): bool
     {
-        return $this->viewAny($user);
+        return $this->viewAny($user) && ($user->can('roles.manage') || ! User::query()->where('staff_id', $staff->id)->permission('roles.manage')->exists());
     }
 
     public function create(User $user): bool
@@ -25,10 +26,17 @@ class StaffPolicy
 
     public function update(User $user, Staff $staff): bool
     {
-        return $this->viewAny($user);
+        return $this->view($user, $staff);
     }
 
+    /** Sending a login invitation: Administrative staff for Riders, System Admins for office accounts (the role is checked when inviting). */
     public function invite(User $user, Staff $staff): bool
+    {
+        return $this->view($user, $staff) && ($user->can('users.invite') || $user->can('riders.invite'));
+    }
+
+    /** Changing an existing login's role or status is account control, kept with System Admins. */
+    public function manageAccount(User $user, Staff $staff): bool
     {
         return $this->view($user, $staff) && $user->can('users.invite');
     }
@@ -36,6 +44,6 @@ class StaffPolicy
     /** Account recovery (reset links, unlocking) is reserved for System Admins. */
     public function recoverAccount(User $user, Staff $staff): bool
     {
-        return $this->invite($user, $staff) && $user->can('roles.manage');
+        return $this->manageAccount($user, $staff) && $user->can('roles.manage');
     }
 }
