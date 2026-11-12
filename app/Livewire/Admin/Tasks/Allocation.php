@@ -113,7 +113,9 @@ class Allocation extends Component
 
     /**
      * Tasks offered as tick boxes for the chosen assignment and, when one is chosen, its Excel file. A file from an archived
-     * assignment also offers its unassigned tasks, which move into the chosen assignment when given out.
+     * assignment also offers its unassigned tasks, which move into the chosen assignment when given out. Only tasks the
+     * chosen operation can change are offered: New lists tasks without a Rider, Replace/Reassign/Unassign those with one,
+     * and submitted, completed or cancelled work is never listed.
      */
     private function choiceQuery(AssignmentBatch $assignment): Builder
     {
@@ -121,7 +123,11 @@ class Allocation extends Component
 
         return Task::query()->whereNotNull('source_task_number')
             ->where(fn ($query) => $query->where('assignment_batch_id', $assignment->id)->when($file, fn ($query) => $query->orWhere(fn ($query) => $query->movableInto($assignment->id))))
-            ->when($file, fn ($query) => $query->fromImport($file->id))->orderBy('source_task_number');
+            ->when($file, fn ($query) => $query->fromImport($file->id))
+            ->where('excluded', false)->whereNotIn('work_status', ['submitted', 'completed', 'cancelled'])->where('review_status', '<>', 'pending')
+            ->when($this->operation === 'new', fn ($query) => $query->whereDoesntHave('currentAllocation'))
+            ->when(in_array($this->operation, ['replace', 'reassign', 'unassign'], true), fn ($query) => $query->whereHas('currentAllocation'))
+            ->orderBy('source_task_number');
     }
 
     /**

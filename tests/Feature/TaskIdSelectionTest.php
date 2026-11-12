@@ -860,3 +860,20 @@ test('archived tasks move only through a new assignment, never onto a clashing n
     expect(fn () => DB::transaction(fn () => DB::table('tasks')->where('id', $started->id)->update(['assignment_batch_id' => $assignment->id])))
         ->toThrow(QueryException::class, 'Task identity/source immutable');
 });
+
+test('the task list offers only tasks the chosen operation can change', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    numberedTask($assignment, 'FG001');
+    $assigned = numberedTask($assignment, 'FG002');
+    TaskAllocation::factory()->create(['task_id' => $assigned->id]);
+    Task::factory()->create(['assignment_batch_id' => $assignment->id, 'source_task_id' => 'FG003', 'source_task_number' => 3, 'work_status' => 'completed', 'review_status' => 'approved', 'completed_at' => now()]);
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('mode', 'selected')
+        ->assertSee('FG001 ·')->assertDontSee('FG002 ·')->assertDontSee('FG003 ·')
+        ->call('toggleAllTasks')->assertSet('taskIds', '1')
+        ->set('operation', 'reassign')
+        ->assertDontSee('FG001 ·')->assertSee('FG002 ·')->assertDontSee('FG003 ·')
+        ->set('operation', 'cancel')
+        ->assertSee('FG001 ·')->assertSee('FG002 ·')->assertDontSee('FG003 ·');
+});
