@@ -75,11 +75,12 @@
                 <h2 id="month-heading" class="min-w-40 px-2 text-center text-lg font-semibold">{{ $calendarMonth->format('F Y') }}</h2>
                 <button type="button" wire:click="shiftMonth(1)" class="grid size-10 place-items-center rounded-xl border border-ink-200 hover:bg-brand-soft" aria-label="Next month"><x-icon name="arrow-right" class="size-4" /></button>
             </div>
+            @php($riderStyles = ['absent' => ['bg-red-50 text-red-800', 'bg-red-600'], 'missing' => ['bg-amber-50 text-amber-900', 'bg-brand-accent'], 'working' => ['bg-brand-soft text-brand-dark', 'bg-brand-primary'], 'done' => ['bg-green-50 text-green-800', 'bg-green-600'], 'leave' => ['bg-sky-50 text-sky-800', 'bg-sky-600'], 'requested' => ['bg-white text-sky-800', 'bg-sky-300']])
+            @php($describe = fn ($entry) => $entry->rider_name.' – '.\App\Livewire\Admin\Attendance\Index::CALENDAR_STATES[$entry->state].($entry->pending_leave && $entry->state !== 'requested' ? ', leave request waiting for approval' : ''))
             <ul class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-600" aria-label="Legend">
-                <li class="flex items-center gap-1.5"><span class="size-2 rounded-full bg-green-600"></span>Clocked in</li>
-                <li class="flex items-center gap-1.5"><span class="size-2 rounded-full bg-sky-600"></span>On leave</li>
-                <li class="flex items-center gap-1.5"><span class="size-2 rounded-full bg-red-600"></span>Absent</li>
-                <li class="flex items-center gap-1.5"><span class="size-2 rounded-full bg-brand-accent"></span>Missing clock-out</li>
+                @foreach(\App\Livewire\Admin\Attendance\Index::CALENDAR_STATES as $state => $label)
+                    <li class="flex items-center gap-1.5"><span @class(['size-2 rounded-full', $riderStyles[$state][1], 'outline-1 outline-offset-1 outline-dashed outline-sky-500' => $state === 'requested'])></span>{{ $label }}</li>
+                @endforeach
                 <li class="flex items-center gap-1.5"><span class="font-semibold text-red-700">Red date</span>Public holiday</li>
             </ul>
         </div>
@@ -92,19 +93,20 @@
                     @foreach($week as $date)
                         @php($key = $date->toDateString())
                         @php($inMonth = $date->month === $calendarMonth->month)
-                        @php($stats = $days->get($key))
+                        @php($entries = $inMonth ? $days->get($key, collect()) : collect())
                         @php($dayHolidays = $holidays->get($key, collect()))
                         @php($isToday = $key === now()->timezone(config('dcms.business_timezone'))->toDateString())
-                        <td class="h-28 border border-ink-100 p-0 align-top">
-                            <button type="button" wire:click="showDay('{{ $key }}')" @class(['flex h-full w-full flex-col gap-1 p-2 text-left transition-colors hover:bg-brand-soft/60', 'opacity-40' => ! $inMonth, 'bg-red-50' => $dayHolidays->isNotEmpty() && $inMonth]) aria-label="{{ $date->format('l, d F Y') }}{{ $dayHolidays->isNotEmpty() ? ', public holiday: '.$dayHolidays->join(', ') : '' }}">
-                                <span class="flex items-center justify-between gap-1"><span @class(['grid size-6 place-items-center rounded-full text-xs font-semibold', 'bg-brand-primary text-white' => $isToday, 'text-red-700' => ! $isToday && ($dayHolidays->isNotEmpty() || $date->isSunday())])>{{ $date->day }}</span>@if($stats?->leave_pending)<span class="size-2 rounded-full bg-sky-400" title="{{ $stats->leave_pending }} leave request(s) waiting for approval"></span>@endif</span>
+                        <td class="h-32 border border-ink-100 p-0 align-top">
+                            <button type="button" wire:click="showDay('{{ $key }}')" @class(['flex h-full w-full flex-col gap-1 p-2 text-left transition-colors hover:bg-brand-soft/60', 'opacity-40' => ! $inMonth, 'bg-red-50' => $dayHolidays->isNotEmpty() && $inMonth]) aria-label="{{ $date->format('l, d F Y') }}{{ $dayHolidays->isNotEmpty() ? ', public holiday: '.$dayHolidays->join(', ') : '' }}{{ $entries->isNotEmpty() ? '. '.$entries->map($describe)->join('; ') : '' }}">
+                                <span @class(['grid size-6 place-items-center rounded-full text-xs font-semibold', 'bg-brand-primary text-white' => $isToday, 'text-red-700' => ! $isToday && ($dayHolidays->isNotEmpty() || $date->isSunday())])>{{ $date->day }}</span>
                                 @foreach($dayHolidays as $holiday)<span class="line-clamp-2 text-[10px] leading-3 font-semibold text-red-700" title="{{ $holiday }}">{{ $holiday }}</span>@endforeach
-                                @if($stats && $inMonth)
-                                    <span class="mt-auto flex flex-wrap gap-1">
-                                        @if($stats->clocked_in)<span class="rounded-md bg-green-50 px-1.5 text-[10px] leading-4 font-semibold text-green-800" title="Clocked in">✓ {{ $stats->clocked_in }}</span>@endif
-                                        @if($stats->on_leave)<span class="rounded-md bg-sky-50 px-1.5 text-[10px] leading-4 font-semibold text-sky-800" title="On leave">Leave {{ $stats->on_leave }}</span>@endif
-                                        @if($stats->absent)<span class="rounded-md bg-red-50 px-1.5 text-[10px] leading-4 font-semibold text-red-800" title="Absent">✗ {{ $stats->absent }}</span>@endif
-                                        @if($stats->unfinished)<span class="rounded-md bg-amber-50 px-1.5 text-[10px] leading-4 font-semibold text-amber-900" title="Clocked in, no clock-out">! {{ $stats->unfinished }}</span>@endif
+                                @if($entries->isNotEmpty())
+                                    <span class="mt-auto grid min-w-0 gap-0.5">
+                                        @foreach($entries->take(3) as $entry)
+                                            @php($timeline = collect([$entry->raw_clock_in_at ? 'In '.$time($entry->raw_clock_in_at) : null, $entry->effective_clock_out_at ? 'Out '.$time($entry->effective_clock_out_at) : null])->filter()->join(' · '))
+                                            <span @class(['flex min-w-0 items-center gap-1 rounded px-1 text-[10px] leading-4 font-semibold', $riderStyles[$entry->state][0], 'outline-1 -outline-offset-1 outline-dashed outline-sky-500' => $entry->pending_leave]) title="{{ $describe($entry) }} ({{ $entry->staff_no }}){{ $timeline ? ' · '.$timeline : '' }}"><span class="size-1.5 shrink-0 rounded-full {{ $riderStyles[$entry->state][1] }}" aria-hidden="true"></span><span class="truncate">{{ $entry->rider_name }}</span></span>
+                                        @endforeach
+                                        @if($entries->count() > 3)<span class="px-1 text-[10px] leading-4 font-semibold text-ink-500">+{{ $entries->count() - 3 }} more</span>@endif
                                     </span>
                                 @endif
                             </button>
@@ -115,7 +117,7 @@
                 </tbody>
             </table>
         </div>
-        <p class="text-xs text-ink-500">Click a date to see who clocked in, clocked out or was on leave that day. Public holidays shown are for the states your riders work in (all states when no rider has a work state set).</p>
+        <p class="text-xs text-ink-500">Each name is coloured by what that rider did. A dashed outline means the rider has a leave request waiting for approval. Hover a name for clock times, or click a date to see every rider that day. Public holidays shown are for the states your riders work in (all states when no rider has a work state set).</p>
     </section>
 
 @else

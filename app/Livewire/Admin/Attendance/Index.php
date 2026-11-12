@@ -34,6 +34,16 @@ class Index extends Component
         'off' => 'Rest day / holiday',
     ];
 
+    /** Rider states shown on the month calendar, in the order they are listed in a day. */
+    public const CALENDAR_STATES = [
+        'absent' => 'Absent',
+        'missing' => 'Missing clock-out',
+        'working' => 'Clocked in',
+        'done' => 'Clocked out',
+        'leave' => 'On leave',
+        'requested' => 'Leave requested',
+    ];
+
     #[Url]
     public string $view = 'today';
 
@@ -143,21 +153,42 @@ class Index extends Component
         return ['boardDay' => $day, 'isToday' => $day->isSameDay($this->today()), 'groups' => $groups, 'holidays' => $this->holidays($day, $day)->get($day->toDateString(), collect())];
     }
 
-    /** @return array{calendarMonth: CarbonImmutable, weeks: array<int, list<CarbonImmutable>>, days: Collection, holidays: Collection} */
+    /** @return array{calendarMonth: CarbonImmutable, weeks: array<int, list<CarbonImmutable>>, days: Collection<string, Collection<int, object>>, holidays: Collection} */
     private function calendar(AttendanceRegister $register, AttendanceAccess $access): array
     {
         $month = $this->selectedMonth();
         $start = $month->startOfMonth();
         $end = $month->endOfMonth();
+        $order = array_flip(array_keys(self::CALENDAR_STATES));
         $days = $register->query(auth()->user(), ['from' => $start->toDateString(), 'until' => $end->toDateString(), 'rider' => $this->rider], asOf: now()->toImmutable())
-            ->selectRaw("service_date::date AS day, count(*) FILTER (WHERE result_status = 'leave') AS on_leave, count(*) FILTER (WHERE raw_clock_in_at IS NOT NULL AND result_status <> 'leave') AS clocked_in, count(*) FILTER (WHERE result_status = 'absent') AS absent, count(*) FILTER (WHERE result_status IN ('incomplete', 'open')) AS unfinished, count(*) FILTER (WHERE pending_leave) AS leave_pending")
-            ->groupByRaw('service_date::date')->get()->keyBy(fn ($row) => (string) $row->day);
+            ->where(fn ($query) => $query->whereIn('result_status', ['leave', 'absent'])->orWhereNotNull('raw_clock_in_at')->orWhere('pending_leave', true))
+            ->selectRaw('service_date::date AS day, rider_public_id, rider_name, staff_no, result_status, raw_clock_in_at, effective_clock_out_at, pending_leave')
+            ->orderBy('rider_name')->get()
+            ->map(function (object $row): object {
+                $row->state = $this->calendarState($row);
+
+                return $row;
+            })
+            ->groupBy(fn (object $row): string => (string) $row->day)
+            ->map(fn (Collection $riders): Collection => $riders->sortBy(fn (object $row): int => $order[$row->state])->values());
         $gridDays = [];
         for ($cursor = $start->startOfWeek(CarbonImmutable::MONDAY); $cursor->lte($end->endOfWeek(CarbonImmutable::SUNDAY)); $cursor = $cursor->addDay()) {
             $gridDays[] = $cursor;
         }
 
         return ['calendarMonth' => $month, 'weeks' => array_chunk($gridDays, 7), 'days' => $days, 'holidays' => $this->holidays($start, $end, $access)];
+    }
+
+    /** Pick the single calendar state a rider's day shows, most urgent first. */
+    private function calendarState(object $row): string
+    {
+        return match (true) {
+            $row->result_status === 'leave' => 'leave',
+            $row->effective_clock_out_at !== null => 'done',
+            $row->raw_clock_in_at !== null => $row->result_status === 'incomplete' ? 'missing' : 'working',
+            $row->result_status === 'absent' => 'absent',
+            default => 'requested',
+        };
     }
 
     private function records(AttendanceRegister $register, CarbonImmutable $asOf): array

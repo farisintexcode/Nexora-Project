@@ -319,7 +319,8 @@ test('today board groups riders by clock state and the month calendar marks Mala
         ->assertSee("Today's work")->assertSee('Not in yet')
         ->call('shiftDay', 1)->assertSee('Public holiday · Deepavali')
         ->set('view', 'calendar')->assertSee('October 2026')->assertSee('Deepavali')
-        ->assertViewHas('days', fn ($days): bool => (int) $days->get('2026-10-19')->clocked_in === 1)
+        ->assertViewHas('days', fn ($days): bool => $days->get('2026-10-19')->map(fn ($entry) => [$entry->rider_name, $entry->state])->all() === [[$rider->staff->full_name, 'working']])
+        ->assertSee($rider->staff->full_name)->assertSee('Leave requested')
         ->call('showDay', '2026-10-19')->assertSet('view', 'today')->assertSet('day', '2026-10-19');
     $this->actingAs($admin)->get(route('admin.attendance.index', ['view' => 'records']))->assertOk()->assertSee('Download CSV');
 });
