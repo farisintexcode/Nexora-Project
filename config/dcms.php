@@ -38,5 +38,9 @@ return [
     'rider_permissions' => ['rider.access', 'tasks.view', 'tasks.submit', 'attendance.clock', 'attendance.view_own'],
     'rider_only_permissions' => ['rider.access', 'tasks.submit', 'attendance.clock', 'attendance.view_own'],
     'reserved_permissions' => ['communications.generate_letter', 'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override', 'roles.manage', 'scopes.manage', 'templates.approve', 'integrations.manage', 'customers.view_sensitive', 'users.invite', 'assignments.reopen'],
+    /** Reserved permissions Administrative receives by default for daily operations. */
+    'office_permissions' => ['templates.approve', 'communications.generate_letter', 'assignments.reopen', 'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override'],
+    /** System Admin controls accounts, permissions and system settings; it never works assignments, tasks, attendance or leave. */
+    'system_admin_permissions' => ['admin.access', 'riders.manage', 'users.invite', 'roles.manage', 'communications.view', 'templates.approve', 'integrations.manage', 'audit.view', 'monitoring.view'],
     'queues' => ['default', 'imports', 'exports', 'email', 'whatsapp', 'webhooks', 'media'],
 ];

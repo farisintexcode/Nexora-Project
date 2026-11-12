@@ -30,6 +30,29 @@ test('rider cannot enter admin or gain admin through a login payload', function 
     expect($user->fresh()->hasRole('Admin'))->toBeFalse();
 });
 
+test('Administrative holds template, letter, reopen and communication permission authority', function (): void {
+    $user = User::factory()->create();
+    $user->assignRole('Administrative');
+
+    foreach ([...config('dcms.office_permissions'), 'attendance.configure', 'leave.approve'] as $permission) {
+        expect($user->can($permission))->toBeTrue($permission);
+    }
+    expect(User::factory()->create()->assignRole('Rider')->can('templates.approve'))->toBeFalse();
+});
+
+test('System Admin controls accounts and settings but never assignment, task, attendance or leave work', function (): void {
+    $user = User::factory()->create();
+    $user->assignRole('System Admin');
+
+    foreach (['riders.manage', 'users.invite', 'roles.manage', 'templates.approve', 'integrations.manage', 'audit.view', 'monitoring.view'] as $permission) {
+        expect($user->can($permission))->toBeTrue($permission);
+    }
+    foreach (['assignments.view', 'imports.view', 'tasks.view', 'tasks.verify', 'attendance.view_all', 'attendance.configure', 'leave.approve', 'customers.view', 'reports.view', 'rider.access'] as $permission) {
+        expect($user->can($permission))->toBeFalse($permission);
+    }
+    expect($user->usesSystemAdminWorkspace())->toBeTrue();
+});
+
 test('admin bundle approves leave and attendance corrections but does not imply rider eligibility or reserved authority', function (): void {
     $user = User::factory()->create();
     $user->assignRole('Admin');

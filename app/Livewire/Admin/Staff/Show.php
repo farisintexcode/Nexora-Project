@@ -3,6 +3,7 @@
 namespace App\Livewire\Admin\Staff;
 
 use App\Actions\Staff\InviteStaffAccount;
+use App\Actions\Staff\RecoverStaffAccount;
 use App\Models\AuditLog;
 use App\Models\Staff;
 use App\Models\Task;
@@ -42,6 +43,8 @@ class Show extends Component
     public string $range = '14';
 
     public string $invitationRole = '';
+
+    public string $unlockReason = '';
 
     public function mount(Staff $staff): void
     {
@@ -91,6 +94,27 @@ class Show extends Component
             'inactive_staff' => 'Account provisioned. Activate the staff record and reissue the invitation before password setup.',
             default => 'Invitation prepared. Mail is waiting for transaction commit.',
         });
+    }
+
+    /** System Admin recovery: email a fresh password reset link to the account owner. */
+    public function sendPasswordReset(RecoverStaffAccount $recover): void
+    {
+        $status = $recover->sendPasswordReset(Auth::user(), Staff::query()->findOrFail($this->staffId));
+        session()->flash($status === 'delivery_failed' ? 'warning' : 'status', match ($status) {
+            'mail_accepted' => 'Password reset link accepted by the mail transport. This does not confirm inbox delivery.',
+            'local_capture' => 'Password reset link prepared for local capture only. No email was delivered.',
+            default => 'The mail transport failed, so no reset link was delivered. Check the mail settings, then try again.',
+        });
+    }
+
+    /** System Admin recovery: release a locked account after recording why. */
+    public function unlock(RecoverStaffAccount $recover): void
+    {
+        $account = $recover->unlock(Auth::user(), Staff::query()->findOrFail($this->staffId), $this->unlockReason);
+        $this->unlockReason = '';
+        session()->flash('status', $account->status->value === 'active'
+            ? 'Account unlocked. The user can log in with their existing password, or reset it from the login page.'
+            : 'Account unlocked. Password setup was never completed, so it is back to invited. Reissue the invitation.');
     }
 
     public function render(StaffAssignments $assignments, StaffTasks $tasks): View

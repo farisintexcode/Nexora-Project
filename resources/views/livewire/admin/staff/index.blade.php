@@ -25,6 +25,18 @@
         </tr>@endforeach</tbody></table></div>
     @endif
     {{ $staffMembers->links() }}
+    @if($systemAccounts->isNotEmpty())
+    <section class="grid gap-3" aria-labelledby="system-accounts-heading">
+        <div><h2 id="system-accounts-heading" class="text-base font-semibold">System accounts</h2><p class="mt-1 text-xs text-ink-500">Login accounts that have no staff record, such as the first System Admin. They are not employees in this directory, so they have no staff page to edit.</p></div>
+        <div class="surface overflow-x-auto"><table class="data-table"><caption class="sr-only">Login accounts without a staff record</caption><thead><tr>@foreach(['Name', 'Email', 'System Role', 'Account Status', 'Last Login'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
+            <tbody>@foreach($systemAccounts as $account)<tr wire:key="system-account-{{ $account->id }}">
+                <td>{{ $account->name }}@if($account->is(auth()->user())) <x-badge tone="brand">You</x-badge>@endif</td><td>{{ $account->email }}</td>
+                <td>{{ $account->systemRoleLabel() ?: 'No role' }}</td>
+                <td><x-badge :tone="match ($account->status->value) { 'active' => 'success', 'invited' => 'brand', 'locked' => 'danger', default => 'neutral' }">{{ ucfirst($account->status->value) }}</x-badge></td>
+                <td>{{ $account->last_login_at?->timezone('Asia/Kuala_Lumpur')->format('d M Y H:i') ?? 'Never' }}</td>
+            </tr>@endforeach</tbody></table></div>
+    </section>
+    @endif
     @if($deactivatingStaff)
     <dialog wire:key="deactivate-{{ $deactivatingStaff->public_id }}" wire:ignore.self x-data x-init="$el.showModal()" @cancel.prevent="$wire.cancelDeactivation()" aria-label="Deactivate {{ $deactivatingStaff->full_name }}?" class="confirmation-dialog">
         <form wire:submit="changeAvailability('{{ $deactivatingStaff->public_id }}', false)" class="p-6 sm:p-8">

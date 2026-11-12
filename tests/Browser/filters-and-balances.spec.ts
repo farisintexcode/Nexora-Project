@@ -10,7 +10,7 @@ async function signIn(page: Page, email: string, rider = false) {
 
 test('compact Admin filters expand clear and fit mobile and dark mode', async ({ page }) => {
     test.skip(!process.env.DCMS_E2E_PASSWORD, 'Requires isolated synthetic browser database.');
-    await signIn(page, 'hr-admin@example.test');
+    await signIn(page, 'admin@example.test');
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     for (const [path, advanced] of [['/admin/attendance?view=records', 'Rider name or staff number'], ['/admin/leave', 'Rider Name or Employee ID'], ['/admin/staff', 'Personnel']]) {

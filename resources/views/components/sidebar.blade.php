@@ -6,7 +6,7 @@
     <div class="sidebar-scroll"><nav x-ref="navigationItems" aria-label="{{ $portal === 'rider' ? 'Rider menu' : 'Admin navigation' }}" class="grid gap-1.5">
     @if($portal === 'admin')
         @php($pending = app(\App\Services\PendingReviews::class)->counts(auth()->user()))
-        <x-sidebar-item label="Dashboard" icon="grid" :href="route('admin.home')" :active="request()->routeIs('admin.home')" />
+        <x-sidebar-item label="Dashboard" icon="grid" :href="route('admin.home')" :active="request()->routeIs('admin.home', 'admin.system')" />
         @can('assignments.view')
         <x-sidebar-group label="Assignment" icon="briefcase" :active="request()->routeIs('admin.assignments.*')" keywords="Manage Assignment Add Assignment Active Archived batches">
             <x-sidebar-item label="Manage Assignment" icon="briefcase" parent="Assignment" :href="route('admin.assignments.index')" :active="request()->routeIs('admin.assignments.*') && !request()->routeIs('admin.assignments.create')" />
@@ -35,6 +35,7 @@
             @can('attendance.view_own')<x-sidebar-item label="My attendance" icon="clock" parent="Human Resources" :href="route('attendance.own')" :active="request()->routeIs('attendance.own')" />@endcan
         </x-sidebar-group>
         @endcanany
+        @can('monitoring.view')<x-sidebar-item label="System Health" icon="activity" :href="url('/pulse')" />@endcan
         <div class="sidebar-divider" x-show="!query.trim()"></div>
         <p class="sidebar-section sidebar-label" x-show="!query.trim()">Supporting modules</p>
         @can('viewAny',\App\Models\CollectionActivity::class)<x-sidebar-item label="Call Centre" tag="Upcoming" icon="phone" :href="route('admin.calls.index')" :active="request()->routeIs('admin.calls.*')" />@endcan

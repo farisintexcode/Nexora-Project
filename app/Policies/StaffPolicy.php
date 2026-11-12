@@ -32,4 +32,10 @@ class StaffPolicy
     {
         return $this->view($user, $staff) && $user->can('users.invite');
     }
+
+    /** Account recovery (reset links, unlocking) is reserved for System Admins. */
+    public function recoverAccount(User $user, Staff $staff): bool
+    {
+        return $this->invite($user, $staff) && $user->can('roles.manage');
+    }
 }

@@ -3,8 +3,11 @@
 namespace App\Livewire\Admin\Staff;
 
 use App\Actions\Staff\SaveStaff;
+use App\Enums\AccountStatus;
 use App\Models\Staff;
+use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -88,6 +91,9 @@ class Index extends Component
     public function mount(): void
     {
         $this->query = session('staff_search.'.Auth::id(), '');
+        if (! request()->has('kind') && Auth::user()->usesSystemAdminWorkspace()) {
+            $this->kind = 'all';
+        }
     }
 
     public function updated(string $property): void
@@ -163,7 +169,29 @@ class Index extends Component
         return view('livewire.admin.staff.index', [
             'staffMembers' => $query->paginate($size, ['id', 'public_id', 'staff_no', 'first_name', 'last_name', 'email', 'created_at', 'position_code', 'is_active', 'is_rider']),
             'filterError' => $dates->fails() ? $dates->errors()->first() : null,
+            'systemAccounts' => $this->systemAccounts(),
             'deactivatingStaff' => $this->deactivating ? Staff::query()->where('public_id', $this->deactivating)->first(['public_id', 'staff_no', 'first_name', 'last_name']) : null,
         ]);
+    }
+
+    /**
+     * Login accounts with no staff record (for example the first System Admin), filtered like the directory where it applies.
+     *
+     * @return Collection<int, User>
+     */
+    private function systemAccounts(): Collection
+    {
+        if ($this->role === 'Rider' || $this->accountStatus === 'none' || ($this->role !== '' && ! in_array($this->role, config('dcms.staff_roles'), true))) {
+            return collect();
+        }
+        $term = mb_strtolower(trim($this->query));
+        $prefix = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term).'%';
+
+        return User::query()->whereNull('staff_id')
+            ->when(AccountStatus::tryFrom($this->accountStatus), fn ($query, AccountStatus $status) => $query->where('status', $status))
+            ->when($term !== '' && mb_strlen($term) <= 200, fn ($query) => $query->where(fn ($query) => $query->where('name', 'ilike', $prefix)->orWhere('email', 'ilike', $prefix)))
+            ->with(['roles.permissions', 'permissions'])->orderBy('name')->limit(100)
+            ->get(['id', 'name', 'email', 'status', 'last_login_at', 'staff_id'])
+            ->when($this->role !== '', fn (Collection $accounts) => $accounts->filter(fn (User $account): bool => in_array($this->role, explode(', ', $account->systemRoleLabel()), true))->values());
     }
 }

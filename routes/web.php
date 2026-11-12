@@ -26,6 +26,7 @@ use App\Livewire\Admin\Imports\Review;
 use App\Livewire\Admin\Staff\Editor as StaffEditor;
 use App\Livewire\Admin\Staff\Index as StaffIndex;
 use App\Livewire\Admin\Staff\Show as StaffShow;
+use App\Livewire\Admin\SystemOverview;
 use App\Livewire\Admin\Tasks\Allocation;
 use App\Livewire\Admin\Tasks\Editor;
 use App\Livewire\Rider\Attendance;
@@ -64,6 +65,7 @@ Route::middleware(['auth', 'auth.session'])->group(function (): void {
         return redirect()->route('rider.home');
     })->name('home');
     Route::livewire('/admin', AdminHome::class)->middleware('can:admin.access')->name('admin.home');
+    Route::livewire('/admin/system', SystemOverview::class)->middleware(['can:admin.access', 'can:roles.manage'])->name('admin.system');
     Route::middleware(['can:admin.access', 'can:communications.view'])->prefix('admin/communications')->name('admin.communications.')->group(function (): void {
         Route::livewire('/letters', Letters::class)->name('letters');
         Route::get('/letters/{letter}/download', LetterDownloadController::class)->whereUuid('letter')->middleware(['signed', 'throttle:10,1'])->name('letters.download');

@@ -20,7 +20,21 @@
     @can('invite',$staff)
         @if(!$staff->user || $staff->user->status->value === 'invited')
         <form wire:submit="invite" class="grid gap-4 border-t border-ink-100 pt-5"><x-select name="invitationRole" label="Account access bundle" wire:model="invitationRole" required><option value="">Choose explicitly</option><option value="Administrative">Administrative</option>@if($staff->is_rider)<option value="Rider">Rider</option>@endif @can('roles.manage')<option value="System Admin">System Admin</option>@endcan</x-select><p class="field-help">This is a separate permission grant. System Admin requires roles.manage.</p>@if(!config('dcms.terms_version') || !config('dcms.privacy_url'))<p class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5">Invitations require the approved terms version and privacy URL. Configure these before account activation.</p>@endif<x-button class="w-fit" wire:loading.attr="disabled" :disabled="!$staff->is_active || !config('dcms.terms_version') || !config('dcms.privacy_url')">{{ $staff->user ? 'Reissue invitation' : 'Invite account' }}</x-button><p class="field-help">Activation links are single-use, expire after {{ config('auth.passwords.users.expire') }} minutes and are delivered through the configured mail transport. Local array capture does not deliver email; log transports are blocked.</p></form>
-        @else<p class="field-help">This account is already set up. If the user forgets their password, they can reset it from the login page. To change the account status or role, use Edit Staff. The login email cannot be changed.</p>@endif
+        @else<p class="field-help">This account is already set up. If the user forgets their password, they can reset it from the login page. To change the account status or role, use Edit Staff. The login email cannot be changed.</p>
+            @can('recoverAccount', $staff)
+                <div class="grid gap-3 border-t border-ink-100 pt-5">
+                    <h3 class="text-sm font-semibold">Account recovery</h3>
+                    @if($staff->user->status->value === 'active')
+                        <p class="field-help">Use this when the user cannot log in. A single-use link goes to {{ $staff->user->email }} and expires after {{ config('auth.passwords.users.expire') }} minutes. Their current password keeps working until they choose a new one.</p>
+                        <x-confirm-action class="w-fit" variant="secondary" label="Send password reset link" action="sendPasswordReset" confirmLabel="Send link" title="Send a password reset link?" message="The link is emailed to the account owner only. You never see the link or their password." />
+                    @elseif($staff->user->status->value === 'locked')
+                        <form wire:submit="unlock" class="grid gap-3"><x-textarea name="unlockReason" label="Why are you unlocking this account?" wire:model="unlockReason" rows="2" required /><x-confirm-action class="w-fit" label="Unlock account" confirmLabel="Unlock" title="Unlock this account?" message="The user can log in again with their existing password. If they never finished password setup, the account goes back to invited. The reason is kept in the activity log." /></form>
+                    @else
+                        <p class="field-help">This account is {{ $staff->user->status->value }}. Turn it back on in Edit Staff before sending a reset link.</p>
+                    @endif
+                </div>
+            @endcan
+        @endif
     @else<p class="rounded-xl bg-ink-50 p-4 text-xs leading-6 text-ink-500">Account invitations require the separate users.invite permission. System Role grants remain separately authorized.</p>@endcan
     </section></div>
     @elseif($activeTab === 'activity')

@@ -111,8 +111,8 @@ class Doctor extends Command
     {
         $baseline = [
             'Admin' => array_values(array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions'))),
-            'Administrative' => array_values(array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions'), ['attendance.configure', 'monitoring.view', 'audit.view'])),
-            'System Admin' => array_values(array_unique([...array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions')), 'roles.manage', 'users.invite', 'integrations.manage'])),
+            'Administrative' => array_values([...array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions'), ['monitoring.view', 'audit.view']), ...config('dcms.office_permissions')]),
+            'System Admin' => config('dcms.system_admin_permissions'),
             'Rider' => config('dcms.rider_permissions'),
         ];
         foreach ($baseline as $name => $expected) {

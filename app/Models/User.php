@@ -45,6 +45,12 @@ class User extends Authenticatable
             : $role)->unique()->join(', ');
     }
 
+    /** System Admins without task access get the account and settings workspace instead of the operations dashboard. */
+    public function usesSystemAdminWorkspace(): bool
+    {
+        return $this->can('roles.manage') && ! $this->can('tasks.view');
+    }
+
     public function profilePhoto(): HasOne
     {
         return $this->hasOne(Document::class, 'owner_id')->ofMany(['id' => 'max'], function (Builder $query): void {

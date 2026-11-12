@@ -9,7 +9,7 @@ for (const role of ['System Admin', 'Administrative', 'Rider']) {
         await page.getByLabel('Email', { exact: true }).fill('hr-admin@example.test');
         await page.getByLabel('Password', { exact: true }).fill(password!);
         await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-        await expect(page).toHaveURL(/\/admin$/);
+        await expect(page).toHaveURL(/\/admin\/system$/);
         await page.goto('/admin/staff/create');
         await expect(page.getByRole('heading', { name: 'Add New Staff', exact: true })).toBeVisible();
         await expect(page.getByLabel('System Role', { exact: true }).locator('option')).toHaveText(['System Admin', 'Administrative', 'Rider']);

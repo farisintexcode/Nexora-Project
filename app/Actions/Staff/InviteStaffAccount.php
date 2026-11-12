@@ -7,6 +7,7 @@ use App\Models\Staff;
 use App\Models\User;
 use App\Notifications\StaffInvitation;
 use App\Services\AuditWriter;
+use App\Services\Staff\AccountMailTransport;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -22,7 +23,7 @@ class InviteStaffAccount
 {
     public string $deliveryStatus = 'prepared';
 
-    public function __construct(private AuditWriter $audit) {}
+    public function __construct(private AuditWriter $audit, private AccountMailTransport $transport) {}
 
     public function handle(User $actor, Staff $target, string $role, string $revision): string
     {
@@ -88,7 +89,7 @@ class InviteStaffAccount
 
                         return;
                     }
-                    if ($this->usesLogTransport(config('mail.default'))) {
+                    if ($this->transport->usesLogTransport()) {
                         $delivery = $this->deliveryStatus = 'unsafe_transport';
 
                         return;
@@ -107,23 +108,5 @@ class InviteStaffAccount
         }
 
         return $delivery;
-    }
-
-    private function usesLogTransport(string $name, array $seen = []): bool
-    {
-        if (in_array($name, $seen, true)) {
-            return true;
-        }
-        $seen[] = $name;
-        if (config('mail.mailers.'.$name.'.transport') === 'log') {
-            return true;
-        }
-        foreach (config('mail.mailers.'.$name.'.mailers', []) as $child) {
-            if ($this->usesLogTransport($child, $seen)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

@@ -21,7 +21,7 @@ beforeEach(function (): void {
 function leavePolicyAdministrator(): User
 {
     $actor = User::factory()->create();
-    $actor->assignRole('System Admin');
+    $actor->assignRole('Administrative');
 
     return $actor;
 }

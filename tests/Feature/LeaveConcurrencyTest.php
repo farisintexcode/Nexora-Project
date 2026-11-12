@@ -42,7 +42,7 @@ function concurrentLeaveSubmission(int $riderId, string $typeId, string $date): 
 test('simultaneous submissions for different dates cannot overdraw one available day', function (): void {
     $this->seed(DatabaseSeeder::class);
     $admin = User::factory()->create();
-    $admin->assignRole('System Admin');
+    $admin->assignRole('Administrative');
     $rider = User::factory()->for(Staff::factory()->create(['is_rider' => true]))->create();
     $rider->assignRole('Rider');
     $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'max_calendar_days' => 7]);

@@ -1,16 +1,19 @@
 <?php
 
 use App\Actions\Staff\ManageStaffAccount;
+use App\Actions\Staff\RecoverStaffAccount;
 use App\Actions\Staff\SaveStaff;
 use App\Enums\AccountStatus;
 use App\Livewire\Admin\Staff\Editor;
 use App\Livewire\Admin\Staff\Index;
+use App\Livewire\Admin\Staff\Show;
 use App\Models\AuditLog;
 use App\Models\Staff;
 use App\Models\User;
 use App\Notifications\StaffInvitation;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -344,3 +347,65 @@ test('explicit legacy Admin role conversion still synchronizes eligibility and r
     expect($staff->fresh()->is_rider)->toBeFalse();
     expect($account->fresh()->getRoleNames()->all())->toBe(['System Admin']);
 });
+
+test('a System Admin emails a password reset link to an active account and the request is audited', function (): void {
+    Notification::fake();
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => false]);
+    $account = User::factory()->for($staff)->create();
+    $account->assignRole('Administrative');
+
+    Livewire::actingAs($actor)->test(Show::class, ['staff' => $staff])->assertSee('Send password reset link')
+        ->call('sendPasswordReset')->assertHasNoErrors();
+
+    Notification::assertSentTo($account, ResetPassword::class);
+    Notification::assertNotSentTo($actor, ResetPassword::class);
+    $this->assertDatabaseHas('audit_logs', ['action' => 'account_password_reset_sent', 'entity_id' => $staff->public_id, 'actor_id' => $actor->id]);
+    expect(fn () => app(RecoverStaffAccount::class)->sendPasswordReset($actor, $staff))->toThrow(ValidationException::class, 'sent recently');
+});
+
+test('password reset links are refused for accounts that are not active or have no safe mail transport', function (string $state): void {
+    Notification::fake();
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => false]);
+    $account = User::factory()->for($staff)->create(['status' => $state === 'log_transport' ? AccountStatus::Active : AccountStatus::from($state)]);
+    $account->assignRole('Administrative');
+    if ($state === 'log_transport') {
+        config(['mail.default' => 'log']);
+    }
+
+    expect(fn () => app(RecoverStaffAccount::class)->sendPasswordReset($actor, $staff))->toThrow(ValidationException::class);
+    Notification::assertNothingSent();
+})->with(['invited', 'disabled', 'locked', 'log_transport']);
+
+test('only System Admins see and use account recovery', function (): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('Administrative');
+    $actor->givePermissionTo('users.invite');
+    $staff = Staff::factory()->create(['is_rider' => false]);
+    User::factory()->for($staff)->create(['status' => AccountStatus::Locked])->assignRole('Administrative');
+
+    Livewire::actingAs($actor)->test(Show::class, ['staff' => $staff])->assertDontSee('Account recovery')
+        ->set('unlockReason', 'Trying anyway')->call('unlock')->assertForbidden();
+    expect(fn () => app(RecoverStaffAccount::class)->sendPasswordReset($actor, $staff))->toThrow(AuthorizationException::class);
+    expect($staff->user->fresh()->status)->toBe(AccountStatus::Locked);
+});
+
+test('unlocking needs a reason, restores the right status and is audited', function (bool $passwordSet): void {
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
+    $staff = Staff::factory()->create(['is_rider' => false]);
+    $account = User::factory()->for($staff)->create(['status' => AccountStatus::Locked, 'email_verified_at' => $passwordSet ? now() : null]);
+    $account->assignRole('Administrative');
+
+    $page = Livewire::actingAs($actor)->test(Show::class, ['staff' => $staff])->assertSee('Unlock account')->call('unlock')->assertHasErrors('reason');
+    expect($account->fresh()->status)->toBe(AccountStatus::Locked);
+
+    $page->set('unlockReason', 'Identity confirmed by phone')->call('unlock')->assertHasNoErrors();
+    expect($account->fresh()->status)->toBe($passwordSet ? AccountStatus::Active : AccountStatus::Invited);
+    $audit = AuditLog::query()->where('action', 'account_unlocked')->sole();
+    expect($audit->reason)->toBe('Identity confirmed by phone')->and($audit->previous_values_redacted['status'])->toBe('locked');
+    expect(fn () => app(RecoverStaffAccount::class)->unlock($actor, $staff, 'Again'))->toThrow(ValidationException::class, 'not locked');
+})->with(['password already set' => true, 'password never set' => false]);

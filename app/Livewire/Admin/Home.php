@@ -26,6 +26,14 @@ class Home extends Component
     #[Url]
     public string $assignment = '';
 
+    /** System Admins do not work assignments or tasks, so their home is the account and settings overview. */
+    public function mount(): void
+    {
+        if (Auth::user()->usesSystemAdminWorkspace()) {
+            $this->redirectRoute('admin.system');
+        }
+    }
+
     /** Re-render the attention cards when the header bell sees new tasks or leave waiting. */
     #[On('pending-reviews-changed')]
     public function refreshAttention(): void {}

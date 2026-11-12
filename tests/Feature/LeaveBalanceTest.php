@@ -32,8 +32,7 @@ beforeEach(function (): void {
 function balanceFixture(int $days = 3): array
 {
     $admin = User::factory()->create();
-    $admin->assignRole('System Admin');
-    $admin->givePermissionTo('attendance.approve_correction');
+    $admin->assignRole('Admin');
     $rider = User::factory()->for(Staff::factory()->create(['is_rider' => true]))->create();
     $rider->assignRole('Rider');
     $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'max_calendar_days' => 93, 'allow_pending_cancel' => true]);

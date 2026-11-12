@@ -27,11 +27,11 @@ class RolePermissionSeeder extends Seeder
         /** Preserve legacy Admin grants and identities during the M01/M10/M12 transition. */
         $administrative = Role::findOrCreate('Administrative', 'web');
         if ($administrative->wasRecentlyCreated) {
-            $administrative->syncPermissions(array_values(array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions'), ['attendance.configure', 'monitoring.view', 'audit.view'])));
+            $administrative->syncPermissions(array_values([...array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions'), ['monitoring.view', 'audit.view']), ...config('dcms.office_permissions')]));
         }
         $systemAdmin = Role::findOrCreate('System Admin', 'web');
         if ($systemAdmin->wasRecentlyCreated) {
-            $systemAdmin->syncPermissions(array_values(array_unique([...array_diff(config('dcms.permissions'), config('dcms.rider_only_permissions'), config('dcms.reserved_permissions')), 'roles.manage', 'users.invite', 'integrations.manage'])));
+            $systemAdmin->syncPermissions(config('dcms.system_admin_permissions'));
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }

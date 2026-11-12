@@ -9,7 +9,7 @@ test('authorized HR configures leave availability and Riders see only active typ
     page.on('dialog', dialog => dialog.accept());
     const name = `Browser Leave ${test.info().project.name} ${Date.now()}`;
     await page.goto('/login');
-    await page.getByLabel('Email', { exact: true }).fill('hr-admin@example.test');
+    await page.getByLabel('Email', { exact: true }).fill('administrative@example.test');
     await page.getByLabel('Password', { exact: true }).fill(password!);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).toHaveURL(/\/admin$/);
