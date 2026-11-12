@@ -2,6 +2,7 @@
 
 namespace App\Actions\Imports;
 
+use App\Actions\Assignments\ArchiveFinishedBatch;
 use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
 use App\Models\Document;
@@ -151,6 +152,9 @@ class ImportWorkflow
             }
             $batch->save();
             $this->audit->record($actor, 'import_scan_finished', $batch->public_id, ['status' => $batch->status], module: 'M04', entityType: 'import');
+            if ($batch->status === 'failed') {
+                $this->archiveParentIfFinished($actor, $batch);
+            }
         });
         $this->proposeMapping($id);
     }
@@ -215,7 +219,9 @@ class ImportWorkflow
             $batch->error_summary = $reason;
             $batch->completed_at = now();
             $batch->save();
-            $this->audit->record(User::query()->findOrFail($batch->uploaded_by), 'import_columns_rejected', $batch->public_id, ['missing' => $missing], module: 'M04', entityType: 'import');
+            $uploader = User::query()->findOrFail($batch->uploaded_by);
+            $this->audit->record($uploader, 'import_columns_rejected', $batch->public_id, ['missing' => $missing], module: 'M04', entityType: 'import');
+            $this->archiveParentIfFinished($uploader, $batch);
 
             return $reason;
         });
@@ -448,6 +454,7 @@ class ImportWorkflow
             $batch->completed_at = now();
             $batch->save();
             $this->audit->record($actor, 'import_cancelled', $batch->public_id, ['status' => 'cancelled'], module: 'M04', entityType: 'import');
+            $this->archiveParentIfFinished($actor, $batch);
         }, allowArchived: true);
     }
 
@@ -536,6 +543,7 @@ class ImportWorkflow
             if ($actor && Gate::forUser($actor)->allows('view', $batch)) {
                 DB::table('notifications')->insert(['id' => (string) Str::uuid7(), 'type' => 'import_reconciled', 'notifiable_type' => 'user', 'notifiable_id' => $actor->id, 'data' => json_encode(['import_id' => $batch->public_id, 'status' => $batch->status, 'processed' => $batch->processed_count, 'failed' => $batch->failed_count]), 'created_at' => now(), 'updated_at' => now()]);
             }
+            $this->archiveParentIfFinished($actor, $batch);
         });
     }
 
@@ -564,6 +572,7 @@ class ImportWorkflow
             $batch->error_summary = 'Background processing stopped. Review access and services, then retry failed work.';
             $batch->save();
             $this->audit->record(null, 'import_worker_interrupted', $batch->public_id, ['status' => 'failed'], module: 'M04', entityType: 'import');
+            $this->archiveParentIfFinished(null, $batch);
         }, allowArchived: true);
     }
 
@@ -633,6 +642,14 @@ class ImportWorkflow
     private function scanCleared(?string $status): bool
     {
         return $status === 'clean' || ($status === 'skipped' && ! $this->scanRequired());
+    }
+
+    /** Archives the parent assignment when this finished import was the last thing it was waiting on. */
+    private function archiveParentIfFinished(?User $actor, ImportBatch $batch): void
+    {
+        if ($batch->assignment_batch_id) {
+            app(ArchiveFinishedBatch::class)->handle($actor, $batch->assignment_batch_id);
+        }
     }
 
     private function locked(int $id, callable $callback, bool $allowArchived = false): mixed

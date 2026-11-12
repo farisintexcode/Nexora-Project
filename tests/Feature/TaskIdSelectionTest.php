@@ -5,11 +5,13 @@ use App\Livewire\Admin\Tasks\Allocation;
 use App\Livewire\Admin\Tasks\Editor;
 use App\Livewire\Admin\Tasks\Index;
 use App\Models\AssignmentBatch;
+use App\Models\AuditLog;
 use App\Models\BulkOperation;
 use App\Models\Document;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
 use App\Models\ImportTemplate;
+use App\Models\ReferenceValue;
 use App\Models\Staff;
 use App\Models\Task;
 use App\Models\TaskAllocation;
@@ -800,4 +802,61 @@ test('tasks ticked on manage task go straight to assign task and stay usable', f
         ->assertHasNoErrors();
     expect(BulkOperation::query()->sole()->items()->sole()->task_id)->toBe($task->id)
         ->and(session()->has('task_selection.'.$actor->id))->toBeFalse();
+});
+
+function archivedFileWithUnassignedTasks(string ...$ids): array
+{
+    $archived = AssignmentBatch::factory()->create();
+    $file = uploadedFile($archived, 'leftover.xlsx');
+    $tasks = array_map(fn (string $id): Task => taskFromFile($archived, $file, $id), $ids);
+    $archived->forceFill(['status' => 'archived', 'archived_at' => now()])->save();
+
+    return [$archived, $file, $tasks];
+}
+
+test('unassigned tasks of an archived assignment excel file can be given out under another active assignment of the same type', function (): void {
+    [$archived, $file, [$first, $second]] = archivedFileWithUnassignedTasks('FG001', 'FG002');
+    [$assignment, $rider] = assignmentAndRider();
+    $otherType = AssignmentBatch::factory()->create(['type_code' => ReferenceValue::query()->where('category', 'assignment_type')->where('code', '<>', $assignment->type_code)->value('code')]);
+
+    Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $otherType->id)->assertDontSee('leftover.xlsx')
+        ->set('batchId', (string) $assignment->id)
+        ->assertSee('leftover.xlsx')->assertSee('unassigned from archived '.$archived->assignment_code)
+        ->set('importId', $file->public_id)->set('mode', 'single')->set('taskIds', '1')
+        ->set('riderId', (string) $rider->id)->set('reason', 'Give out leftover customers')
+        ->call('assign')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('admin.tasks.index'));
+
+    expect($first->refresh()->assignment_batch_id)->toBe($assignment->id)
+        ->and($first->currentAllocation->collector_id)->toBe($rider->id)
+        ->and($second->refresh()->assignment_batch_id)->toBe($archived->id)
+        ->and($second->currentAllocation()->exists())->toBeFalse()
+        ->and($archived->refresh()->status->value)->toBe('archived')
+        ->and(AuditLog::query()->where('action', 'task_moved')->where('entity_id', $first->public_id)->exists())->toBeTrue();
+
+    session()->flush();
+    Livewire::actingAs(staffManager())->test(Index::class)
+        ->assertSee($archived->assignment_code.' - '.$archived->name)->assertSee('(Archived)')
+        ->assertSee($assignment->assignment_code.' - '.$assignment->name)
+        ->set('batch', $assignment->public_id)->assertSee('leftover.xlsx');
+});
+
+test('archived tasks move only through a new assignment, never onto a clashing number, and the database refuses other moves', function (): void {
+    [$archived, $file, [$task]] = archivedFileWithUnassignedTasks('FG001');
+    [$assignment, $rider] = assignmentAndRider();
+    $page = fn (string $operation) => Livewire::actingAs(staffManager())->test(Allocation::class)
+        ->set('batchId', (string) $assignment->id)->set('importId', $file->public_id)->set('mode', 'single')->set('taskIds', '1')
+        ->set('operation', $operation)->set('riderId', (string) $rider->id)->set('reason', 'Synthetic reason');
+
+    $page('cancel')->call('assign')->assertHasErrors(['operation']);
+    numberedTask($assignment, 'JAN001');
+    $page('new')->call('assign')->assertHasErrors(['operation']);
+    expect($task->refresh()->assignment_batch_id)->toBe($archived->id);
+
+    $active = AssignmentBatch::factory()->create();
+    $started = numberedTask($active, 'FG005');
+    expect(fn () => DB::transaction(fn () => DB::table('tasks')->where('id', $started->id)->update(['assignment_batch_id' => $assignment->id])))
+        ->toThrow(QueryException::class, 'Task identity/source immutable');
 });

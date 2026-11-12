@@ -52,6 +52,11 @@ class TaskOperation
                 throw ValidationException::withMessages(['operation' => 'Single-task mode requires exactly one task.']);
             }
             $target = in_array($data['operation_code'], ['unassign', 'cancel'], true) ? null : $this->rider((int) $data['target_collector_id']);
+            if ($data['operation_code'] === 'new') {
+                app(MoveUnassignedTasks::class)->handle($actor, $batch, $data['task_ids']);
+            } elseif (Task::query()->whereIn('id', $data['task_ids'])->movableInto($batch->id)->exists()) {
+                throw ValidationException::withMessages(['operation' => 'Unassigned tasks from an archived assignment can only be given out with New.']);
+            }
             $tasks = Task::query()->where('assignment_batch_id', $batch->id)->whereIn('id', $data['task_ids'])->with('currentAllocation')->orderBy('id')->lockForUpdate()->get();
             if ($tasks->count() !== count($data['task_ids'])) {
                 abort(404);
@@ -183,9 +188,7 @@ class TaskOperation
             $this->counts($operation);
             app(AuditWriter::class)->record(User::query()->find($operation->requested_by), 'task_operation_reconciled', $operation->public_id, ['status' => $operation->status], module: 'M05', entityType: 'bulk_operation');
             $this->notifyRiders($operation, $batch);
-            if ($operation->operation_code === 'cancel') {
-                app(ArchiveFinishedBatch::class)->handle(User::query()->find($operation->requested_by), $batch->id);
-            }
+            app(ArchiveFinishedBatch::class)->handle(User::query()->find($operation->requested_by), $batch->id);
         });
     }
 

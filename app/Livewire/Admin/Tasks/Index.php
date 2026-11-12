@@ -3,6 +3,7 @@
 namespace App\Livewire\Admin\Tasks;
 
 use App\Actions\Tasks\DeleteTasks;
+use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
@@ -132,7 +133,9 @@ class Index extends Component
         }
         $this->clearTaskFilters();
         $this->file = $publicId === self::MANUAL_FILE ? self::MANUAL_FILE : $excelFile->public_id;
-        $this->batch = $publicId === self::MANUAL_FILE ? $this->batch : ($excelFile->assignment?->public_id ?? '');
+        if ($publicId !== self::MANUAL_FILE && $this->batch === '' && $excelFile->assignment?->status === BatchStatus::Active) {
+            $this->batch = $excelFile->assignment->public_id;
+        }
     }
 
     /** Return to the first view: the list of uploaded Excel files. */
@@ -216,7 +219,7 @@ class Index extends Component
 
         $selectedAssignment = $this->batch === '' ? null : AssignmentBatch::query()->where('public_id', $this->validUuid($this->batch))->first();
         $assignmentId = $this->batch === '' ? null : ($selectedAssignment?->id ?? 0);
-        $excelFiles = $this->taskFiles()->when($assignmentId !== null, fn ($query) => $query->where('assignment_batch_id', $assignmentId))->limit(200)->get();
+        $excelFiles = $this->taskFiles()->when($assignmentId !== null, fn ($query) => $query->usedByAssignment($assignmentId))->limit(200)->get();
         $showsCustomers = $this->showsCustomers();
         $manualTasks = Task::query()->whereNull('import_batch_id')->whereNull('source_import_row_id')->when($assignmentId !== null, fn ($query) => $query->where('assignment_batch_id', $assignmentId));
 
@@ -240,7 +243,7 @@ class Index extends Component
             ->orWhereIn('tasks.source_import_row_id', ImportRow::query()->select('import_rows.id')->whereColumn('import_rows.import_batch_id', 'import_batches.id')));
 
         return $this->taskFiles()->with('uploader')
-            ->when($assignmentId !== null, fn ($query) => $query->where('assignment_batch_id', $assignmentId))
+            ->when($assignmentId !== null, fn ($query) => $query->usedByAssignment($assignmentId))
             ->select('import_batches.*')
             ->addSelect([
                 'customers_count' => $tasksInFile(),

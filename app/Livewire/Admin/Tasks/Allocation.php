@@ -112,13 +112,16 @@ class Allocation extends Component
     }
 
     /**
-     * Tasks offered as tick boxes for the chosen assignment and, when one is chosen, its Excel file.
+     * Tasks offered as tick boxes for the chosen assignment and, when one is chosen, its Excel file. A file from an archived
+     * assignment also offers its unassigned tasks, which move into the chosen assignment when given out.
      */
     private function choiceQuery(AssignmentBatch $assignment): Builder
     {
-        $file = $this->importId === '' ? null : ImportBatch::query()->taskFilesFor($assignment->id)->where('public_id', $this->importId)->first();
+        $file = $this->importId === '' ? null : ImportBatch::query()->assignableFor($assignment->id)->where('public_id', $this->importId)->first();
 
-        return Task::query()->where('assignment_batch_id', $assignment->id)->whereNotNull('source_task_number')->when($file, fn ($query) => $query->fromImport($file->id))->orderBy('source_task_number');
+        return Task::query()->whereNotNull('source_task_number')
+            ->where(fn ($query) => $query->where('assignment_batch_id', $assignment->id)->when($file, fn ($query) => $query->orWhere(fn ($query) => $query->movableInto($assignment->id))))
+            ->when($file, fn ($query) => $query->fromImport($file->id))->orderBy('source_task_number');
     }
 
     /**
@@ -161,7 +164,7 @@ class Allocation extends Component
             $singleId = [Rule::requiredIf($hasRange), 'nullable', 'string', 'max:100', 'regex:/^[A-Za-z]*\d+$/'];
             $this->validate(['batchId' => ['required', 'integer'], 'mode' => ['required', Rule::in(array_keys(TaskIdSelection::MODES))], 'rangeFrom' => $singleId, 'rangeTo' => $singleId, 'taskIds' => [Rule::requiredIf($this->mode !== 'range'), 'nullable', 'string', 'max:5000']], attributes: ['batchId' => 'assignment', 'mode' => 'selection mode', 'rangeFrom' => 'Task ID (From)', 'rangeTo' => 'Task ID (To)', 'taskIds' => 'task IDs']);
             $range = $hasRange ? "{$this->rangeFrom}-{$this->rangeTo}" : '';
-            $file = $this->importId === '' ? null : ImportBatch::query()->where('public_id', $this->importId)->where('assignment_batch_id', (int) $this->batchId)->where('kind', 'task')->first();
+            $file = $this->importId === '' ? null : ImportBatch::query()->assignableFor((int) $this->batchId)->where('public_id', $this->importId)->first();
             if ($this->importId !== '' && ! $file) {
                 throw ValidationException::withMessages(['importId' => 'Choose an Excel file from this assignment.']);
             }
@@ -239,7 +242,7 @@ class Allocation extends Component
         $batches = AssignmentBatch::query()->with('type')->where('status', 'active')->latest('id')->limit(200)->get();
         $batch = ctype_digit($this->batchId) ? $batches->firstWhere('id', (int) $this->batchId) : null;
         $choosable = $batch && $this->selected === [] && $this->mode !== '' && $this->mode !== 'range';
-        $excelFiles = $batch ? ImportBatch::query()->taskFilesFor($batch->id)->get() : collect();
+        $excelFiles = $batch ? ImportBatch::query()->assignableFor($batch->id)->get() : collect();
         $choices = $choosable ? $this->choiceQuery($batch)->with('customer')->limit(self::CHOICE_LIMIT)->get() : collect();
 
         return view('livewire.admin.tasks.allocation', ['batches' => $batches, 'selectedAssignment' => $batch, 'excelFiles' => $excelFiles, 'riders' => $batch ? $tasks->riders()->orderBy('first_name')->get() : collect(), 'selection' => Task::query()->whereIn('public_id', array_filter($this->selected, fn ($id) => is_string($id) && Str::isUuid($id)))->with(['customer', 'account'])->get(), 'choices' => $choices, 'choiceTotal' => $choosable ? $this->choiceQuery($batch)->count() : 0, 'choiceLimit' => self::CHOICE_LIMIT, 'allChoicesTicked' => $this->allTyped($choices->pluck('source_task_number')->all())]);

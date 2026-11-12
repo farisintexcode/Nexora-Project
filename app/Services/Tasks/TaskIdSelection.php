@@ -23,14 +23,17 @@ class TaskIdSelection
     ];
 
     /**
-     * @param  int|null  $importBatchId  limits the match to tasks created from one uploaded Excel file
+     * @param  int|null  $importBatchId  limits the match to tasks created from one uploaded Excel file; its unassigned tasks
+     *                                   still in an archived assignment of the same type also match, to be moved on assignment
      * @return array<int, int> ids of the matching tasks in the assignment
      */
     public function resolve(int $assignmentId, string $mode, string $input, ?int $importBatchId = null): array
     {
         [$exact, $ranges] = $this->parse($mode, $input);
         $scope = $importBatchId === null ? 'this assignment' : 'this Excel file';
-        $tasks = Task::query()->where('assignment_batch_id', $assignmentId)->whereNotNull('source_task_number')
+        $tasks = Task::query()->whereNotNull('source_task_number')
+            ->where(fn ($query) => $query->where('assignment_batch_id', $assignmentId)
+                ->when($importBatchId !== null, fn ($query) => $query->orWhere(fn ($query) => $query->movableInto($assignmentId))))
             ->when($importBatchId !== null, fn ($query) => $query->fromImport($importBatchId))
             ->where(function ($query) use ($exact, $ranges): void {
                 $query->whereIn('source_task_number', $exact);

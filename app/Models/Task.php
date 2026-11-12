@@ -56,6 +56,19 @@ class Task extends Model
             ->orWhereIn('source_import_row_id', ImportRow::query()->where('import_batch_id', $importBatchId)->select('id')));
     }
 
+    /**
+     * Untouched tasks (unstarted, never reviewed, no Rider, not excluded) left in an archived assignment of the same type
+     * as the given active assignment, which may move into it when assigned. Mirrors dcms_task_scope_guard.
+     */
+    public function scopeMovableInto(Builder $query, int $assignmentId): void
+    {
+        $query->where('tasks.assignment_batch_id', '<>', $assignmentId)
+            ->where('work_status', 'unstarted')->where('review_status', 'none')->where('excluded', false)
+            ->whereDoesntHave('currentAllocation')
+            ->whereHas('batch', fn (Builder $query) => $query->where('status', 'archived'))
+            ->whereIn('tasks.type_code', AssignmentBatch::query()->whereKey($assignmentId)->where('status', 'active')->select('type_code'));
+    }
+
     /** Task IDs are read by their last run of digits: FG001 is 1, DT2304 is 2304. */
     public static function numberFromId(string $id): ?int
     {
