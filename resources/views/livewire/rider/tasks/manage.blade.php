@@ -53,7 +53,7 @@
                 </div>
             @endforeach
             @error('preview')<p role="alert" class="text-sm text-red-700">{{ $message }}</p>@enderror
-            <div class="flex flex-wrap gap-3"><x-button type="button" wire:click="applyUpdates" wire:confirm="Apply the reviewed update to these selected tasks?" wire:loading.attr="disabled" :disabled="collect($preview['rows'])->contains(fn($row) => $row['issues'] !== [])">Apply selected update</x-button><x-button type="button" variant="secondary" wire:click="cancelPreview" wire:loading.attr="disabled">Cancel</x-button></div>
+            <div class="flex flex-wrap gap-3"><x-confirm-action label="Apply selected update" title="Apply this update?" message="The reviewed update will be applied to the selected tasks." action="applyUpdates" confirm-label="Apply update" :disabled="collect($preview['rows'])->contains(fn($row) => $row['issues'] !== [])" /><x-button type="button" variant="secondary" wire:click="cancelPreview" wire:loading.attr="disabled">Cancel</x-button></div>
         </section>
     @endif
 </section>

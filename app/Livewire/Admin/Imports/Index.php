@@ -82,7 +82,7 @@ class Index extends Component
 
             return;
         }
-        session()->flash('status', $isNewUpload ? 'Excel file uploaded. Check its columns and rows, then commit to create the tasks.' : 'This Excel file was already uploaded to this assignment, so its earlier upload is open.');
+        session()->flash('status', $isNewUpload ? 'Excel file uploaded. Check its columns and rows, then confirm to create the tasks.' : 'This Excel file was already uploaded to this assignment, so its earlier upload is open.');
         $this->redirectRoute('admin.imports.review', ['import' => $batch], navigate: false);
     }
 

@@ -198,7 +198,8 @@ test('inactive reference values remain on historical staff but cannot be assigne
 });
 
 test('staff system role starts blank and requires explicit selection', function (): void {
-    $actor = staffManager();
+    $actor = User::factory()->create();
+    $actor->assignRole('System Admin');
     Livewire::actingAs($actor)->test(Editor::class)
         ->assertSet('data.system_role', '')
         ->assertSet('data.is_rider', false)

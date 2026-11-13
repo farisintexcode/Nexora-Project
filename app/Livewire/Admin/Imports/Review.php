@@ -76,7 +76,7 @@ class Review extends Component
         foreach ($batch->mappings()->get() as $mapping) {
             $selection = $this->selections[$mapping->id] ?? [];
             if ((string) ($selection['field_id'] ?? '') !== ($mapping->is_ignored ? 'ignore' : (string) $mapping->field_id) || ($selection['transform'] ?? '') !== $mapping->transform_code) {
-                throw ValidationException::withMessages(['confirmation' => 'The selected mapping changed. Validate and review a fresh preview before committing.']);
+                throw ValidationException::withMessages(['confirmation' => 'The selected mapping changed. Validate and review a fresh preview before confirming.']);
             }
         }
         $workflow->confirm(Auth::user(), $batch, $this->digest);

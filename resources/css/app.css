@@ -462,6 +462,12 @@
     .nexora-brand .nexora-on-dark { display: none !important; }
     .nexora-brand .nexora-on-light { display: block !important; }
 }
+/* Pulse ships unlayered CSS (img { display: block }) that beats the layered brand rules, so the navy monitoring header restates them unlayered. */
+.monitoring-header .nexora-brand .nexora-on-light { display: none; }
+.monitoring-header .nexora-brand .nexora-on-dark { display: block; }
+.monitoring-header .nexora-logo-icon { background: transparent; }
+.monitoring-header .nexora-logo-full { width: 8.5rem; }
+@media (min-width: 40rem) { .monitoring-header .nexora-logo-full { width: 10rem; } }
 
 @layer components {
  .welcome-carousel { position: relative; z-index: 1; width: 100%; max-width: 32rem; margin-block: 2.5rem; touch-action: pan-y; }
@@ -745,4 +751,27 @@
 @layer utilities {
     .dark .task-file-link { background-color: var(--surface-raised); color: var(--foreground); }
     .dark .task-file-link:hover, .dark .task-file-link[aria-current='true'] { background-color: var(--color-ink-100); }
+}
+
+/* Rider proof images share one size; the animated bar shows upload progress. */
+@layer components {
+    .rider-proof-grid { @apply grid gap-3 sm:grid-cols-2; }
+    .rider-proof-image { @apply aspect-[4/3] w-full rounded-lg bg-ink-50 object-cover; }
+    .upload-progress-wrap { @apply grid gap-2 rounded-xl border border-ink-200 bg-brand-soft p-3; }
+    .upload-progress { @apply h-3 w-full overflow-hidden rounded-full bg-ink-100; }
+    .upload-progress-bar {
+        @apply h-full rounded-full bg-brand-accent;
+        background-image: linear-gradient(45deg, rgb(255 255 255 / 30%) 25%, transparent 25%, transparent 50%, rgb(255 255 255 / 30%) 50%, rgb(255 255 255 / 30%) 75%, transparent 75%, transparent);
+        background-size: 1rem 1rem;
+        transition: width 250ms ease;
+        animation: upload-stripes 800ms linear infinite;
+    }
+    .upload-spinner { @apply inline-block size-4 shrink-0 rounded-full border-2 border-ink-200 border-t-brand-accent; animation: upload-spin 700ms linear infinite; }
+    .dark .upload-progress-wrap { background-color: var(--surface-raised); }
+    .dark .upload-progress { background-color: var(--surface); }
+}
+@keyframes upload-stripes { from { background-position: 1rem 0; } to { background-position: 0 0; } }
+@keyframes upload-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .upload-progress-bar, .upload-spinner { animation: none; }
 }

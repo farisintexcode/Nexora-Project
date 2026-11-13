@@ -58,6 +58,10 @@ class Editor extends Component
         if (! $staff?->exists) {
             $this->data['staff_no'] = app(StaffNumberGenerator::class)->next();
             $this->data['create_account'] = InviteStaffAccount::invitableRoles(Auth::user()) !== [];
+            if (Auth::user()->addsRidersOnly()) {
+                $this->data['system_role'] = 'Rider';
+                $this->data['is_rider'] = true;
+            }
 
             return;
         }
@@ -115,7 +119,7 @@ class Editor extends Component
         unset($input['position_code']);
 
         $input['system_role'] ??= '';
-        /** A login is created only for a role this person may invite (Administrative: Riders; System Admin: office accounts). */
+        /** A login is created only for a role this person may invite (Administrative: Riders; System Admin: every role). */
         $wantsAccount = (bool) ($input['create_account'] ?? true);
         $input['create_account'] = $wantsAccount && in_array($input['system_role'], InviteStaffAccount::invitableRoles(Auth::user()), true);
 
@@ -131,7 +135,7 @@ class Editor extends Component
 
         session()->flash(
             InviteStaffAccount::needsAttention($save->invitationDelivery) ? 'warning' : 'status',
-            'Staff record saved. '.match ($save->invitationDelivery) {
+            ($existing || ! Auth::user()->addsRidersOnly() ? 'Staff record saved. ' : 'Rider added. ').match ($save->invitationDelivery) {
                 'local_capture' => 'Account invited, but the array mailer captures locally and does not deliver email. Configure Mailpit or an approved transport, then reissue.',
 
                 'mail_accepted' => 'Activation invitation accepted by the mail transport. Inbox delivery is not confirmed.',
@@ -144,7 +148,7 @@ class Editor extends Component
 
                 default => match (true) {
                     $staff->user()->exists() => 'Invited accounts require personal password setup before access.',
-                    $wantsAccount && $input['system_role'] === 'Rider' => 'No login account yet: Rider logins are sent by Administrative staff from this staff page.',
+                    $wantsAccount && $input['system_role'] === 'Rider' => 'No login account yet: Rider logins are sent by Administrative staff or a System Admin from this staff page.',
                     $wantsAccount => 'No login account yet: Administrative logins are sent by a System Admin from this staff page.',
                     default => 'No login account was created. Send the invitation from this staff page when needed.',
                 },

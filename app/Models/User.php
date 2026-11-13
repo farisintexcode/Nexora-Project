@@ -45,6 +45,12 @@ class User extends Authenticatable
             : $role)->unique()->join(', ');
     }
 
+    /** Administrative staff register Riders only; registering System Admin or Administrative staff needs users.invite (System Admins). */
+    public function addsRidersOnly(): bool
+    {
+        return ! $this->can('users.invite');
+    }
+
     /** System Admins without task access get the account and settings workspace instead of the operations dashboard. */
     public function usesSystemAdminWorkspace(): bool
     {

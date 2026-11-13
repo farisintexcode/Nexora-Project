@@ -2,7 +2,7 @@
     <x-feedback />
     <x-page-header title="Workbook review" eyebrow="Reviewed intake"><x-slot:actions><x-import-status :status="$batch->status" /><a class="btn btn-secondary" href="{{ route('admin.imports.index') }}">Import history</a></x-slot:actions></x-page-header>
     <nav aria-label="Import review" class="segment-tabs">@foreach(['summary'=>'Summary','mapping'=>'Column mapping','rows'=>'Row preview','audit'=>'Audit'] as $key=>$label)<button type="button" wire:click="$set('tab','{{ $key }}')" class="segment-tab" @if($tab===$key) aria-current="page" @endif>{{ $label }}</button>@endforeach</nav>
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">@foreach(['input'=>['Input rows','clipboard','bg-brand-primary'],'accepted'=>['Accepted','check','bg-green-600'],'rejected'=>['Rejected','close','bg-red-600'],'duplicate'=>['Duplicates','layers','bg-brand-accent'],'processed'=>['Processed','activity','bg-blue-600'],'failed'=>['Commit failures','info','bg-violet-600']] as $key=>[$label,$icon,$tile])<article class="metric-card flex items-center gap-4"><span class="grid size-14 shrink-0 place-items-center rounded-xl text-white {{ $tile }}"><x-icon :name="$icon" class="size-6" /></span><div class="min-w-0 flex-1"><p class="text-xs font-medium text-ink-600">{{ $label }}</p><p class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{{ $batch->{$key.'_count'} }}</p></div></article>@endforeach</div>
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">@foreach(['input'=>['Input rows','clipboard','bg-brand-primary'],'accepted'=>['Accepted','check','bg-green-600'],'rejected'=>['Rejected','close','bg-red-600'],'duplicate'=>['Duplicates','layers','bg-brand-accent'],'processed'=>['Processed','activity','bg-blue-600'],'failed'=>['Failed on confirm','info','bg-violet-600']] as $key=>[$label,$icon,$tile])<article class="metric-card flex items-center gap-4"><span class="grid size-14 shrink-0 place-items-center rounded-xl text-white {{ $tile }}"><x-icon :name="$icon" class="size-6" /></span><div class="min-w-0 flex-1"><p class="text-xs font-medium text-ink-600">{{ $label }}</p><p class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{{ $batch->{$key.'_count'} }}</p></div></article>@endforeach</div>
     @if($tab==='summary')
         @php
             $tasksCreated = $batch->processed_count.' '.\Illuminate\Support\Str::plural('task', $batch->processed_count).' created';
@@ -11,7 +11,7 @@
                 'uploaded', 'scanning' => 'Preparing this file. This page refreshes automatically.',
                 'mapping' => 'Next step: open Column mapping to check the columns, then validate and preview the rows.',
                 'validating' => 'Checking the rows in this file.',
-                'ready' => $batch->accepted_count > 0 ? 'Next step: open Row preview to check the rows, then commit the accepted rows.' : 'None of the rows can be imported. Open Row preview to see why, then correct the file and upload it again.',
+                'ready' => $batch->accepted_count > 0 ? 'Next step: open Row preview to check the rows, then confirm the accepted rows.' : 'None of the rows can be imported. Open Row preview to see why, then correct the file and upload it again.',
                 'processing' => max(0, $batch->accepted_count - $batch->processed_count - $batch->failed_count).' accepted rows are still being created. This page refreshes automatically.',
                 'completed' => $tasksCreated.' from this file.'.($rowsNotImported > 0 ? ' '.$rowsNotImported.' '.\Illuminate\Support\Str::plural('row', $rowsNotImported).' could not be imported. Open Row preview to see why.' : ''),
                 'failed' => $batch->error_summary ?? $tasksCreated.'. '.$batch->failed_count.' '.\Illuminate\Support\Str::plural('row', $batch->failed_count).' failed. Open Row preview to see why.',
@@ -48,8 +48,8 @@
     @endphp
     @if($canCommit || $canRetry || $canCancel)
     <div class="surface flex flex-wrap items-center justify-between gap-4 p-5">
-        <p class="max-w-xl text-xs leading-6 text-ink-500">@if($batch->confirmed_at)Tasks already created stay as they are.@else Only accepted rows from this preview can be committed. No tasks have been created yet.@endif</p>
-        <div class="flex flex-wrap gap-3">@if($canCommit)<x-confirm-action label="Commit {{ $batch->accepted_count }} accepted rows" title="Commit accepted rows?" message="This creates tasks from the accepted rows in this preview. Rejected and duplicate rows will not be imported." action="confirm" confirm-label="Commit rows" />@endif
+        <p class="max-w-xl text-xs leading-6 text-ink-500">@if($batch->confirmed_at)Tasks already created stay as they are.@else Only accepted rows from this preview can be confirmed. No tasks have been created yet.@endif</p>
+        <div class="flex flex-wrap gap-3">@if($canCommit)<x-confirm-action label="Confirm {{ $batch->accepted_count }} accepted rows" title="Confirm accepted rows?" message="This creates tasks from the accepted rows in this preview. Rejected and duplicate rows will not be imported." action="confirm" confirm-label="Confirm rows" />@endif
         @if($canRetry)<x-confirm-action label="Retry failed work" variant="secondary" title="Retry failed work?" message="This uses the same file and column mapping. Tasks already created stay as they are." action="retry" confirm-label="Retry" />@endif
         @if($canCancel)<x-confirm-action label="Cancel import" variant="secondary" title="Cancel this import?" message="Outstanding work stops. Records already processed stay as they are." action="cancel" confirm-label="Cancel import" cancel-label="Keep import" />@endif</div>
     </div>

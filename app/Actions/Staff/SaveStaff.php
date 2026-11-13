@@ -22,6 +22,29 @@ class SaveStaff
 
     public function __construct(private AuditWriter $audit, private StaffAssignments $assignments, private InviteStaffAccount $invite, private ManageStaffAccount $accounts, private StaffNumberGenerator $staffNumbers) {}
 
+    /**
+     * Roles this person may give a staff record: System Admins every role (System Admin needs roles.manage); Administrative staff Riders only.
+     *
+     * @return list<string>
+     */
+    public static function assignableRoles(User $actor): array
+    {
+        if ($actor->addsRidersOnly()) {
+            return ['Rider'];
+        }
+
+        return array_values(array_filter(config('dcms.staff_roles'), fn (string $role): bool => $role !== 'System Admin' || $actor->can('roles.manage')));
+    }
+
+    /** The role a staff record holds now, mapping legacy Admin accounts and account-less records to their office or Rider role. */
+    public static function currentRole(Staff $staff): string
+    {
+        $account = $staff->user;
+        $role = $account?->getRoleNames()->first() ?? ($staff->is_rider ? 'Rider' : 'Administrative');
+
+        return $role === 'Admin' ? ($account->can('roles.manage') ? 'System Admin' : 'Administrative') : $role;
+    }
+
     public function handle(User $actor, array $input, ?Staff $existing = null, ?string $revision = null): Staff
     {
         try {
@@ -80,6 +103,9 @@ class SaveStaff
                     }
                     if ($input['system_role'] === 'System Admin') {
                         Gate::forUser($actor)->authorize('roles.manage');
+                    }
+                    if ((! $existing || $input['system_role'] !== self::currentRole($staff)) && ! in_array($input['system_role'], self::assignableRoles($actor), true)) {
+                        throw ValidationException::withMessages(['data.system_role' => 'You can only add Riders. Ask a System Admin to add System Admin or Administrative staff.']);
                     }
                 }
                 $availabilityReduced = $existing && (($staff->is_active && ! $data['is_active']) || ($staff->is_rider && ! $data['is_rider']));

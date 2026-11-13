@@ -478,3 +478,20 @@ test('call-only outcomes cannot be submitted as Rider site visits', function ():
     Livewire::test(Show::class, ['task' => $task])->assertViewHas('choices', fn ($choices) => ! $choices['activity_outcome']->contains('code', 'answered') && $choices['activity_outcome']->contains('code', 'promise_to_pay'));
     expect(fn () => app(RiderWork::class)->visit($rider, $task, $task->refresh()->lock_version, executionInput(['outcome' => 'answered']), (string) Str::uuid7()))->toThrow(ValidationException::class);
 });
+
+test('rider task messages use the shared popup instead of an inline notice', function (): void {
+    [$rider, $task] = executionFixture();
+
+    Livewire::actingAs($rider)->test(Show::class, ['task' => $task])->call('start')
+        ->assertSeeHtml('class="confirmation-dialog"')
+        ->assertSee('Task started. You can now record your visit.');
+});
+
+test('rider pages confirm in the shared dialog instead of browser prompts', function (): void {
+    $views = [...glob(resource_path('views/livewire/rider/*.blade.php')), ...glob(resource_path('views/livewire/rider/*/*.blade.php')), ...glob(resource_path('views/components/rider/*.blade.php')), resource_path('views/components/profile-photo-editor.blade.php')];
+
+    expect($views)->not->toBeEmpty();
+    foreach ($views as $view) {
+        expect(file_get_contents($view))->not->toContain('wire:confirm', $view);
+    }
+});

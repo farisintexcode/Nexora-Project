@@ -23,57 +23,17 @@ class Show extends Component
     #[Locked]
     public int $scheduleId;
 
-    #[Locked]
-    public array $before = [];
-
-    public string $clockIn = '';
-
-    public string $clockOut = '';
-
-    public string $scheduledStart = '';
-
-    public string $scheduledEnd = '';
-
-    public string $dayType = 'scheduled';
-
-    public string $reason = '';
-
     public string $reviewRemarks = '';
 
-    public function mount(string $schedule, AttendanceAccess $access, CorrectAttendance $correct): void
+    public function mount(string $schedule, AttendanceAccess $access): void
     {
         Gate::authorize('viewAny', Attendance::class);
         $record = AttendanceSchedule::query()->where('public_id', $schedule)->firstOrFail();
         abort_unless($access->visible(auth()->user(), $record->rider_id), 404);
         $this->scheduleId = $record->id;
-        $this->loadOriginal($correct);
     }
 
-    public function loadOriginal(CorrectAttendance $correct): void
-    {
-        $schedule = $this->record();
-        $attendance = $this->punch($schedule);
-        $this->before = $correct->snapshot($schedule, $attendance);
-        $this->dayType = $attendance ? 'scheduled' : $schedule->day_type;
-        $this->scheduledStart = $schedule->scheduled_start_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '';
-        $this->scheduledEnd = $schedule->scheduled_end_at?->timezone(config('dcms.business_timezone'))->format('Y-m-d\TH:i') ?? '';
-        $tz = config('dcms.business_timezone');
-        $this->clockIn = $attendance?->effective_clock_in_at?->timezone($tz)->format('Y-m-d\\TH:i') ?? '';
-        $this->clockOut = $attendance?->effective_clock_out_at?->timezone($tz)->format('Y-m-d\\TH:i') ?? '';
-    }
-
-    public function requestCorrection(CorrectAttendance $correct): void
-    {
-        $this->validate(['clockIn' => ['required']], attributes: ['clockIn' => 'requested clock in']);
-        $data = ['reason' => $this->reason, 'day_type' => $this->dayType, 'clock_in' => $this->clockIn, 'clock_out' => $this->clockOut];
-        if (auth()->user()->can('attendance.configure')) {
-            $data += ['scheduled_start' => $this->scheduledStart, 'scheduled_end' => $this->scheduledEnd];
-        }
-        $correct->request(auth()->user(), $this->record(), $data, $this->before);
-        $this->reason = '';
-        session()->flash('status', 'Correction requested. Effective attendance stays unchanged until independent approval.');
-    }
-
+    /** Admins review existing correction requests here; this page no longer raises new ones. */
     public function decide(string $id, string $decision, CorrectAttendance $correct): void
     {
         abort_unless(Str::isUuid($id), 404);
@@ -81,7 +41,6 @@ class Show extends Component
         $request = $schedule->adjustments()->where('public_id', $id)->firstOrFail();
         $correct->review(auth()->user(), $request, $decision, $this->reviewRemarks);
         $this->reviewRemarks = '';
-        $this->loadOriginal($correct);
         session()->flash('status', 'Correction '.$decision.'. Original punches are unchanged.');
     }
 
@@ -133,7 +92,7 @@ class Show extends Component
         };
     }
 
-    public function render(CorrectAttendance $correct, AttendanceRegister $register): View
+    public function render(AttendanceRegister $register): View
     {
         Gate::authorize('viewAny', Attendance::class);
         $schedule = $this->record();
@@ -150,7 +109,6 @@ class Show extends Component
             'schedule' => $schedule,
             'attendance' => $attendance,
             'requests' => $requests,
-            'canRequest' => $correct->canRequest(auth()->user(), $schedule),
             'status' => $status,
             'rules' => $schedule->policy->rules,
             'explanation' => $this->explanation($status, $attendance, $schedule->policy->rules),

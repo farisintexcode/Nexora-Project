@@ -12,6 +12,7 @@ use App\Models\FollowUp;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AuditWriter;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
@@ -39,23 +40,36 @@ class DeleteTasks
             if ($tasks->count() !== count($publicIds)) {
                 throw ValidationException::withMessages(['selected' => 'A selected task no longer exists. Reload and try again.']);
             }
-            $blocked = $tasks->map(fn (Task $task): ?string => ($reason = $this->blockedReason($task)) ? ($task->source_task_id ?? 'A task').' '.$reason : null)->filter();
-            if ($blocked->isNotEmpty()) {
-                throw ValidationException::withMessages(['selected' => 'Nothing was deleted. '.$blocked->implode('; ').'.']);
-            }
-            foreach ($tasks as $task) {
-                $task->lock_version++;
-                $task->last_updated_by = $actor->id;
-                $task->save();
-                $task->delete();
-                $this->audit->record($actor, 'task_deleted', $task->public_id, ['work_status' => $task->work_status], module: 'M05', entityType: 'task');
-            }
-            foreach ($tasks->pluck('assignment_batch_id')->unique()->sort() as $batchId) {
-                app(ArchiveFinishedBatch::class)->handle($actor, $batchId);
-            }
 
-            return $tasks->count();
+            return $this->deleteLocked($actor, $tasks);
         }, 3);
+    }
+
+    /**
+     * Deletes tasks already locked inside the caller's transaction, all or none.
+     *
+     * @param  EloquentCollection<int, Task>  $tasks
+     * @return int number of tasks deleted
+     */
+    public function deleteLocked(User $actor, EloquentCollection $tasks, string $errorKey = 'selected'): int
+    {
+        $blocked = $tasks->map(fn (Task $task): ?string => ($reason = $this->blockedReason($task)) ? ($task->source_task_id ?? 'A task').' '.$reason : null)->filter()->values();
+        if ($blocked->isNotEmpty()) {
+            $listed = $blocked->take(5)->implode('; ').($blocked->count() > 5 ? '; and '.($blocked->count() - 5).' more' : '');
+            throw ValidationException::withMessages([$errorKey => 'Nothing was deleted. '.$listed.'.']);
+        }
+        foreach ($tasks as $task) {
+            $task->lock_version++;
+            $task->last_updated_by = $actor->id;
+            $task->save();
+            $task->delete();
+            $this->audit->record($actor, 'task_deleted', $task->public_id, ['work_status' => $task->work_status], module: 'M05', entityType: 'task');
+        }
+        foreach ($tasks->pluck('assignment_batch_id')->unique()->sort() as $batchId) {
+            app(ArchiveFinishedBatch::class)->handle($actor, $batchId);
+        }
+
+        return $tasks->count();
     }
 
     private function blockedReason(Task $task): ?string

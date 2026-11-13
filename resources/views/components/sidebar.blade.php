@@ -25,10 +25,10 @@
         </x-sidebar-group>
         @endcanany
         @canany(['riders.manage', 'attendance.view_all', 'attendance.view_own'])
-        <x-sidebar-group label="Human Resources" icon="users" :count="$pending['leave']" count-key="leave" :active="request()->routeIs('admin.staff.*', 'admin.attendance.*', 'admin.leave.*', 'attendance.own')" keywords="Staff Management Riders personnel Add New Staff Attendance My attendance schedules">
+        <x-sidebar-group label="Human Resources" icon="users" :count="$pending['leave']" count-key="leave" :active="request()->routeIs('admin.staff.*', 'admin.attendance.*', 'admin.leave.*', 'attendance.own')" keywords="Staff Management Riders personnel Add New Staff Add New Rider Attendance My attendance schedules">
             @can('riders.manage')
             <x-sidebar-item label="Staff Management" icon="users" parent="Human Resources" :href="route('admin.staff.index')" :active="request()->routeIs('admin.staff.*') && !request()->routeIs('admin.staff.create')" />
-            <x-sidebar-item label="Add New Staff" icon="plus" parent="Human Resources" :href="route('admin.staff.create')" :active="request()->routeIs('admin.staff.create')" />
+            <x-sidebar-item :label="auth()->user()->addsRidersOnly() ? 'Add New Rider' : 'Add New Staff'" icon="plus" parent="Human Resources" :href="route('admin.staff.create')" :active="request()->routeIs('admin.staff.create')" />
             @endcan
             @can('attendance.view_all')<x-sidebar-item label="Attendance" icon="clock" parent="Human Resources" :href="route('admin.attendance.index')" :active="request()->routeIs('admin.attendance.*')" />@endcan
             @can('attendance.view_all')<x-sidebar-item label="Leave Management" icon="calendar" :count="$pending['leave']" count-key="leave" parent="Human Resources" :href="route('admin.leave.index')" :active="request()->routeIs('admin.leave.*')" />@endcan

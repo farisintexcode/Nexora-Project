@@ -53,6 +53,15 @@ test('attendance routes enforce authentication and grants while own history stay
     $this->get(route('admin.attendance.show', $schedule))->assertOk();
 });
 
+test('admins view a rider attendance record without a request correction button', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00:00', 'Asia/Kuala_Lumpur'));
+    [$admin,,$schedule] = attendanceFixture();
+
+    $this->actingAs($admin)->get(route('admin.attendance.show', $schedule))
+        ->assertOk()->assertSee('Correction history')
+        ->assertDontSee('Request a correction')->assertDontSee('Submit correction request');
+});
+
 test('server punches are idempotent and one shift cannot be duplicated or manually overwritten', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-19 09:10:00', 'Asia/Kuala_Lumpur'));
     [$admin,$rider,$schedule] = attendanceFixture();

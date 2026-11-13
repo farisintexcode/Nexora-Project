@@ -19,7 +19,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/** M01/M10/M12 / UI31–32: Administrative staff invite Riders (riders.invite); System Admins invite office accounts (users.invite, + roles.manage for System Admin). */
+/** M01/M10/M12 / UI31–32: Administrative staff invite Riders only (riders.invite); System Admins invite every role (riders.invite, users.invite, + roles.manage for System Admin). */
 class InviteStaffAccount
 {
     public string $deliveryStatus = 'prepared';
@@ -75,7 +75,7 @@ class InviteStaffAccount
                 }
                 Validator::make(['role' => $role], ['role' => ['required', Rule::in(config('dcms.staff_roles'))]])->validate();
                 if (! in_array($role, self::invitableRoles($actor), true)) {
-                    throw new AuthorizationException($role === 'Rider' ? 'Rider logins are sent by Administrative staff.' : 'Administrative and System Admin logins are sent by a System Admin.');
+                    throw new AuthorizationException($role === 'Rider' ? 'Rider logins are sent by Administrative staff or a System Admin.' : 'Administrative and System Admin logins are sent by a System Admin.');
                 }
                 if ($role === 'Rider' && ! $staff->is_rider) {
                     throw ValidationException::withMessages(['invitation' => 'Rider access requires active Rider eligibility.']);

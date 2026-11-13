@@ -1,7 +1,7 @@
 <section class="grid gap-7" wire:poll.30s>
     <x-feedback />
     <x-page-header class="dashboard-heading" :title="'Welcome, '.auth()->user()->name" eyebrow="System administration" description="User accounts, access and system settings. Assignments, tasks, attendance and leave are handled by Administrative staff.">
-        <x-slot:actions>@can('create', \App\Models\Staff::class)<a class="btn btn-primary" href="{{ route('admin.staff.create') }}"><x-icon name="plus" class="size-4" />Add New Staff</a>@endcan</x-slot:actions>
+        <x-slot:actions>@can('create', \App\Models\Staff::class)<a class="btn btn-primary" href="{{ route('admin.staff.create') }}"><x-icon name="plus" class="size-4" />{{ auth()->user()->addsRidersOnly() ? 'Add New Rider' : 'Add New Staff' }}</a>@endcan</x-slot:actions>
     </x-page-header>
 
     @php($accountCards = [

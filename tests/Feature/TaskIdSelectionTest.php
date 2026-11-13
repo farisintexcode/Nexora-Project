@@ -605,7 +605,7 @@ test('manage task shows bright work statuses, pastel priorities and an orange vi
 });
 
 test('admin pages with editable dates use the shared calendars instead of browser date fields', function (): void {
-    foreach (['attendance/configuration', 'attendance/index', 'attendance/leave-management', 'attendance/show', 'calls/show', 'communications/preferences', 'communications/recipients', 'staff/index'] as $page) {
+    foreach (['attendance/configuration', 'attendance/index', 'attendance/leave-management', 'calls/show', 'communications/preferences', 'communications/recipients', 'staff/index'] as $page) {
         $view = file_get_contents(resource_path("views/livewire/admin/{$page}.blade.php"));
 
         expect($view)->toContain('<x-date-')->and($view)->not->toMatch('/type="(date|datetime-local)"/');

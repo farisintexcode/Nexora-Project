@@ -9,11 +9,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /** M04 / Database.md: versioned registry, private source documents and encrypted staging. */
 class ImportBatch extends Model
 {
-    use HasFactory, HasPublicId;
+    use HasFactory, HasPublicId, SoftDeletes;
 
     protected $dateFormat = 'Y-m-d H:i:s.u';
 

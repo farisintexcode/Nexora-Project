@@ -97,7 +97,7 @@ class Show extends Component
             'delivery_failed' => 'The account invitation is prepared, but mail transport failed. Wait for the resend interval, then reissue the invitation.',
             'unsafe_transport' => 'Invitation prepared, but this mail configuration includes a log transport. Activation secrets cannot be logged. Configure a safe transport and reissue.',
             'inactive_staff' => 'Account provisioned. Activate the staff record and reissue the invitation before password setup.',
-            default => 'Invitation prepared. Mail is waiting for transaction commit.',
+            default => 'Invitation prepared. The email is sent once the save is confirmed.',
         });
     }
 

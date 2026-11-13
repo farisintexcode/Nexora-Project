@@ -53,17 +53,6 @@
     @if($attendance?->remarks)<p class="break-words text-sm">Shift remark: {{ $attendance->remarks }}</p>@endif
 </div>
 
-@if($canRequest)
-<div x-data="{ open: {{ $errors->any() ? 'true' : 'false' }} }" class="grid min-w-0 gap-4">
-<div x-show="!open" class="hr-actions"><button type="button" class="btn btn-secondary" @click="open = true"><x-icon name="edit" />Request a correction</button></div>
-<form x-show="open" x-cloak wire:submit="requestCorrection" class="surface grid min-w-0 gap-5 p-5"><div class="flex items-start justify-between gap-3"><h2 class="text-lg font-semibold">Request a correction</h2><button type="button" class="btn btn-ghost" @click="open = false" aria-label="Close correction form"><x-icon name="close" /></button></div>
-@if($attendance)<p class="text-sm text-ink-600">Change effective times only. An unlinked punch will be linked to this working schedule after approval. Leave clock out blank only when the interval should remain open.</p><div class="grid min-w-0 gap-4 sm:grid-cols-2"><x-date-time name="clock-in" label="Requested clock in (MYT) *" model="clockIn" /><x-date-time name="clock-out" label="Requested clock out (MYT)" model="clockOut" /></div>
-@else<x-select name="day_type" label="Requested calendar type" wire:model="dayType"><option value="scheduled">Working day under pinned policy</option><option value="leave">Leave</option><option value="day_off">Rest Day</option><option value="public_holiday">Public Holiday</option><option value="cancelled">Deactivate this schedule</option></x-select><p class="text-xs text-ink-500">Calendar corrections preserve history and never create raw punches.</p>@endif
-<x-input name="reason" label="Correction reason" wire:model="reason" required maxlength="5000" />
-@can('configure',\App\Models\Attendance::class)<fieldset class="grid min-w-0 gap-4"><legend class="field-label mb-3">Planned shift correction (working days only)</legend><div class="grid min-w-0 gap-4 sm:grid-cols-2"><x-date-time name="scheduled-start" label="Requested scheduled start (MYT)" model="scheduledStart" /><x-date-time name="scheduled-end" label="Requested scheduled end (MYT)" model="scheduledEnd" default-time="18:00" /></div><p class="text-xs text-ink-500">Retain these values to keep the existing shift. Changes require independent approval and preserve the pinned policy and original schedule in history.</p></fieldset>@endcan
-<div class="hr-actions"><x-confirm-action label="Submit correction request" title="Submit this correction?" message="These effective values will go for independent approval." /><button class="btn btn-secondary" type="button" wire:click="loadOriginal">Reset to current values</button></div></form>
-</div>
-@endif
 
 <div id="correction-history" class="grid scroll-mt-6 gap-4"><h2 class="text-lg font-semibold">Correction history</h2>
 @forelse($requests as $request)

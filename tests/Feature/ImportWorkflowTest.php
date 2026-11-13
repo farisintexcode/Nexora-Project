@@ -578,7 +578,7 @@ test('review actions use the app dialog instead of a browser confirm', function 
     app(ImportWorkflow::class)->preview($actor, $batch, mappedSelections($batch));
 
     Livewire::actingAs($actor)->test(Review::class, ['import' => $batch->refresh()])
-        ->assertSee('Commit accepted rows?')
+        ->assertSee('Confirm accepted rows?')
         ->assertSee('Cancel this import?')
         ->assertDontSeeHtml('wire:confirm');
 });

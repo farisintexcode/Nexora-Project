@@ -1,10 +1,15 @@
 <?php
 
+use App\Actions\Tasks\DeleteTaskFile;
 use App\Actions\Tasks\DeleteTasks;
 use App\Livewire\Admin\Tasks\Index;
 use App\Models\AssignmentBatch;
 use App\Models\AuditLog;
 use App\Models\CollectionActivity;
+use App\Models\Document;
+use App\Models\ImportBatch;
+use App\Models\ImportRow;
+use App\Models\ImportTemplate;
 use App\Models\Task;
 use App\Models\TaskAllocation;
 use App\Models\User;
@@ -103,4 +108,80 @@ test('deleted tasks leave assignment counts', function (): void {
 
     expect(app(BatchWork::class)->summary($assignment)['tasks'])->toBe(1)
         ->and($assignment->tasks()->count())->toBe(1);
+});
+
+/** A completed task upload with a file name, as the Manage Task Excel file list expects. */
+function deletableExcelFile(AssignmentBatch $assignment, string $name = 'march-visits.xlsx'): ImportBatch
+{
+    $file = ImportBatch::factory()->create(['kind' => 'task', 'template_id' => ImportTemplate::query()->where('kind', 'task')->value('id'), 'assignment_batch_id' => $assignment->id, 'input_count' => 1, 'accepted_count' => 1, 'processed_count' => 1]);
+    $document = Document::factory()->create(['owner_type' => 'import', 'owner_id' => $file->id, 'original_filename' => $name]);
+    $file->forceFill(['source_document_id' => $document->id])->save();
+
+    return $file;
+}
+
+function taskInExcelFile(AssignmentBatch $assignment, ImportBatch $file, string $id): Task
+{
+    $row = ImportRow::factory()->create(['import_batch_id' => $file->id, 'row_number' => Task::numberFromId($id) + 1]);
+
+    return Task::factory()->create(['assignment_batch_id' => $assignment->id, 'source_task_id' => $id, 'source_task_number' => Task::numberFromId($id), 'origin_code' => 'import', 'source_import_row_id' => $row->id]);
+}
+
+test('deleting an Excel file removes it and its tasks from Manage Task but keeps the records', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = deletableExcelFile($assignment);
+    $tasks = collect(['FG001', 'FG002'])->map(fn (string $id): Task => taskInExcelFile($assignment, $file, $id));
+    $kept = deletableTask('FG003', $assignment);
+    $actor = staffManager();
+
+    Livewire::actingAs($actor)->test(Index::class)
+        ->assertSee('march-visits.xlsx')->assertSeeHtml(e("deleteFile('{$file->public_id}')"))
+        ->call('deleteFile', $file->public_id)
+        ->assertHasNoErrors()
+        ->assertDontSee('march-visits.xlsx');
+
+    expect(ImportBatch::query()->find($file->id))->toBeNull()
+        ->and(ImportBatch::withTrashed()->find($file->id)->deleted_by)->toBe($actor->id)
+        ->and(Task::query()->whereIn('id', $tasks->pluck('id'))->count())->toBe(0)
+        ->and(Task::withTrashed()->whereIn('id', $tasks->pluck('id'))->count())->toBe(2)
+        ->and(Task::query()->find($kept->id))->not->toBeNull()
+        ->and(AuditLog::query()->where('action', 'task_file_deleted')->where('entity_id', $file->public_id)->exists())->toBeTrue();
+});
+
+test('an Excel file with a task already assigned to a Rider is not deleted', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = deletableExcelFile($assignment);
+    $safe = taskInExcelFile($assignment, $file, 'FG001');
+    $assigned = taskInExcelFile($assignment, $file, 'FG002');
+    TaskAllocation::factory()->create(['task_id' => $assigned->id]);
+
+    expect(fn () => app(DeleteTaskFile::class)->handle(staffManager(), $file->public_id))->toThrow(ValidationException::class, 'unassign it first');
+    expect(ImportBatch::query()->find($file->id))->not->toBeNull()
+        ->and(Task::query()->whereIn('id', [$safe->id, $assigned->id])->count())->toBe(2);
+});
+
+test('only admins with the delete permission can delete an Excel file', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $file = deletableExcelFile($assignment);
+    taskInExcelFile($assignment, $file, 'FG001');
+    $viewer = User::factory()->create();
+    $viewer->givePermissionTo(['admin.access', 'tasks.view', 'tasks.monitor']);
+
+    expect(fn () => app(DeleteTaskFile::class)->handle($viewer, $file->public_id))->toThrow(HttpException::class);
+    Livewire::actingAs($viewer)->test(Index::class)->assertSee('march-visits.xlsx')->assertDontSeeHtml(e("deleteFile('{$file->public_id}')"));
+    expect(ImportBatch::query()->find($file->id))->not->toBeNull();
+});
+
+test('select all ticks every task on the page and can select every matching task', function (): void {
+    $assignment = AssignmentBatch::factory()->create();
+    $tasks = collect(range(1, 12))->map(fn (int $number): Task => deletableTask(sprintf('FG%03d', $number), $assignment));
+    $component = Livewire::actingAs(staffManager())->test(Index::class)->call('showFile', Index::MANUAL_FILE)
+        ->assertSeeHtml('aria-label="Select all tasks on this page"')->assertSee('Select all 12 tasks');
+    $pageIds = $tasks->sortByDesc('id')->take(10)->pluck('public_id')->values()->all();
+
+    $component->call('togglePageSelection', $pageIds)->assertSet('selected', $pageIds)
+        ->call('togglePageSelection', $pageIds)->assertSet('selected', [])
+        ->call('selectAllMatching');
+    expect($component->get('selected'))->toEqualCanonicalizing($tasks->pluck('public_id')->all());
+    $component->call('clearSelection')->assertSet('selected', []);
 });

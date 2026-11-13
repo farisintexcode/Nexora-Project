@@ -29,7 +29,7 @@ class StaffPolicy
         return $this->view($user, $staff);
     }
 
-    /** Sending a login invitation: Administrative staff for Riders, System Admins for office accounts (the role is checked when inviting). */
+    /** Sending a login invitation: Administrative staff for Riders, System Admins for every role (the role is checked when inviting). */
     public function invite(User $user, Staff $staff): bool
     {
         return $this->view($user, $staff) && ($user->can('users.invite') || $user->can('riders.invite'));

@@ -56,11 +56,11 @@ class ImportWorkflow
         try {
             return DB::transaction(function () use ($actor, $input, $file, $template, $hash, $key, $disk, $bucket, $object, &$stored): ImportBatch {
                 Gate::forUser($actor->fresh())->authorize('create', ImportBatch::class);
-                while ($existing = ImportBatch::query()->where('idempotency_key', $key)->first()) {
-                    if (! in_array($existing->status, ['failed', 'cancelled'], true)) {
+                while ($existing = ImportBatch::withTrashed()->where('idempotency_key', $key)->first()) {
+                    if (! $existing->trashed() && ! in_array($existing->status, ['failed', 'cancelled'], true)) {
                         return $existing;
                     }
-                    // A failed or cancelled attempt gets a separate review on re-upload; previous attempts stay immutable.
+                    // A failed, cancelled or deleted attempt gets a separate review on re-upload; previous attempts stay immutable.
                     $key = hash('sha256', $key.'|review-after|'.$existing->public_id);
                 }
                 if ($input['assignment_batch_id'] ?? null) {
@@ -425,7 +425,7 @@ class ImportWorkflow
                 return;
             }
             if ($batch->status !== 'ready' || ! $batch->mapping_digest || ! hash_equals($batch->mapping_digest, $digest) || $batch->accepted_count === 0) {
-                throw ValidationException::withMessages(['confirmation' => 'Reload and review the current preview before committing accepted rows.']);
+                throw ValidationException::withMessages(['confirmation' => 'Reload and review the current preview before confirming accepted rows.']);
             }
             if (! $this->scanCleared($batch->source?->scan_status)) {
                 throw ValidationException::withMessages(['confirmation' => 'The source must have a clean scan before confirmation.']);

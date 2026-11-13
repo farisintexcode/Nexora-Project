@@ -46,24 +46,82 @@ test('staff registration provisions one invited linked account for each selectab
     $this->assertDatabaseHas('audit_logs', ['action' => 'account_invitation_prepared', 'entity_id' => $staff->public_id]);
 })->with(['System Admin', 'Administrative', 'Rider']);
 
-test('System Admins invite office accounts and Administrative staff invite Riders, never the other way round', function (): void {
+test('System Admins invite every role and Administrative staff invite Riders only', function (): void {
     Notification::fake();
     $systemAdmin = User::factory()->create();
     $systemAdmin->assignRole('System Admin');
     $administrative = User::factory()->create();
     $administrative->assignRole('Administrative');
-    $rider = Staff::factory()->create(['is_rider' => true]);
+    $riderInvitedBySystemAdmin = Staff::factory()->create(['is_rider' => true]);
+    $riderInvitedByAdministrative = Staff::factory()->create(['is_rider' => true]);
     $office = Staff::factory()->create(['is_rider' => false]);
 
-    expect(InviteStaffAccount::invitableRoles($systemAdmin))->toBe(['System Admin', 'Administrative'])
+    expect(InviteStaffAccount::invitableRoles($systemAdmin))->toBe(['System Admin', 'Administrative', 'Rider'])
         ->and(InviteStaffAccount::invitableRoles($administrative))->toBe(['Rider'])
-        ->and(fn () => app(InviteStaffAccount::class)->handle($systemAdmin, $rider, 'Rider', $rider->revision()))->toThrow(AuthorizationException::class, 'Administrative staff')
         ->and(fn () => app(InviteStaffAccount::class)->handle($administrative, $office, 'Administrative', $office->revision()))->toThrow(AuthorizationException::class, 'System Admin');
 
-    Livewire::actingAs($systemAdmin)->test(Show::class, ['staff' => $rider])->assertSee('Rider logins are sent by Administrative staff.')->assertDontSee('Invite account');
-    Livewire::actingAs($administrative)->test(Show::class, ['staff' => $rider])->assertSet('invitationRole', 'Rider')->call('invite')->assertHasNoErrors();
+    Livewire::actingAs($systemAdmin)->test(Show::class, ['staff' => $riderInvitedBySystemAdmin])->assertSet('invitationRole', 'Rider')->call('invite')->assertHasNoErrors();
+    Livewire::actingAs($administrative)->test(Show::class, ['staff' => $riderInvitedByAdministrative])->assertSet('invitationRole', 'Rider')->call('invite')->assertHasNoErrors();
     Livewire::actingAs($administrative)->test(Show::class, ['staff' => $office])->assertSee('Administrative and System Admin logins are sent by a System Admin.');
-    expect($rider->user()->first()?->getRoleNames()->all())->toBe(['Rider'])->and($office->user()->exists())->toBeFalse();
+    expect($riderInvitedBySystemAdmin->user()->first()?->getRoleNames()->all())->toBe(['Rider'])
+        ->and($riderInvitedByAdministrative->user()->first()?->getRoleNames()->all())->toBe(['Rider'])
+        ->and($office->user()->exists())->toBeFalse();
+});
+
+test('System Admins register staff with a login for every role', function (string $role): void {
+    Notification::fake();
+    $systemAdmin = User::factory()->create();
+    $systemAdmin->assignRole('System Admin');
+
+    $staff = app(SaveStaff::class)->handle($systemAdmin, staffInput(['system_role' => $role, 'create_account' => true]));
+
+    expect($staff->user->getRoleNames()->all())->toBe([$role])->and($staff->is_rider)->toBe($role === 'Rider');
+    Notification::assertSentTo($staff->user, StaffInvitation::class);
+})->with(['System Admin', 'Administrative', 'Rider']);
+
+test('Administrative staff can only register Riders', function (): void {
+    $administrative = User::factory()->create();
+    $administrative->assignRole('Administrative');
+
+    expect(fn () => app(SaveStaff::class)->handle($administrative, staffInput(['system_role' => 'Administrative', 'create_account' => false])))
+        ->toThrow(ValidationException::class, 'You can only add Riders.')
+        ->and(fn () => app(SaveStaff::class)->handle($administrative, staffInput(['system_role' => 'System Admin', 'create_account' => false])))
+        ->toThrow(AuthorizationException::class);
+    $this->assertDatabaseCount('staff', 0);
+
+    $rider = app(SaveStaff::class)->handle($administrative, staffInput(['system_role' => 'Rider', 'create_account' => false]));
+    expect($rider->is_rider)->toBeTrue();
+
+    expect(fn () => app(SaveStaff::class)->handle($administrative, staffInput(['system_role' => 'Administrative', 'create_account' => false, 'reason' => 'Moved to office']), $rider, $rider->revision()))
+        ->toThrow(ValidationException::class, 'You can only add Riders.');
+    expect($rider->fresh()->is_rider)->toBeTrue();
+});
+
+test('Administrative staff get an Add New Rider page without a role choice', function (): void {
+    Notification::fake();
+    $administrative = User::factory()->create();
+    $administrative->assignRole('Administrative');
+
+    Livewire::actingAs($administrative)->test(Editor::class)
+        ->assertSee('Add New Rider')->assertDontSee('Add New Staff')->assertSee('Add rider')
+        ->assertDontSeeHtml('name="data.system_role"')
+        ->assertSet('data.system_role', 'Rider')
+        ->set('data.email', 'new.rider@example.test')->set('data.first_name', 'New')->set('data.last_name', 'Rider')->set('data.phone', '+60123456789')
+        ->set('data.system_role', 'Administrative')->call('save')->assertHasErrors('data.system_role')
+        ->set('data.system_role', 'Rider')->call('save')->assertHasNoErrors();
+
+    $staff = Staff::query()->where('email', 'new.rider@example.test')->sole();
+    expect($staff->is_rider)->toBeTrue()->and($staff->user->getRoleNames()->all())->toBe(['Rider']);
+    $this->actingAs($administrative)->get(route('admin.staff.index'))->assertSee('Add New Rider');
+});
+
+test('System Admins keep Add New Staff with every role', function (): void {
+    $systemAdmin = User::factory()->create();
+    $systemAdmin->assignRole('System Admin');
+
+    Livewire::actingAs($systemAdmin)->test(Editor::class)
+        ->assertSee('Add New Staff')->assertDontSee('Add New Rider')
+        ->assertSeeHtml('<option value="Rider">')->assertSeeHtml('<option value="Administrative">')->assertSeeHtml('<option value="System Admin">');
 });
 
 test('account provisioning failure rolls back the staff and audit writes', function (): void {
@@ -266,7 +324,7 @@ test('directory activation asks for confirmation in the shared dialog instead of
     Livewire::actingAs($actor)->test(Index::class)->set('status', '')
         ->assertSee('Activate '.$staff->full_name.'?')
         ->assertSeeHtml('class="confirmation-dialog"')
-        ->assertSeeHtml('btn btn-success btn-sm')
+        ->assertSeeHtml('btn btn-secondary btn-sm')
         ->assertDontSeeHtml('wire:confirm');
 });
 

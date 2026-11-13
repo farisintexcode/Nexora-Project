@@ -56,8 +56,6 @@ class Show extends Component
 
     public string $caption = '';
 
-    public string $notice = '';
-
     public function mount(Task $task): void
     {
         abort_unless(app(RiderAccess::class)->current(Auth::user(), $task), 404);
@@ -86,7 +84,7 @@ class Show extends Component
     {
         $task = $work->start(Auth::user(), $this->task(), $this->version);
         $this->version = $task->lock_version;
-        $this->notice = 'Task started. You can now record your visit.';
+        session()->flash('status', 'Task started. You can now record your visit.');
         $this->section = 'visit';
         $this->digest = '';
     }
@@ -103,7 +101,7 @@ class Show extends Component
         $this->visitKey = (string) Str::uuid7();
         $this->digest = '';
         $this->visitDirty = false;
-        $this->notice = 'Visit and remarks saved. Previous visits remain in history.';
+        session()->flash('status', 'Visit and remarks saved. Previous visits remain in history.');
         $this->section = 'proof';
     }
 
@@ -130,7 +128,7 @@ class Show extends Component
         }
         $this->photos = [];
         $this->digest = '';
-        $this->notice = TaskProof::scanRequired() ? 'Images saved privately. Scans are pending; only clean images can be submitted.' : 'Images saved privately.';
+        session()->flash('status', TaskProof::scanRequired() ? 'Images saved privately. Scans are pending; only clean images can be submitted.' : 'Images saved privately.');
     }
 
     public function discardPhoto(int $index): void
@@ -152,7 +150,7 @@ class Show extends Component
         $proof->remove(Auth::user(), $this->task(), $this->version, $reference);
         $this->version = $this->task()->lock_version;
         $this->digest = '';
-        $this->notice = 'Draft image removed. Retained evidence history is unchanged.';
+        session()->flash('status', 'Draft image removed. Retained evidence history is unchanged.');
     }
 
     public function retryScan(string $reference, TaskProof $proof): void
@@ -160,7 +158,7 @@ class Show extends Component
         $proof->retry(Auth::user(), $this->task(), $this->version, $reference);
         $this->version = $this->task()->lock_version;
         $this->digest = '';
-        $this->notice = 'Scan retry queued.';
+        session()->flash('status', 'Scan retry queued.');
     }
 
     public function reviewCompletion(CompletionChecklist $checklist): void
@@ -187,7 +185,7 @@ class Show extends Component
         $submission = $work->submit(Auth::user(), $this->task(), $this->version, $this->submissionKey, $this->digest);
         $this->version = $this->task()->lock_version;
         $this->section = 'history';
-        $this->notice = 'Task completed and submitted. Awaiting Admin verification · '.$submission->public_id;
+        session()->flash('status', 'Task completed and submitted. Awaiting Admin verification · '.$submission->public_id);
         $this->dispatch('rider-task-completed');
     }
 

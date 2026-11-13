@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Tasks;
 
+use App\Actions\Tasks\DeleteTaskFile;
 use App\Actions\Tasks\DeleteTasks;
 use App\Enums\BatchStatus;
 use App\Models\AssignmentBatch;
@@ -32,6 +33,9 @@ class Index extends Component
 
     /** File filter value for tasks created manually without an Excel file. */
     public const MANUAL_FILE = 'manual';
+
+    /** Most tasks one action (review/assign or delete) accepts at once. */
+    public const SELECTION_LIMIT = 200;
 
     #[Url]
     public string $status = 'all';
@@ -176,11 +180,53 @@ class Index extends Component
         session()->flash('status', $deleted === 1 ? '1 task deleted.' : "{$deleted} tasks deleted.");
     }
 
-    public function render(TaskAccess $access): View
+    /** Delete one uploaded Excel file and every task it created; nothing is deleted if any task already has work or a Rider. */
+    public function deleteFile(string $publicId, DeleteTaskFile $files): void
     {
-        Gate::authorize('viewAny', Task::class);
-        $scope = Task::query();
-        $tasks = clone $scope;
+        $deleted = $files->handle(Auth::user(), $this->validUuid($publicId));
+        if ($this->file === $publicId) {
+            $this->file = '';
+        }
+        $this->selected = [];
+        $this->resetPage();
+        session()->flash('status', 'Excel file deleted'.($deleted === 0 ? '.' : ' with its '.($deleted === 1 ? '1 task.' : "{$deleted} tasks.")));
+    }
+
+    /**
+     * Tick or untick every task shown on the current page.
+     *
+     * @param  array<int, mixed>  $pageIds
+     */
+    public function togglePageSelection(array $pageIds): void
+    {
+        $pageIds = array_values(array_unique(array_filter($pageIds, fn (mixed $id): bool => is_string($id) && Str::isUuid($id))));
+        $this->selected = array_diff($pageIds, $this->selected) === []
+            ? array_values(array_diff($this->selected, $pageIds))
+            : array_values(array_unique([...$this->selected, ...$pageIds]));
+    }
+
+    /** Select every task matching the open file and filters, across all pages (up to the 200-task action limit). */
+    public function selectAllMatching(TaskAccess $access): void
+    {
+        $ids = $this->filteredTasks($access)->latest('id')->limit(self::SELECTION_LIMIT + 1)->pluck('tasks.public_id')->all();
+        if (count($ids) > self::SELECTION_LIMIT) {
+            $this->addError('selected', 'More than '.self::SELECTION_LIMIT.' tasks match. Narrow the filters, or select page by page.');
+
+            return;
+        }
+        $this->resetErrorBag('selected');
+        $this->selected = $ids;
+    }
+
+    public function clearSelection(): void
+    {
+        $this->selected = [];
+    }
+
+    /** @return Builder<Task> */
+    private function filteredTasks(TaskAccess $access): Builder
+    {
+        $tasks = Task::query();
         match ($this->status) {
             'all' => null,
             'active' => $tasks->whereNotIn('work_status', ['completed', 'cancelled']),
@@ -196,7 +242,7 @@ class Index extends Component
         if ($this->batch !== '') {
             $tasks->whereHas('batch', fn ($q) => $q->where('public_id', $this->validUuid($this->batch)));
         }
-        $activeFile = in_array($this->file, ['', self::MANUAL_FILE], true) ? null : $this->taskFiles()->where('public_id', $this->validUuid($this->file))->first();
+        $activeFile = $this->activeFile();
         if ($this->file === self::MANUAL_FILE) {
             $tasks->whereNull('import_batch_id')->whereNull('source_import_row_id');
         } elseif ($this->file !== '') {
@@ -216,6 +262,21 @@ class Index extends Component
         } else {
             $tasks->when($this->from !== '', fn ($q) => $q->where('tasks.created_at', '>=', Carbon::parse($this->from, config('dcms.business_timezone'))->utc()))->when($this->until !== '', fn ($q) => $q->where('tasks.created_at', '<', Carbon::parse($this->until, config('dcms.business_timezone'))->addDay()->utc()));
         }
+
+        return $tasks;
+    }
+
+    private function activeFile(): ?ImportBatch
+    {
+        return in_array($this->file, ['', self::MANUAL_FILE], true) ? null : $this->taskFiles()->where('public_id', $this->validUuid($this->file))->first();
+    }
+
+    public function render(TaskAccess $access): View
+    {
+        Gate::authorize('viewAny', Task::class);
+        $scope = Task::query();
+        $tasks = $this->filteredTasks($access);
+        $activeFile = $this->activeFile();
 
         $selectedAssignment = $this->batch === '' ? null : AssignmentBatch::query()->where('public_id', $this->validUuid($this->batch))->first();
         $assignmentId = $this->batch === '' ? null : ($selectedAssignment?->id ?? 0);

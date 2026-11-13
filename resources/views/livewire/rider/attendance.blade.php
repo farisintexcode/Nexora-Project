@@ -23,7 +23,7 @@
 @if(!$open && !$todayPunch && !$todayLeave)<div class="attendance-remark"><x-input name="remarks" label="Shift remark (optional)" wire:model="remarks" maxlength="2000" /></div>@endif
 <div class="attendance-punch-actions">
 @if($onLeave)<span class="attendance-inactive-action" aria-disabled="true"><x-icon name="calendar" />On leave today</span>
-@elseif($open)<span class="attendance-inactive-action" aria-disabled="true"><x-icon name="check" />Clocked In</span><x-button type="button" class="min-h-14 w-full" wire:click="clock('out')" wire:confirm="Record your clock out using the current server time?" wire:loading.attr="disabled"><x-icon name="logout" />Clock Out</x-button>
+@elseif($open)<span class="attendance-inactive-action" aria-disabled="true"><x-icon name="check" />Clocked In</span><x-confirm-action class="w-full" button-class="min-h-14 w-full" icon="logout" label="Clock Out" title="Clock out now?" message="Your clock out is recorded using the current server time." action="clock('out')" confirm-label="Clock out" />
 @elseif(!$todayPunch)<x-button type="button" class="min-h-14 w-full" wire:click="clock('in')" wire:loading.attr="disabled"><x-icon name="logout" class="rotate-180" />Clock In</x-button><span class="attendance-inactive-action" aria-disabled="true"><x-icon name="logout" />Clock Out</span>
 @else<div class="attendance-saved-note"><x-icon name="check" /><span>Your attendance is recorded. Use the correction workflow for any changes.</span></div>@endif
 </div>
