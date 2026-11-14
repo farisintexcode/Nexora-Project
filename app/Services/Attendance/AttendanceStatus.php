@@ -8,7 +8,7 @@ use Carbon\CarbonImmutable;
 /** Module.md#m10-approved-policy; pure calculation over pinned schedule rules. */
 class AttendanceStatus
 {
-    public const LABELS = ['present' => 'Present', 'late' => 'Late', 'half_day' => 'Half Day', 'absent' => 'Absent', 'leave' => 'Leave', 'day_off' => 'Rest Day', 'public_holiday' => 'Public Holiday', 'incomplete' => 'Incomplete', 'open' => 'Open', 'expected' => 'Expected', 'needs_review' => 'Needs review', 'cancelled' => 'Deactivated', 'pending_correction' => 'Pending Correction'];
+    public const LABELS = ['present' => 'Present', 'late' => 'Late', 'half_day' => 'Half Day', 'absent' => 'Absent', 'leave' => 'Leave', 'day_off' => 'Rest Day', 'public_holiday' => 'Public Holiday', 'incomplete' => 'Incomplete', 'open' => 'Open', 'expected' => 'Expected', 'needs_review' => 'Needs review', 'cancelled' => 'Deactivated'];
 
     /** @return array{status:string,worked_minutes:?int,is_late:bool,late_minutes:int} */
     public function calculate(?AttendanceSchedule $schedule, CarbonImmutable $in, ?CarbonImmutable $out): array

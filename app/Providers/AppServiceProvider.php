@@ -8,9 +8,11 @@ use App\Models\Communication;
 use App\Models\ImportBatch;
 use App\Models\Task;
 use App\Models\User;
+use App\Notifications\StaffInvitation;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Facades\Gate;
@@ -34,5 +36,8 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('recovery', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
         RateLimiter::for('service-email', fn () => Limit::perSecond(max(1, config('communications.rate_limit')))->by('debtops-email-global'));
         RateLimiter::for('ses-receipts', fn (Request $request) => Limit::perMinute(300)->by($request->ip()));
+        if ($this->app->runningInConsole() && $this->app->isLocal() && StaffInvitation::sentInBackground()) {
+            DevCommands::artisan('queue:listen '.StaffInvitation::connectionName().' --queue=email --tries=3 --timeout=0', 'mail');
+        }
     }
 }

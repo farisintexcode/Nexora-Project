@@ -2,10 +2,8 @@
 
 use App\Actions\Attendance\ClockAttendance;
 use App\Actions\Attendance\ConfigureAttendance;
-use App\Actions\Attendance\CorrectAttendance;
 use App\Livewire\Admin\Attendance\Index as AttendanceIndex;
 use App\Models\Attendance;
-use App\Models\AttendanceAdjustment;
 use App\Models\AttendancePolicy;
 use App\Models\AttendanceSchedule;
 use App\Models\AuditLog;
@@ -19,10 +17,10 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(LazilyRefreshDatabase::class);
 beforeEach(function (): void {
@@ -53,12 +51,12 @@ test('attendance routes enforce authentication and grants while own history stay
     $this->get(route('admin.attendance.show', $schedule))->assertOk();
 });
 
-test('admins view a rider attendance record without a request correction button', function (): void {
+test('admins view a rider attendance record without correction history or requests', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00:00', 'Asia/Kuala_Lumpur'));
     [$admin,,$schedule] = attendanceFixture();
 
     $this->actingAs($admin)->get(route('admin.attendance.show', $schedule))
-        ->assertOk()->assertSee('Correction history')
+        ->assertOk()->assertDontSee('Correction history')
         ->assertDontSee('Request a correction')->assertDontSee('Submit correction request');
 });
 
@@ -127,48 +125,6 @@ test('absence is derived only after an expected shift and day off leave holiday 
     expect($register->query($admin, ['from' => '2026-10-20', 'until' => '2026-10-22'])->orderBy('service_date')->pluck('result_status')->all())->toBe(['leave', 'day_off', 'public_holiday']);
 });
 
-test('independent correction closes a forgotten shift without fabricating a raw clock out and preserves decisions', function (): void {
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00:00', 'Asia/Kuala_Lumpur'));
-    [$admin,$rider,$schedule] = attendanceFixture();
-    $rider->givePermissionTo('attendance.correct');
-    $punch = app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
-    $this->travelTo(CarbonImmutable::parse('2026-10-20 10:00:00', 'Asia/Kuala_Lumpur'));
-    $correct = app(CorrectAttendance::class);
-    $before = $correct->snapshot($schedule, $punch);
-    $data = ['day_type' => 'scheduled', 'clock_in' => '2026-10-19T09:00', 'clock_out' => '2026-10-19T18:00', 'reason' => 'Forgot to clock out'];
-    $request = $correct->request($rider, $schedule, $data, $before);
-    expect($correct->request($rider, $schedule, $data, $before)->id)->toBe($request->id);
-    expect($punch->refresh()->effective_clock_out_at)->toBeNull();
-    $rider->assignRole('Admin');
-    $rider->givePermissionTo('attendance.approve_correction');
-    expect(fn () => $correct->review($rider, $request, 'approved', 'Reviewed'))->toThrow(HttpException::class);
-    $admin->givePermissionTo('attendance.approve_correction');
-    $correct->review($admin, $request, 'approved', 'Independent review');
-    $punch->refresh();
-    expect($punch->raw_clock_out_at)->toBeNull()->and($punch->clock_out_request_id)->toBeNull()->and($punch->effective_clock_out_at->format('H:i'))->toBe('10:00')->and($punch->worked_minutes)->toBe(480)->and($punch->status)->toBe('present');
-    expect($correct->review($admin, $request, 'approved', 'Retry')->id)->toBe($request->id)->and($rider->notifications()->count())->toBe(1);
-    expect(AuditLog::query()->where('action', 'attendance.correction_approved')->count())->toBe(1)->and(AuditLog::query()->where('module', 'M10')->get()->toJson())->not->toContain('Forgot to clock out');
-    expect(fn () => DB::transaction(fn () => DB::table('attendance_adjustments')->where('id', $request->id)->update(['reason' => 'Overwrite'])))->toThrow(QueryException::class);
-    expect(app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7())->service_date->toDateString())->toBe('2026-10-20');
-});
-
-test('stale corrections cannot overwrite a later punch and rejected correction retains original values', function (): void {
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00:00', 'Asia/Kuala_Lumpur'));
-    [$admin,$rider,$schedule] = attendanceFixture();
-    $admin->givePermissionTo('attendance.approve_correction');
-    $punch = app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 17:00:00', 'Asia/Kuala_Lumpur'));
-    $correct = app(CorrectAttendance::class);
-    $request = $correct->request($admin, $schedule, ['day_type' => 'scheduled', 'clock_in' => '2026-10-19T09:00', 'clock_out' => '2026-10-19T17:00', 'reason' => 'Proposed correction'], $correct->snapshot($schedule, $punch));
-    $checker = User::factory()->create();
-    $checker->assignRole('Admin');
-    $checker->givePermissionTo('attendance.approve_correction');
-    app(ClockAttendance::class)->punch($rider, 'out', (string) Str::uuid7(), $punch->public_id, 0);
-    expect(fn () => $correct->review($checker, $request, 'approved', 'Check'))->toThrow(ValidationException::class);
-    $correct->review($checker, $request, 'rejected', 'Actual clock out already recorded.');
-    expect($request->refresh()->status)->toBe('rejected')->and($punch->refresh()->lock_version)->toBe(1)->and($punch->raw_clock_out_at)->not->toBeNull();
-});
-
 test('calendar assignment respects approved workdays exceptions and immutable policy versions', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-19 08:00', 'Asia/Kuala_Lumpur'));
     [$admin,$rider,$schedule] = attendanceFixture();
@@ -199,40 +155,28 @@ test('invalid policy rules fail before activation and Riders cannot configure sc
     'unexpected rule' => [['salary_deduction' => 100]],
 ]);
 
-test('calendar-only leave correction needs independent authority and creates no fictitious punches', function (): void {
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 19:00', 'Asia/Kuala_Lumpur'));
-    [$admin,$rider,$schedule] = attendanceFixture();
-    $rider->givePermissionTo('attendance.correct');
-    $admin->givePermissionTo('attendance.approve_correction');
-    $correct = app(CorrectAttendance::class);
-    $request = $correct->request($rider, $schedule, ['day_type' => 'leave', 'reason' => 'Approved leave correction'], $correct->snapshot($schedule, null));
-    $register = app(AttendanceRegister::class);
-    $criteria = ['from' => '2026-10-19', 'until' => '2026-10-19'];
-    expect($register->query($admin, [...$criteria, 'status' => 'pending_correction'])->count())->toBe(1)->and($register->query($admin, $criteria)->value('result_status'))->toBe('absent');
-    $correct->review($admin, $request, 'approved', 'Leave confirmed');
-    expect($schedule->refresh()->day_type)->toBe('leave')->and(Attendance::query()->count())->toBe(0)->and($register->query($admin, $criteria)->value('result_status'))->toBe('leave');
-    expect(fn () => DB::transaction(fn () => DB::table('attendance_schedules')->where('id', $schedule->id)->update(['day_type' => 'day_off'])))->toThrow(QueryException::class);
-});
-
-test('unscheduled punches stay needs review until an approved calendar link and preserve raw events', function (): void {
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00', 'Asia/Kuala_Lumpur'));
-    [$admin,$rider,$schedule] = attendanceFixture();
-    $admin->givePermissionTo('attendance.approve_correction');
+test('unscheduled punches stay needs review and preserve raw events', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-20 09:00', 'Asia/Kuala_Lumpur'));
+    [$admin,$rider] = attendanceFixture();
     $clock = app(ClockAttendance::class);
     $punch = $clock->punch($rider, 'in', (string) Str::uuid7());
     $this->travelTo(CarbonImmutable::parse('2026-10-20 18:00', 'Asia/Kuala_Lumpur'));
     $punch = $clock->punch($rider, 'out', (string) Str::uuid7(), $punch->public_id, 0);
     expect($punch->status)->toBe('needs_review')->and($punch->schedule_id)->toBeNull();
-    $raw = $punch->getRawOriginal('raw_clock_in_at');
-    app(ConfigureAttendance::class)->assign($admin, $rider->staff->public_id, $schedule->policy->public_id, '2026-10-20', '2026-10-20');
-    $target = AttendanceSchedule::query()->where('rider_id', $rider->staff_id)->where('service_date', '2026-10-20')->firstOrFail();
-    $rider->givePermissionTo('attendance.correct');
-    $correct = app(CorrectAttendance::class);
-    $request = $correct->request($rider, $target, ['day_type' => 'scheduled', 'clock_in' => '2026-10-20T09:00', 'clock_out' => '2026-10-20T18:00', 'reason' => 'Link actual unscheduled shift'], $correct->snapshot($target, $punch));
-    $correct->review($admin, $request, 'approved', 'Schedule link checked');
-    expect($punch->refresh()->schedule_id)->toBe($target->id)->and($punch->status)->toBe('present')->and($punch->getRawOriginal('raw_clock_in_at'))->toBe($raw);
-    expect(app(AttendanceRegister::class)->query($admin, ['from' => '2026-10-20', 'until' => '2026-10-20'])->count())->toBe(1);
+    $register = app(AttendanceRegister::class)->query($admin, ['from' => '2026-10-20', 'until' => '2026-10-20'])->get();
+    expect($register)->toHaveCount(1)->and($register->first()->result_status)->toBe('needs_review');
+});
+
+test('recorded calendar days and effective punch times cannot be edited', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00', 'Asia/Kuala_Lumpur'));
+    [, $rider, $schedule] = attendanceFixture();
+    $punch = app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
+    expect(fn () => DB::transaction(fn () => DB::table('attendance_schedules')->where('id', $schedule->id)->update(['day_type' => 'day_off', 'scheduled_start_at' => null, 'scheduled_end_at' => null, 'lock_version' => 1])))->toThrow(QueryException::class);
+    expect(fn () => DB::transaction(fn () => DB::table('attendances')->where('id', $punch->id)->update(['effective_clock_in_at' => now()->subHour(), 'lock_version' => 1])))->toThrow(QueryException::class);
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 18:00', 'Asia/Kuala_Lumpur'));
+    $closed = app(ClockAttendance::class)->punch($rider, 'out', (string) Str::uuid7(), $punch->public_id, 0);
+    expect($closed->effective_clock_out_at->equalTo($closed->raw_clock_out_at))->toBeTrue()->and($schedule->refresh()->day_type)->toBe('scheduled');
+    expect(Schema::hasTable('attendance_adjustments'))->toBeFalse();
 });
 
 test('exports reuse private filters and escape formulas', function (): void {
@@ -247,7 +191,7 @@ test('exports reuse private filters and escape formulas', function (): void {
     $this->actingAs($rider)->get(route('admin.attendance.export', ['format' => 'csv']))->assertForbidden();
 });
 
-test('Livewire own punches and correction requests recheck current permissions', function (): void {
+test('Livewire own punches recheck current permissions', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-19 09:00', 'Asia/Kuala_Lumpur'));
     [$admin,$rider,$schedule] = attendanceFixture();
     $component = Livewire::actingAs($rider)->test(App\Livewire\Rider\Attendance::class)->call('clock', 'in')->assertHasNoErrors()->assertSee('Open shift');
@@ -286,33 +230,6 @@ test('database constraints refuse racing duplicate shifts and deletion of origin
     expect(fn () => DB::transaction(fn () => DB::table('attendances')->where('id', $punch->id)->delete()))->toThrow(QueryException::class);
     expect(Attendance::query()->count())->toBe(1);
     expect(fn () => DB::transaction(fn () => AttendanceSchedule::factory()->create(['policy_id' => $schedule->policy_id, 'scheduled_end_at' => null])))->toThrow(QueryException::class);
-});
-
-test('future times blank reasons and out-before-in fail without pending corrections', function (): void {
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 10:00', 'Asia/Kuala_Lumpur'));
-    [$admin,$rider,$schedule] = attendanceFixture();
-    $punch = app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
-    $correct = app(CorrectAttendance::class);
-    foreach ([['reason' => '   ', 'clock_in' => '2026-10-19T09:00', 'clock_out' => '2026-10-19T10:00'], ['reason' => 'Future', 'clock_in' => '2026-10-19T09:00', 'clock_out' => '2026-10-20T10:00'], ['reason' => 'Reversed', 'clock_in' => '2026-10-19T09:00', 'clock_out' => '2026-10-19T08:00']] as $data) {
-        expect(fn () => $correct->request($admin, $schedule, ['day_type' => 'scheduled', ...$data], $correct->snapshot($schedule, $punch)))->toThrow(ValidationException::class);
-    }
-    expect(AttendanceAdjustment::query()->count())->toBe(0)->and($punch->refresh()->effective_clock_out_at)->toBeNull();
-});
-
-test('an independently approved planned-shift correction preserves the previous calendar and reclassifies actual work', function (): void {
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 10:00', 'Asia/Kuala_Lumpur'));
-    [$admin,$rider,$schedule] = attendanceFixture();
-    $punch = app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
-    $this->travelTo(CarbonImmutable::parse('2026-10-19 19:00', 'Asia/Kuala_Lumpur'));
-    $punch = app(ClockAttendance::class)->punch($rider, 'out', (string) Str::uuid7(), $punch->public_id, 0);
-    $correct = app(CorrectAttendance::class);
-    $request = $correct->request($admin, $schedule, ['day_type' => 'scheduled', 'clock_in' => '2026-10-19T10:00', 'clock_out' => '2026-10-19T19:00', 'scheduled_start' => '2026-10-19T10:00', 'scheduled_end' => '2026-10-19T19:00', 'reason' => 'Authorized replacement shift'], $correct->snapshot($schedule, $punch));
-    $checker = User::factory()->create();
-    $checker->assignRole('Admin');
-    $checker->givePermissionTo('attendance.approve_correction');
-    $correct->review($checker, $request, 'approved', 'Changed shift checked');
-    expect($punch->refresh()->is_late)->toBeFalse()->and($punch->worked_minutes)->toBe(480)->and($schedule->refresh()->scheduled_start_at->format('H:i'))->toBe('02:00')
-        ->and($request->refresh()->before_values['scheduled_start_at'])->toBe('2026-10-19T01:00:00.000000Z');
 });
 
 test('today board groups riders by clock state and the month calendar marks Malaysian holidays', function (): void {

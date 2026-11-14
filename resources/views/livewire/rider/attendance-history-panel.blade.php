@@ -4,4 +4,3 @@
 <div wire:loading.delay role="status" class="rounded-xl bg-brand-soft p-3 text-sm"><span class="loading-spinner"></span>Saving or updating attendance…</div>
 <x-rider.attendance-history :rows="$rows" />{{ $rows->links() }}
 </section>
-@if($correctionSchedule)<form wire:submit="requestCorrection" class="surface grid min-w-0 gap-4 p-5"><h2 class="font-semibold">Request correction</h2><x-input name="clock_in" type="datetime-local" label="Requested clock in (MYT)" wire:model="clockIn" class="min-w-0 max-w-full" required /><x-input name="clock_out" type="datetime-local" label="Requested clock out (MYT)" wire:model="clockOut" class="min-w-0 max-w-full" /><x-input name="reason" label="Correction reason" wire:model="reason" required maxlength="5000" /><x-button wire:loading.attr="disabled">Submit correction request</x-button></form>@endif

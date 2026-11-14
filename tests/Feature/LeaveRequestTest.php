@@ -1,7 +1,6 @@
 <?php
 
 use App\Actions\Attendance\ClockAttendance;
-use App\Actions\Attendance\CorrectAttendance;
 use App\Actions\Attendance\ManageLeave;
 use App\Livewire\Admin\Attendance\LeaveManagement;
 use App\Livewire\Admin\NotificationBell;
@@ -43,7 +42,6 @@ function leaveFixture(): array
     $rider->assignRole('Rider');
     $admin = User::factory()->create();
     $admin->assignRole('Admin');
-    $admin->givePermissionTo('attendance.approve_correction');
     $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'name' => 'Approved Test Leave', 'allow_pending_cancel' => true]);
     $start = now()->addDays(3)->timezone('Asia/Kuala_Lumpur')->toDateString();
     $schedule = AttendanceSchedule::factory()->create(['rider_id' => $rider->staff_id, 'service_date' => $start, 'scheduled_start_at' => CarbonImmutable::parse($start.' 09:00', 'Asia/Kuala_Lumpur')->utc(), 'scheduled_end_at' => CarbonImmutable::parse($start.' 18:00', 'Asia/Kuala_Lumpur')->utc(), 'authorized_by' => $admin->id]);
@@ -58,13 +56,6 @@ function submitLeave(User $rider, array $data, ?UploadedFile $file = null): Leav
     return $action->submit($rider, $data, $preview['token'], $file);
 }
 
-function changeLeaveCalendar(User $rider, User $admin, AttendanceSchedule $schedule): void
-{
-    $rider->givePermissionTo('attendance.correct');
-    $corrections = app(CorrectAttendance::class);
-    $correction = $corrections->request($rider, $schedule, ['day_type' => 'day_off', 'reason' => 'Approved calendar change'], $corrections->snapshot($schedule, null));
-    $corrections->review($admin, $correction, 'approved', 'Independent calendar review');
-}
 test('rider reviews submits and admin independently approves without changing attendance', function (): void {
     [$rider,$admin,$type,$data,$schedule] = leaveFixture();
     $this->actingAs($rider)->get(route('rider.leave.index'))->assertOk()->assertSee('My Leave Requests');
@@ -111,15 +102,12 @@ test('rest days and public holidays are excluded and missing calendars block req
     expect(fn () => app(ManageLeave::class)->preview($rider, $data))->toThrow(ValidationException::class);
 });
 
-test('changed application calendar or policy invalidates the review', function (string $change): void {
+test('changed application or policy invalidates the review', function (string $change): void {
     [$rider,$admin,$type,$data,$schedule] = leaveFixture();
     $action = app(ManageLeave::class);
     $preview = $action->preview($rider, $data);
     if ($change === 'data') {
         $data['reason'] = 'Changed after reviewing';
-    }
-    if ($change === 'calendar') {
-        changeLeaveCalendar($rider, $admin, $schedule);
     }
     if ($change === 'policy') {
         $type->forceFill(['lock_version' => 1])->save();
@@ -129,7 +117,7 @@ test('changed application calendar or policy invalidates the review', function (
     }
     expect(fn () => $action->submit($rider, $data, $preview['token']))->toThrow(ValidationException::class);
     expect(LeaveRequest::count())->toBe(0);
-})->with(['data', 'calendar', 'policy', 'expiry']);
+})->with(['data', 'policy', 'expiry']);
 
 test('riders cannot view other applications or admin routes or supporting documents', function (): void {
     [$rider,$admin,$type,$data] = leaveFixture();
@@ -207,17 +195,13 @@ test('pending cancellation follows the submitted policy and frees the dates', fu
     expect(submitLeave($rider, $data)->status)->toBe('pending');
 });
 
-test('calendar changes or real attendance prevent approval without altering the request', function (string $conflict): void {
+test('real attendance prevents approval without altering the request', function (): void {
     [$rider,$admin,$type,$data,$schedule] = leaveFixture();
     $request = submitLeave($rider, $data);
-    if ($conflict === 'calendar') {
-        changeLeaveCalendar($rider, $admin, $schedule);
-    } else {
-        Attendance::factory()->create(['rider_id' => $rider->staff_id, 'schedule_id' => $schedule->id, 'service_date' => $data['start_date'], 'raw_clock_in_at' => $schedule->scheduled_start_at, 'effective_clock_in_at' => $schedule->scheduled_start_at, 'raw_clock_out_at' => $schedule->scheduled_end_at, 'effective_clock_out_at' => $schedule->scheduled_end_at]);
-    }
+    Attendance::factory()->create(['rider_id' => $rider->staff_id, 'schedule_id' => $schedule->id, 'service_date' => $data['start_date'], 'raw_clock_in_at' => $schedule->scheduled_start_at, 'effective_clock_in_at' => $schedule->scheduled_start_at, 'raw_clock_out_at' => $schedule->scheduled_end_at, 'effective_clock_out_at' => $schedule->scheduled_end_at]);
     expect(fn () => app(ManageLeave::class)->decide($admin, $request, 'approved', '', 0))->toThrow(ValidationException::class);
     expect($request->fresh()->status)->toBe('pending');
-})->with(['calendar', 'attendance']);
+});
 
 test('an earlier shift still running into the leave is named in the review panel and blocks approval', function (): void {
     [$rider,$admin,$type,$data] = leaveFixture();
@@ -417,8 +401,6 @@ test('approved leave appears in attendance and blocks clock in without fabricati
     expect($register->result_status)->toBe('leave')->and($schedule->fresh()->day_type)->toBe('scheduled')->and(Attendance::count())->toBe(0);
     expect(fn () => app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7()))->toThrow(ValidationException::class);
     $this->assertDatabaseCount('attendances', 0);
-    $rider->givePermissionTo('attendance.correct');
-    expect(fn () => changeLeaveCalendar($rider, $admin, $schedule))->toThrow(ValidationException::class);
 });
 
 test('pending rejected and cancelled leave do not mark attendance as approved leave', function (string $state): void {

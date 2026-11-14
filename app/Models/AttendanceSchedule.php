@@ -7,7 +7,6 @@ use Database\Factories\AttendanceScheduleFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class AttendanceSchedule extends Model
@@ -37,10 +36,5 @@ class AttendanceSchedule extends Model
     public function attendance(): HasOne
     {
         return $this->hasOne(Attendance::class, 'schedule_id');
-    }
-
-    public function adjustments(): HasMany
-    {
-        return $this->hasMany(AttendanceAdjustment::class, 'schedule_id');
     }
 }

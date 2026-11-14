@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Admin;
 
-use App\Notifications\AttendanceCorrected;
 use App\Notifications\LeaveUpdated;
 use App\Notifications\TaskSubmitted;
 use App\Services\PendingReviews;
@@ -16,7 +15,7 @@ use Livewire\Component;
 /** Admin header bell: the actor's own notifications, polled with the pending-review counts that drive sidebar badges and dashboard cards. */
 class NotificationBell extends Component
 {
-    public const TYPES = [TaskSubmitted::class, LeaveUpdated::class, AttendanceCorrected::class];
+    public const TYPES = [TaskSubmitted::class, LeaveUpdated::class];
 
     /** @var array{tasks: int|null, leave: int|null} */
     #[Locked]
@@ -63,7 +62,6 @@ class NotificationBell extends Component
         return match (true) {
             $notification->type === TaskSubmitted::class && Str::isUuid($data['submission'] ?? '') && $user->can('tasks.verify') => route('admin.verification.show', $data['submission']),
             $notification->type === LeaveUpdated::class && ($data['admin'] ?? false) && Str::isUuid($data['leave_request'] ?? '') => route('admin.leave.show', $data['leave_request']),
-            $notification->type === AttendanceCorrected::class && $user->can('attendance.view_own') => route('attendance.own'),
             default => null,
         };
     }

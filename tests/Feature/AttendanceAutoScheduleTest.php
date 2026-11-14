@@ -203,7 +203,7 @@ test('the schedules page publishes a default policy and shows it in effect', fun
 
 test('leave on the automatic calendar charges only working days and shows on attendance before and after approval', function (): void {
     $admin = calendarAdmin();
-    $admin->givePermissionTo(['attendance.approve_correction', 'attendance.view_all']);
+    $admin->givePermissionTo('attendance.view_all');
     $staff = calendarRider('selangor');
     $rider = User::factory()->for($staff)->create();
     $rider->assignRole('Rider');

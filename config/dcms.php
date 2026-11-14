@@ -28,8 +28,7 @@ return [
         'assignments.view', 'assignments.manage', 'assignments.reopen', 'imports.view', 'imports.map', 'imports.confirm',
         'tasks.view', 'tasks.create', 'tasks.update', 'tasks.assign', 'tasks.reassign',
         'tasks.cancel', 'tasks.delete', 'tasks.monitor', 'tasks.submit', 'tasks.verify',
-        'attendance.clock', 'attendance.view_own', 'attendance.view_all', 'attendance.correct',
-        'attendance.approve_correction', 'attendance.export', 'attendance.configure', 'leave.approve',
+        'attendance.clock', 'attendance.view_own', 'attendance.view_all', 'attendance.export', 'attendance.configure', 'leave.approve',
         'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override', 'calls.record', 'communications.view', 'communications.compose', 'communications.send',
         'communications.bulk_send', 'communications.generate_letter', 'templates.manage', 'templates.approve',
         'whatsapp.message', 'whatsapp.call', 'reports.view', 'reports.export',
@@ -42,5 +41,7 @@ return [
     'office_permissions' => ['templates.approve', 'communications.generate_letter', 'assignments.reopen', 'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override'],
     /** System Admin controls accounts, permissions and system settings; it never works assignments, tasks, attendance or leave. */
     'system_admin_permissions' => ['admin.access', 'riders.manage', 'users.invite', 'riders.invite', 'roles.manage', 'communications.view', 'templates.approve', 'integrations.manage', 'audit.view', 'monitoring.view'],
+    /** Queue connection for staff invitation emails; empty uses QUEUE_CONNECTION. Lets a sync development setup still send invitations in the background. */
+    'account_mail_connection' => env('ACCOUNT_MAIL_CONNECTION'),
     'queues' => ['default', 'imports', 'exports', 'email', 'whatsapp', 'webhooks', 'media'],
 ];

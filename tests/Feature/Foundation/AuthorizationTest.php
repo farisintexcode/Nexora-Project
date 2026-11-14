@@ -53,7 +53,7 @@ test('System Admin controls accounts and settings but never assignment, task, at
     expect($user->usesSystemAdminWorkspace())->toBeTrue();
 });
 
-test('admin bundle approves leave and attendance corrections but does not imply rider eligibility or reserved authority', function (): void {
+test('admin bundle approves leave but does not imply rider eligibility or reserved authority', function (): void {
     $user = User::factory()->create();
     $user->assignRole('Admin');
 
@@ -61,7 +61,6 @@ test('admin bundle approves leave and attendance corrections but does not imply 
     $this->get(route('rider.home'))->assertForbidden();
 
     expect($user->can('leave.approve'))->toBeTrue();
-    expect($user->can('attendance.approve_correction'))->toBeTrue();
     expect($user->can('templates.approve'))->toBeFalse();
     expect($user->can('roles.manage'))->toBeFalse();
 });

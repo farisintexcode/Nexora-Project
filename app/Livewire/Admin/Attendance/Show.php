@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Admin\Attendance;
 
-use App\Actions\Attendance\CorrectAttendance;
 use App\Models\Attendance;
 use App\Models\AttendanceSchedule;
 use App\Models\LeaveRequest;
@@ -10,20 +9,17 @@ use App\Services\Attendance\AttendanceAccess;
 use App\Services\Attendance\AttendanceRegister;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
-/** M10/UI59 original/effective values, immutable correction decisions. */
+/** M10/UI59 scheduled, raw and effective values for one rider day. */
 #[Layout('layouts.admin')]
 class Show extends Component
 {
     #[Locked]
     public int $scheduleId;
-
-    public string $reviewRemarks = '';
 
     public function mount(string $schedule, AttendanceAccess $access): void
     {
@@ -31,17 +27,6 @@ class Show extends Component
         $record = AttendanceSchedule::query()->where('public_id', $schedule)->firstOrFail();
         abort_unless($access->visible(auth()->user(), $record->rider_id), 404);
         $this->scheduleId = $record->id;
-    }
-
-    /** Admins review existing correction requests here; this page no longer raises new ones. */
-    public function decide(string $id, string $decision, CorrectAttendance $correct): void
-    {
-        abort_unless(Str::isUuid($id), 404);
-        $schedule = $this->record();
-        $request = $schedule->adjustments()->where('public_id', $id)->firstOrFail();
-        $correct->review(auth()->user(), $request, $decision, $this->reviewRemarks);
-        $this->reviewRemarks = '';
-        session()->flash('status', 'Correction '.$decision.'. Original punches are unchanged.');
     }
 
     private function record(): AttendanceSchedule
@@ -88,7 +73,7 @@ class Show extends Component
             'leave' => 'Covered by approved leave; no attendance expected.',
             'day_off', 'public_holiday' => 'Not a working day; no attendance expected.',
             'cancelled' => 'This schedule was deactivated; history is retained.',
-            default => 'This punch is not linked to a working schedule and needs an independent correction.',
+            default => 'This punch is not linked to a working schedule for this day.',
         };
     }
 
@@ -100,22 +85,17 @@ class Show extends Component
         $date = $schedule->service_date->toDateString();
         $row = $register->query(auth()->user(), ['from' => $date, 'until' => $date, 'rider' => $schedule->rider->public_id])->where('schedule_public_id', $schedule->public_id)->first();
         $status = $row->result_status ?? ($attendance->status ?? $schedule->day_type);
-        $requests = $schedule->adjustments()->with(['requester', 'reviewer'])->orderByRaw("status = 'pending' desc")->orderByDesc('id')->get();
-        $canReview = auth()->user()->can('attendance.approve_correction') && auth()->user()->staff_id !== $schedule->rider_id;
         $leave = LeaveRequest::query()->whereIn('status', ['pending', 'approved'])
             ->whereHas('schedules', fn ($query) => $query->whereKey($schedule->id))->latest('id')->first();
 
         return view('livewire.admin.attendance.show', [
             'schedule' => $schedule,
             'attendance' => $attendance,
-            'requests' => $requests,
             'status' => $status,
             'rules' => $schedule->policy->rules,
             'explanation' => $this->explanation($status, $attendance, $schedule->policy->rules),
-            'pendingCount' => $requests->where('status', 'pending')->count(),
             'leave' => $leave,
             'leaveCharged' => $leave ? (bool) DB::table('leave_request_days')->where('leave_request_id', $leave->id)->where('schedule_id', $schedule->id)->value('charged') : false,
-            'reviewableCount' => $canReview ? $requests->where('status', 'pending')->where('requested_by', '!=', auth()->id())->count() : 0,
         ]);
     }
 }

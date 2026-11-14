@@ -6,7 +6,6 @@ use App\Models\AssignmentBatch;
 use App\Models\LeaveRequest;
 use App\Models\Task;
 use App\Models\User;
-use App\Notifications\AttendanceCorrected;
 use App\Notifications\LeaveUpdated;
 use App\Notifications\TaskReviewed;
 use App\Notifications\TasksAssigned;
@@ -45,7 +44,7 @@ class Notifications extends Component
             array_push($types, TaskReviewed::class, TasksAssigned::class, TasksWithdrawn::class);
         }
         if ($user->can('attendance.view_own')) {
-            array_push($types, AttendanceCorrected::class, LeaveUpdated::class);
+            $types[] = LeaveUpdated::class;
         }
 
         return $types;

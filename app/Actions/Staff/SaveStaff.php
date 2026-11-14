@@ -149,6 +149,9 @@ class SaveStaff
                 $this->audit->record($actor, $existing ? 'staff_updated' : 'staff_created', $staff->public_id,
                     ['is_active' => $staff->is_active, 'is_rider' => $staff->is_rider, 'changed_fields' => array_keys($data)],
                     reason: $availabilityReduced ? $data['reason'] : null, module: 'M10', entityType: 'staff', previous: $before);
+                if ($existing && $before['is_active'] !== $staff->is_active) {
+                    $input = $this->followStaffAvailability($actor, $staff, $input);
+                }
 
                 if (isset($input['system_role'])) {
                     $account = $staff->user()->first();
@@ -172,5 +175,42 @@ class SaveStaff
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['data.staff_no' => 'This staff number is already in use.']);
         }
+    }
+
+    /**
+     * Keep the login in step with the staff record: deactivating staff disables their account, and reactivating restores it
+     * (active once a password was set, otherwise invited so a new invitation can be sent). Locked accounts keep their recovery flow.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function followStaffAvailability(User $actor, Staff $staff, array $input): array
+    {
+        $account = $staff->user()->lockForUpdate()->first();
+        if (! $account) {
+            return $input;
+        }
+        $current = $account->status;
+        $next = match (true) {
+            ! $staff->is_active && in_array($current, [AccountStatus::Active, AccountStatus::Invited], true) => AccountStatus::Disabled,
+            $staff->is_active && $current === AccountStatus::Disabled => $account->email_verified_at ? AccountStatus::Active : AccountStatus::Invited,
+            default => null,
+        };
+        if ($next === null) {
+            return $input;
+        }
+        $account->status = $next;
+        if ($next === AccountStatus::Disabled) {
+            DB::table('password_reset_tokens')->where('email', $account->email)->delete();
+            $account->remember_token = null;
+        }
+        $account->save();
+        $this->audit->record($actor, 'staff_account_updated', $staff->public_id, ['status' => $next->value],
+            module: 'M10', entityType: 'staff', previous: ['status' => $current->value]);
+        if (($input['account_status'] ?? null) === $current->value) {
+            $input['account_status'] = $next->value;
+        }
+
+        return $input;
     }
 }

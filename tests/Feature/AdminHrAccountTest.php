@@ -287,7 +287,7 @@ test('removing required system account fields from Livewire payload cannot bypas
     $this->assertDatabaseCount('staff', 0);
 });
 
-test('directory availability actions retain employment history and separate account status', function (): void {
+test('directory availability actions retain employment history and disable then restore the login', function (): void {
     $actor = staffManager();
     $staff = Staff::factory()->create(['appointment_date' => '2020-01-01']);
     $account = User::factory()->for($staff)->create();
@@ -296,8 +296,30 @@ test('directory availability actions retain employment history and separate acco
     Livewire::actingAs($actor)->test(Index::class)->set('reason', 'Employment paused')
         ->call('changeAvailability', $staff->public_id, false)->assertHasNoErrors();
 
-    expect($staff->fresh()->is_active)->toBeFalse()->and($account->fresh()->status)->toBe(AccountStatus::Active)
+    expect($staff->fresh()->is_active)->toBeFalse()->and($account->fresh()->status)->toBe(AccountStatus::Disabled)
         ->and($staff->fresh()->appointment_date->format('Y-m-d'))->toBe('2020-01-01');
+
+    Livewire::actingAs($actor)->test(Index::class)->call('changeAvailability', $staff->public_id, true)->assertHasNoErrors();
+
+    expect($staff->fresh()->is_active)->toBeTrue()->and($account->fresh()->status)->toBe(AccountStatus::Active);
+});
+
+test('deactivating staff with a pending invitation disables it and reactivation allows a new invitation', function (): void {
+    $actor = staffManager();
+    $staff = Staff::factory()->create(['is_rider' => true]);
+    $account = User::factory()->for($staff)->create(['status' => AccountStatus::Invited, 'email_verified_at' => null]);
+    $account->assignRole('Rider');
+    DB::table('password_reset_tokens')->insert(['email' => $account->email, 'token' => 'hashed-token', 'created_at' => now()]);
+
+    Livewire::actingAs($actor)->test(Index::class)->set('reason', 'Did not join')
+        ->call('changeAvailability', $staff->public_id, false)->assertHasNoErrors();
+
+    expect($account->fresh()->status)->toBe(AccountStatus::Disabled)->and($account->fresh()->isActive())->toBeFalse();
+    $this->assertDatabaseMissing('password_reset_tokens', ['email' => $account->email]);
+
+    Livewire::actingAs($actor)->test(Index::class)->call('changeAvailability', $staff->public_id, true)->assertHasNoErrors();
+
+    expect($account->fresh()->status)->toBe(AccountStatus::Invited);
 });
 
 test('directory deactivation asks for the reason in a dialog for the selected staff', function (): void {

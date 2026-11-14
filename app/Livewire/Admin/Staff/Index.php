@@ -85,7 +85,9 @@ class Index extends Component
         }, 3);
         $this->reason = '';
         $this->deactivating = null;
-        session()->flash('status', 'Staff availability updated. Account activation still requires password setup.');
+        session()->flash('status', $active
+            ? 'Staff reactivated and login restored. If they never set a password, send a new invitation from their staff page.'
+            : 'Staff deactivated and their login disabled.');
     }
 
     public function mount(): void

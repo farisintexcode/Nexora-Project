@@ -3,7 +3,6 @@
 namespace App\Actions\Attendance;
 
 use App\Models\Attendance;
-use App\Models\AttendanceAdjustment;
 use App\Models\AttendanceSchedule;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
@@ -183,9 +182,6 @@ class ManageLeave
                 $conflict = $this->attendanceConflicts($request)->first();
                 if ($conflict) {
                     throw ValidationException::withMessages(['decision' => self::describeConflict($conflict).' Correct that attendance record before approving, or reject this leave.']);
-                }
-                if (AttendanceAdjustment::query()->whereIn('schedule_id', array_column($calendar, 'id'))->where('status', 'pending')->exists()) {
-                    throw ValidationException::withMessages(['decision' => 'A calendar correction is pending. Resolve it before reviewing leave.']);
                 }
             }
             $request->forceFill(['status' => $decision, 'reviewed_by' => $actor->id, 'reviewed_at' => now(), 'reviewer_remarks' => $remarks !== '' ? $remarks : null, 'lock_version' => $request->lock_version + 1])->save();

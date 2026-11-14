@@ -1,6 +1,6 @@
 import { chooseDateRange, expect, test } from './fixtures';
 
-test('Rider clocks a real shift, requests correction and Admin independently approves it', async ({page}) => {
+test('Rider clocks a real shift and Admin reviews the recorded attendance', async ({page}) => {
     test.setTimeout(240000);
     const password=process.env.DCMS_E2E_PASSWORD;
     const admin=process.env.DCMS_E2E_ADMIN_EMAIL;
@@ -37,24 +37,15 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await page.getByLabel('History through',{exact:true}).fill(localDate());
     await page.getByRole('button',{name:'View history',exact:true}).click();
     const historical=page.locator('article').filter({hasText:localDate(-2)});
-    await historical.getByRole('button',{name:'Request correction',exact:true}).click();
+    await expect(historical).toHaveCount(1);
+    await expect(historical.getByRole('button',{name:'Request correction',exact:true})).toHaveCount(0);
     if(surface==='rider-mobile'){
         for(const width of [320,430]){
             await page.setViewportSize({width,height:900});
             expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
-            for(const input of await page.locator('input[type="datetime-local"]').all()){
-                const box=await input.boundingBox();
-                expect(box!.x).toBeGreaterThanOrEqual(0);
-                expect(box!.x+box!.width).toBeLessThanOrEqual(width+1);
-            }
         }
         await page.setViewportSize({width:375,height:667});
     }
-    await page.getByLabel('Requested clock out (MYT)', { exact: true }).fill(localDate(-2)+'T18:00');
-    await page.getByLabel('Correction reason',{exact:true}).fill('Synthetic correction '+surface);
-    await page.getByRole('button',{name:'Submit correction request',exact:true}).click();
-    await expect(page.getByRole('status').filter({hasText:'Correction requested.'})).toBeVisible();
-    await expect(historical.getByText('Pending Correction',{exact:true})).toBeVisible();
     await page.screenshot({path:'.local-tools/m10-'+surface+'-rider.png',fullPage:true});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
     await page.getByRole('button',{name:'Profile',exact:true}).click();
@@ -66,18 +57,13 @@ test('Rider clocks a real shift, requests correction and Admin independently app
     await expect(page).toHaveURL(/\/admin$/,{timeout:90000});
     await page.goto('/admin/attendance?view=records');
     await chooseDateRange(page,'service-date','Service date',localDate(-3),localDate(0));
-    await page.getByLabel('Attendance status',{exact:true}).selectOption('pending_correction');
     await page.getByRole('button', {name: /^Filters/}).click();
     await page.getByLabel('Rider name or staff number',{exact:true}).fill('ATT-'+surface.toUpperCase());
     await page.getByRole('button',{name:'Apply filters',exact:true}).click();
-    await expect(page.getByRole('link',{name:'View attendance',exact:true})).toHaveCount(1);
-    await page.getByRole('link',{name:'View attendance',exact:true}).click();
-    await expect(page.getByText('Synthetic correction '+surface,{exact:true})).toBeVisible();
-    await page.getByLabel('Reviewer remarks',{exact:true}).fill('Independent synthetic check');
-    await page.getByRole('button',{name:'Approve correction',exact:true}).click();
-    await page.getByRole('dialog', { name: 'Approve this correction?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect(page.getByRole('status').filter({hasText:'Correction approved.'})).toBeVisible();
-    await expect(page.getByText('8h 00m',{exact:true})).toBeVisible();
+    const adminHistorical=page.locator('article').filter({hasText:localDate(-2)});
+    await adminHistorical.getByRole('link',{name:'View attendance',exact:true}).click();
+    await expect(page.getByText('7h 00m',{exact:true})).toBeVisible();
+    await expect(page.getByText('Correction history',{exact:true})).toHaveCount(0);
     await page.screenshot({path:'.local-tools/m10-'+surface+'-review.png',fullPage:true});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
     await page.goto('/admin/attendance/configuration');

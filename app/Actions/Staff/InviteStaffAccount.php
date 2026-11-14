@@ -129,7 +129,11 @@ class InviteStaffAccount
                     }
                     try {
                         $account->notify(new StaffInvitation($token, $role));
-                        $delivery = $this->deliveryStatus = config('mail.default') === 'array' ? 'local_capture' : 'mail_accepted';
+                        $delivery = $this->deliveryStatus = match (true) {
+                            StaffInvitation::sentInBackground() => 'queued',
+                            config('mail.default') === 'array' => 'local_capture',
+                            default => 'mail_accepted',
+                        };
                     } catch (\Throwable $exception) {
                         $delivery = $this->deliveryStatus = 'delivery_failed';
                         Log::warning('Staff invitation mail transport failed.', ['user_id' => $account->public_id, 'exception_type' => $exception::class, 'reason' => Str::limit($exception->getMessage(), 300)]);

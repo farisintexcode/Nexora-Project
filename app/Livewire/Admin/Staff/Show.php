@@ -93,6 +93,7 @@ class Show extends Component
         $this->revision = $staff->revision();
         session()->flash(InviteStaffAccount::needsAttention($status) ? 'warning' : 'status', match ($status) {
             'mail_accepted' => 'Invitation accepted by the mail transport. This does not confirm inbox delivery.',
+            'queued' => 'Invitation is being emailed in the background.',
             'local_capture' => 'Invitation prepared for local capture only. No email was delivered; configure Mailpit or an approved transport for activation.',
             'delivery_failed' => 'The account invitation is prepared, but mail transport failed. Wait for the resend interval, then reissue the invitation.',
             'unsafe_transport' => 'Invitation prepared, but this mail configuration includes a log transport. Activation secrets cannot be logged. Configure a safe transport and reissue.',

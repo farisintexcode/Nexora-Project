@@ -56,6 +56,19 @@ test('authorized Rider invitation creates only the selected role and a single-us
     $this->post(route('activation.update'), $payload)->assertSessionHasErrors('email');
 });
 
+test('invitations are handed to the background email queue when a queue connection is configured', function (): void {
+    config(['dcms.account_mail_connection' => 'database']);
+    $actor = staffManager();
+    $actor->givePermissionTo('users.invite');
+    $staff = app(SaveStaff::class)->handle($actor, staffInput());
+
+    $status = app(InviteStaffAccount::class)->handle($actor, $staff, 'Rider', $staff->revision());
+
+    $account = $staff->user()->firstOrFail();
+    expect($status)->toBe('queued')->and($account->status)->toBe(AccountStatus::Invited);
+    Notification::assertSentTo($account, StaffInvitation::class, fn (StaffInvitation $invitation): bool => $invitation->connection === 'database' && $invitation->queue === 'email');
+});
+
 test('staff management alone cannot issue invitations or escalate the requested role', function (): void {
     $actor = User::factory()->create();
     $actor->givePermissionTo(['admin.access', 'riders.manage']);

@@ -140,6 +140,8 @@ class Editor extends Component
 
                 'mail_accepted' => 'Activation invitation accepted by the mail transport. Inbox delivery is not confirmed.',
 
+                'queued' => 'Activation invitation is being emailed in the background.',
+
                 'delivery_failed' => 'Account invited, but email delivery failed. Reissue the invitation after the resend interval.',
 
                 'unsafe_transport' => 'Account invited, but log mailers cannot receive activation secrets. Configure a safe transport and reissue.',

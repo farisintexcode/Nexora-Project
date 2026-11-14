@@ -40,10 +40,10 @@ class AttendanceExportController extends Controller
 
         return response()->streamDownload(function () use ($rows, $asOf): void {
             $stream = fopen('php://output', 'w');
-            fputcsv($stream, ['Staff number', 'Rider', 'Service date', 'Status', 'Late', 'Late minutes', 'Worked minutes', 'Unpaid break minutes', 'Raw in (MYT)', 'Raw out (MYT)', 'Effective in (MYT)', 'Effective out (MYT)', 'Policy version', 'Pending correction', 'As of (MYT)'], escape: '');
+            fputcsv($stream, ['Staff number', 'Rider', 'Service date', 'Status', 'Late', 'Late minutes', 'Worked minutes', 'Unpaid break minutes', 'Raw in (MYT)', 'Raw out (MYT)', 'Effective in (MYT)', 'Effective out (MYT)', 'Policy version', 'As of (MYT)'], escape: '');
             $time = fn (?string $value): string => $value ? CarbonImmutable::parse($value)->timezone(config('dcms.business_timezone'))->format('Y-m-d H:i:s') : '';
             foreach ($rows as $row) {
-                $values = [$row->staff_no, $row->rider_name, $row->service_date, AttendanceStatus::LABELS[$row->result_status], $row->is_late ? 'Yes' : 'No', $row->late_minutes, $row->worked_minutes, $row->break_minutes, $time($row->raw_clock_in_at), $time($row->raw_clock_out_at), $time($row->effective_clock_in_at), $time($row->effective_clock_out_at), $row->policy_code ? $row->policy_code.' v'.$row->policy_version : 'Unscheduled', $row->pending_correction ? 'Yes' : 'No', $asOf->timezone(config('dcms.business_timezone'))->format('Y-m-d H:i:s')];
+                $values = [$row->staff_no, $row->rider_name, $row->service_date, AttendanceStatus::LABELS[$row->result_status], $row->is_late ? 'Yes' : 'No', $row->late_minutes, $row->worked_minutes, $row->break_minutes, $time($row->raw_clock_in_at), $time($row->raw_clock_out_at), $time($row->effective_clock_in_at), $time($row->effective_clock_out_at), $row->policy_code ? $row->policy_code.' v'.$row->policy_version : 'Unscheduled', $asOf->timezone(config('dcms.business_timezone'))->format('Y-m-d H:i:s')];
                 fputcsv($stream, array_map(fn ($value): string => preg_match('/^[\s]*[=+@\-\t\r\n]/u', (string) $value) ? "'".$value : (string) $value, $values), escape: '');
             }
             fclose($stream);

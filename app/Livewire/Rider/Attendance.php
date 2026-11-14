@@ -3,11 +3,9 @@
 namespace App\Livewire\Rider;
 
 use App\Actions\Attendance\ClockAttendance;
-use App\Actions\Attendance\CorrectAttendance;
 use App\Models\Attendance as Punch;
 use App\Models\AttendanceSchedule;
 use App\Models\LeaveRequest;
-use App\Notifications\AttendanceCorrected;
 use App\Services\Attendance\AttendanceRegister;
 use App\Services\Attendance\WorkCalendar;
 use Illuminate\Support\Str;
@@ -39,23 +37,11 @@ class Attendance extends Component
     #[Locked]
     public ?int $openVersion = null;
 
-    #[Locked]
-    public ?int $correctionSchedule = null;
-
-    #[Locked]
-    public array $before = [];
-
     public string $from = '';
 
     public string $until = '';
 
     public string $remarks = '';
-
-    public string $clockIn = '';
-
-    public string $clockOut = '';
-
-    public string $reason = '';
 
     public function mount(): void
     {
@@ -107,31 +93,6 @@ class Attendance extends Component
         $this->resetPage();
     }
 
-    public function selectCorrection(string $id, CorrectAttendance $correct): void
-    {
-        $this->authorizeOwn();
-        abort_unless(Str::isUuid($id), 404);
-        $schedule = AttendanceSchedule::query()->where('public_id', $id)->where('rider_id', auth()->user()->staff_id)->firstOrFail();
-        abort_unless($correct->canRequest(auth()->user(), $schedule), 403);
-        $attendance = Punch::query()->where('rider_id', $schedule->rider_id)->where('service_date', $schedule->service_date->toDateString())->first();
-        abort_unless($attendance !== null, 422);
-        $this->correctionSchedule = $schedule->id;
-        $this->before = $correct->snapshot($schedule, $attendance);
-        $tz = config('dcms.business_timezone');
-        $this->clockIn = $attendance->effective_clock_in_at->timezone($tz)->format('Y-m-d\TH:i');
-        $this->clockOut = $attendance->effective_clock_out_at?->timezone($tz)->format('Y-m-d\TH:i') ?? '';
-        $this->reason = '';
-    }
-
-    public function requestCorrection(CorrectAttendance $correct): void
-    {
-        $this->authorizeOwn();
-        $schedule = AttendanceSchedule::query()->whereKey($this->correctionSchedule)->where('rider_id', auth()->user()->staff_id)->firstOrFail();
-        $correct->request(auth()->user(), $schedule, ['reason' => $this->reason, 'day_type' => 'scheduled', 'clock_in' => $this->clockIn, 'clock_out' => $this->clockOut], $this->before);
-        $this->correctionSchedule = null;
-        session()->flash('status', 'Correction requested. Your original punches remain unchanged.');
-    }
-
     public function render(AttendanceRegister $register): View
     {
         $this->authorizeOwn();
@@ -148,6 +109,6 @@ class Attendance extends Component
         $todayPunch = Punch::query()->where('rider_id', auth()->user()->staff_id)->where('service_date', $today)->first();
         $todayLeave = LeaveRequest::query()->where('rider_id', auth()->user()->staff_id)->where('status', 'approved')->where('start_date', '<=', $today)->where('end_date', '>=', $today)->first();
 
-        return view($this->historyPage ? 'livewire.rider.attendance-history' : 'livewire.rider.attendance', ['open' => $open, 'todaySchedule' => $todaySchedule, 'todayPunch' => $todayPunch, 'todayLeave' => $todayLeave, 'rows' => $query->orderByDesc('service_date')->orderByDesc('attendance_id')->paginate(15), 'filterError' => $error, 'notices' => auth()->user()->notifications()->where('type', AttendanceCorrected::class)->latest()->limit(5)->get()])->layout(auth()->user()->can('admin.access') ? 'layouts.admin' : 'layouts.rider');
+        return view($this->historyPage ? 'livewire.rider.attendance-history' : 'livewire.rider.attendance', ['open' => $open, 'todaySchedule' => $todaySchedule, 'todayPunch' => $todayPunch, 'todayLeave' => $todayLeave, 'rows' => $query->orderByDesc('service_date')->orderByDesc('attendance_id')->paginate(15), 'filterError' => $error])->layout(auth()->user()->can('admin.access') ? 'layouts.admin' : 'layouts.rider');
     }
 }

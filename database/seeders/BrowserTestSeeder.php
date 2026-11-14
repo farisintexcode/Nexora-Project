@@ -71,7 +71,6 @@ class BrowserTestSeeder extends Seeder
         $rider->staff->last_name = 'Rider';
         $rider->staff->save();
         // M10 synthetic calendar/punch fixtures are confined to the guarded disposable E2E database.
-        $admin->givePermissionTo('attendance.approve_correction');
         $attendancePolicy = app(ConfigureAttendance::class)->policy($admin, ['code' => 'browser-attendance', 'rules' => config('attendance.initial_rules')]);
         // Synthetic leave types/calendars exist only in this guarded disposable browser database.
         app(ManageLeave::class)->configure($admin, ['name' => 'Synthetic Personal Leave', 'max_calendar_days' => 14, 'requires_document' => false, 'allow_pending_cancel' => true, 'is_active' => true]);
@@ -83,7 +82,6 @@ class BrowserTestSeeder extends Seeder
             $attendanceStaff = Staff::factory()->create(['staff_no' => 'ATT-'.strtoupper($attendanceSurface), 'first_name' => 'Attendance', 'last_name' => $attendanceSurface]);
             $attendanceUser = User::factory()->for($attendanceStaff)->create(['name' => 'Attendance '.$attendanceSurface, 'email' => 'attendance-'.$attendanceSurface.'@example.test', 'password' => config('dcms.e2e_password')]);
             $attendanceUser->assignRole('Rider');
-            $attendanceUser->givePermissionTo('attendance.correct');
             $historyDate = now()->timezone(config('dcms.business_timezone'))->subDays(2)->startOfDay();
             $historySchedule = AttendanceSchedule::factory()->create(['rider_id' => $attendanceStaff->id, 'policy_id' => $attendancePolicy->id, 'service_date' => $historyDate->toDateString(), 'scheduled_start_at' => $historyDate->copy()->setTime(9, 0)->utc(), 'scheduled_end_at' => $historyDate->copy()->setTime(18, 0)->utc(), 'authorized_by' => $admin->id]);
             Attendance::factory()->create(['rider_id' => $attendanceStaff->id, 'schedule_id' => $historySchedule->id, 'service_date' => $historyDate->toDateString(), 'raw_clock_in_at' => $historyDate->copy()->setTime(9, 0)->utc(), 'effective_clock_in_at' => $historyDate->copy()->setTime(9, 0)->utc(), 'raw_clock_out_at' => $historyDate->copy()->setTime(17, 0)->utc(), 'effective_clock_out_at' => $historyDate->copy()->setTime(17, 0)->utc(), 'clock_out_request_id' => (string) Str::uuid7(), 'status' => 'present', 'worked_minutes' => 420, 'lock_version' => 1]);
