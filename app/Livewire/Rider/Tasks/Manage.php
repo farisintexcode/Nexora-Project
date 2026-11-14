@@ -70,7 +70,7 @@ class Manage extends Component
         $submitted = ($this->preview['input']['operation'] ?? '') === 'submit';
         $this->reset('selection', 'preview');
         $subject = $count.' '.Str::plural('task', $count);
-        session()->flash('status', $submitted ? $subject.' submitted for Admin verification. No task was marked Completed.' : $subject.' updated. Previous records remain in history.');
+        session()->flash('status', $submitted ? $subject.' submitted. Tasks with a payment wait for Admin verification; the rest are completed automatically.' : $subject.' updated. Previous records remain in history.');
     }
 
     public function cancelPreview(): void

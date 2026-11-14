@@ -56,6 +56,12 @@ class Task extends Model
             ->orWhereIn('source_import_row_id', ImportRow::query()->where('import_batch_id', $importBatchId)->select('id')));
     }
 
+    /** Tasks created manually and not grouped with any uploaded Excel file. */
+    public function scopeWithoutImport(Builder $query): void
+    {
+        $query->whereNull('tasks.import_batch_id')->whereNull('tasks.source_import_row_id');
+    }
+
     /**
      * Untouched tasks (unstarted, never reviewed, no Rider, not excluded) left in an archived assignment of the same type
      * as the given active assignment, which may move into it when assigned. Mirrors dcms_task_scope_guard.

@@ -24,6 +24,9 @@ class Allocation extends Component
 {
     private const CHOICE_LIMIT = 200;
 
+    /** Excel File Name choice for tasks created manually without any Excel file. */
+    public const NO_FILE = 'none';
+
     /** Plain reasons for tasks an operation left unchanged, keyed by their exclusion code. */
     private const EXCLUSION_REASONS = [
         'already_assigned' => 'already have a Rider',
@@ -112,18 +115,20 @@ class Allocation extends Component
     }
 
     /**
-     * Tasks offered as tick boxes for the chosen assignment and, when one is chosen, its Excel file. A file from an archived
+     * Tasks offered as tick boxes for the chosen assignment and Excel file (none until a file or No Excel file is chosen). A file from an archived
      * assignment also offers its unassigned tasks, which move into the chosen assignment when given out. Only tasks the
      * chosen operation can change are offered: New lists tasks without a Rider, Replace/Reassign/Unassign those with one,
      * and submitted, completed or cancelled work is never listed.
      */
     private function choiceQuery(AssignmentBatch $assignment): Builder
     {
-        $file = $this->importId === '' ? null : ImportBatch::query()->assignableFor($assignment->id)->where('public_id', $this->importId)->first();
+        $file = in_array($this->importId, ['', self::NO_FILE], true) ? null : ImportBatch::query()->assignableFor($assignment->id)->usedByAssignment($assignment->id)->where('public_id', $this->importId)->first();
 
         return Task::query()->whereNotNull('source_task_number')
             ->where(fn ($query) => $query->where('assignment_batch_id', $assignment->id)->when($file, fn ($query) => $query->orWhere(fn ($query) => $query->movableInto($assignment->id))))
             ->when($file, fn ($query) => $query->fromImport($file->id))
+            ->when($this->importId === self::NO_FILE, fn ($query) => $query->withoutImport())
+            ->when($this->importId === '', fn ($query) => $query->whereRaw('false'))
             ->where('excluded', false)->whereNotIn('work_status', ['submitted', 'completed', 'cancelled'])->where('review_status', '<>', 'pending')
             ->when($this->operation === 'new', fn ($query) => $query->whereDoesntHave('currentAllocation'))
             ->when(in_array($this->operation, ['replace', 'reassign', 'unassign'], true), fn ($query) => $query->whereHas('currentAllocation'))
@@ -170,15 +175,19 @@ class Allocation extends Component
             $singleId = [Rule::requiredIf($hasRange), 'nullable', 'string', 'max:100', 'regex:/^[A-Za-z]*\d+$/'];
             $this->validate(['batchId' => ['required', 'integer'], 'mode' => ['required', Rule::in(array_keys(TaskIdSelection::MODES))], 'rangeFrom' => $singleId, 'rangeTo' => $singleId, 'taskIds' => [Rule::requiredIf($this->mode !== 'range'), 'nullable', 'string', 'max:5000']], attributes: ['batchId' => 'assignment', 'mode' => 'selection mode', 'rangeFrom' => 'Task ID (From)', 'rangeTo' => 'Task ID (To)', 'taskIds' => 'task IDs']);
             $range = $hasRange ? "{$this->rangeFrom}-{$this->rangeTo}" : '';
-            $file = $this->importId === '' ? null : ImportBatch::query()->assignableFor((int) $this->batchId)->where('public_id', $this->importId)->first();
-            if ($this->importId !== '' && ! $file) {
+            $withoutFile = $this->importId === self::NO_FILE;
+            $file = $this->importId === '' || $withoutFile ? null : ImportBatch::query()->assignableFor((int) $this->batchId)->usedByAssignment((int) $this->batchId)->where('public_id', $this->importId)->first();
+            if ($this->importId === '') {
+                throw ValidationException::withMessages(['importId' => 'Choose an Excel file, or No Excel file.']);
+            }
+            if (! $withoutFile && ! $file) {
                 throw ValidationException::withMessages(['importId' => 'Choose an Excel file from this assignment.']);
             }
             $tasks = $selection->resolve((int) $this->batchId, $this->mode, match ($this->mode) {
                 'range' => $range,
                 'range_selected' => "{$range}, {$this->taskIds}",
                 default => $this->taskIds,
-            }, $file?->id);
+            }, $file?->id, $withoutFile);
             $mode = $this->mode;
         }
         $operation = $actions->prepare(Auth::user(), ['assignment_batch_id' => $this->batchId, 'operation_code' => $this->operation, 'selection_mode' => $mode, 'task_ids' => $tasks, 'target_collector_id' => $this->riderId ?: null, 'reason' => $this->reason]);
@@ -248,7 +257,7 @@ class Allocation extends Component
         $batches = AssignmentBatch::query()->with('type')->where('status', 'active')->latest('id')->limit(200)->get();
         $batch = ctype_digit($this->batchId) ? $batches->firstWhere('id', (int) $this->batchId) : null;
         $choosable = $batch && $this->selected === [] && $this->mode !== '' && $this->mode !== 'range';
-        $excelFiles = $batch ? ImportBatch::query()->assignableFor($batch->id)->get() : collect();
+        $excelFiles = $batch ? ImportBatch::query()->assignableFor($batch->id)->usedByAssignment($batch->id)->get() : collect();
         $choices = $choosable ? $this->choiceQuery($batch)->with('customer')->limit(self::CHOICE_LIMIT)->get() : collect();
 
         return view('livewire.admin.tasks.allocation', ['batches' => $batches, 'selectedAssignment' => $batch, 'excelFiles' => $excelFiles, 'riders' => $batch ? $tasks->riders()->orderBy('first_name')->get() : collect(), 'selection' => Task::query()->whereIn('public_id', array_filter($this->selected, fn ($id) => is_string($id) && Str::isUuid($id)))->with(['customer', 'account'])->get(), 'choices' => $choices, 'choiceTotal' => $choosable ? $this->choiceQuery($batch)->count() : 0, 'choiceLimit' => self::CHOICE_LIMIT, 'allChoicesTicked' => $this->allTyped($choices->pluck('source_task_number')->all())]);

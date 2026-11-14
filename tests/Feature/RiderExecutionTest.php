@@ -188,7 +188,7 @@ test('clean proof completion freezes exact snapshot manifest and returns same su
     $key = (string) Str::uuid7();
     $submission = executionSubmit($rider, $task, $key);
     $again = app(RiderWork::class)->submit($rider, $task, 0, $key, 'old digest');
-    expect($again->id)->toBe($submission->id)->and($task->refresh()->work_status)->toBe('submitted')->and($task->review_status)->toBe('pending')->and($task->completed_at)->toBeNull()->and($submission->documents()->count())->toBe(1)->and($submission->task_version)->toBe($task->lock_version);
+    expect($again->id)->toBe($submission->id)->and($task->refresh()->work_status)->toBe('completed')->and($task->review_status)->toBe('approved')->and($task->completed_at)->not->toBeNull()->and($submission->documents()->count())->toBe(1)->and($submission->task_version)->toBe($task->lock_version - 1);
     expect($submission->completion_snapshot_ciphertext['remarks']['visit'])->toBe('Synthetic inspection performed');
     expect(DB::table('task_submissions')->value('completion_snapshot_ciphertext'))->not->toContain('Synthetic');
     foreach ([
@@ -253,8 +253,8 @@ test('reassignment denies editing and proof while retaining only own masked subm
 test('returned work starts a new correction draft and retains previously submitted visit and proof', function (): void {
     Storage::fake('s3');
     [$rider,$task] = executionFixture();
-    executionVisit($rider, $task);
-    $proof = executionProof($rider, $task);
+    executionVisit($rider, $task, ['purpose' => 'payment_verification']);
+    $proof = executionProof($rider, $task, 'payment_evidence');
     cleanExecutionProof($proof);
     $old = executionSubmit($rider, $task);
     // Arrange an M07 return projection without introducing a Rider approval endpoint.
@@ -262,8 +262,8 @@ test('returned work starts a new correction draft and retains previously submitt
     app(RiderWork::class)->start($rider, $task, $task->lock_version);
     expect(app(CompletionChecklist::class)->review($task->refresh(), $rider)['issues'])->toHaveKey('visit');
     expect(fn () => app(TaskProof::class)->remove($rider, $task, $task->lock_version, $proof->public_id))->toThrow(ValidationException::class);
-    executionVisit($rider, $task, ['visit_remarks' => 'Corrected synthetic visit']);
-    $newProof = executionProof($rider, $task);
+    executionVisit($rider, $task, ['purpose' => 'payment_verification', 'visit_remarks' => 'Corrected synthetic visit']);
+    $newProof = executionProof($rider, $task, 'payment_evidence');
     cleanExecutionProof($newProof);
     $new = executionSubmit($rider, $task);
     expect($new->submission_version)->toBe(2)->and($old->refresh()->completion_snapshot_ciphertext['remarks']['visit'])->toBe('Synthetic inspection performed')->and($task->activities()->count())->toBe(2)->and($proof->refresh()->deleted_at)->toBeNull();
@@ -352,8 +352,8 @@ test('camera and gallery selections upload scan and submit through the actual Li
     foreach ($documents as $document) {
         cleanExecutionProof($document);
     }
-    $component->call('reviewCompletion')->assertSee('Required checks passed.')->call('submitCompletion')->assertHasNoErrors()->assertSee('Awaiting Admin verification');
-    expect($task->refresh()->work_status)->toBe('submitted')->and($task->submissions()->count())->toBe(1);
+    $component->call('reviewCompletion')->assertSee('Required checks passed.')->call('submitCompletion')->assertHasNoErrors()->assertSee('verified automatically');
+    expect($task->refresh()->work_status)->toBe('completed')->and($task->submissions()->count())->toBe(1);
 });
 
 test('upload retry reuses its private document and tampered object content never becomes clean', function (): void {
@@ -400,8 +400,8 @@ test('Rider assignment progress follows successful submissions returns and appro
     }
     $progress = fn () => app(RiderAssignments::class)->batches($rider)->sole();
     expect((int) $progress()->completed_count)->toBe(0);
-    executionVisit($rider, $task);
-    $document = executionProof($rider, $task);
+    executionVisit($rider, $task, ['purpose' => 'payment_verification']);
+    $document = executionProof($rider, $task, 'payment_evidence');
     cleanExecutionProof($document);
     expect((int) $progress()->completed_count)->toBe(0);
     expect(fn () => app(RiderWork::class)->submit($rider, $task, $task->refresh()->lock_version, (string) Str::uuid7(), 'stale-digest'))->toThrow(ValidationException::class);
@@ -413,14 +413,14 @@ test('Rider assignment progress follows successful submissions returns and appro
     $reviewer = app(ReviewSubmission::class);
     $reviewer->confirm($admin, $reviewer->prepare($admin, [$submission->public_id], 'returned', 'Record the missing site detail.'));
     expect((int) $progress()->completed_count)->toBe(0)->and((int) $progress()->pending_count)->toBe(3);
-    executionVisit($rider, $task);
-    cleanExecutionProof(executionProof($rider, $task));
+    executionVisit($rider, $task, ['purpose' => 'payment_verification']);
+    cleanExecutionProof(executionProof($rider, $task, 'payment_evidence'));
     $correction = executionSubmit($rider, $task);
     $reviewer->confirm($admin, $reviewer->prepare($admin, [$correction->public_id], 'approved', 'Correction checked.'));
     expect((int) $progress()->completed_count)->toBe(1)->and((int) $progress()->verified_count)->toBe(1);
     foreach ($others as $other) {
-        executionVisit($rider, $other);
-        cleanExecutionProof(executionProof($rider, $other));
+        executionVisit($rider, $other, ['purpose' => 'payment_verification']);
+        cleanExecutionProof(executionProof($rider, $other, 'payment_evidence'));
         executionSubmit($rider, $other);
     }
     expect((int) $progress()->completed_count)->toBe(3)->and((int) $progress()->pending_count)->toBe(0)->and((int) $progress()->verified_count)->toBe(1);
@@ -495,3 +495,27 @@ test('rider pages confirm in the shared dialog instead of browser prompts', func
         expect(file_get_contents($view))->not->toContain('wire:confirm', $view);
     }
 });
+
+test('only submissions involving payment wait for admin verification and the rest are verified automatically', function (array $visit, array $categories, bool $needsAdmin): void {
+    Storage::fake('s3');
+    [$rider, $task] = executionFixture();
+    $verifier = staffManager();
+    executionVisit($rider, $task, $visit);
+    foreach ($categories as $category) {
+        cleanExecutionProof(executionProof($rider, $task, $category));
+    }
+    $submission = executionSubmit($rider, $task);
+
+    $task->refresh();
+    expect($task->work_status)->toBe($needsAdmin ? 'submitted' : 'completed')
+        ->and($task->review_status)->toBe($needsAdmin ? 'pending' : 'approved')
+        ->and($task->completed_at === null)->toBe($needsAdmin)
+        ->and($task->history()->where('event_code', 'auto_verified')->where('submission_id', $submission->id)->exists())->toBe(! $needsAdmin)
+        ->and($submission->review()->exists())->toBeFalse()
+        ->and($verifier->notifications()->count())->toBe($needsAdmin ? 1 : 0);
+})->with([
+    'normal site visit' => [[], ['premises'], false],
+    'payment claimed' => [['outcome' => 'payment_claimed', 'paid_amount' => '50.00'], ['premises', 'payment_evidence'], true],
+    'payment verification visit' => [['purpose' => 'payment_verification'], ['payment_evidence'], true],
+    'payment evidence photo only' => [[], ['premises', 'payment_evidence'], true],
+]);

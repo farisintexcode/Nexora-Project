@@ -185,7 +185,7 @@ class Show extends Component
         $submission = $work->submit(Auth::user(), $this->task(), $this->version, $this->submissionKey, $this->digest);
         $this->version = $this->task()->lock_version;
         $this->section = 'history';
-        session()->flash('status', 'Task completed and submitted. Awaiting Admin verification · '.$submission->public_id);
+        session()->flash('status', ($this->task()->work_status === 'completed' ? 'Task completed and verified automatically · ' : 'Task completed and submitted. Payment awaiting Admin verification · ').$submission->public_id);
         $this->dispatch('rider-task-completed');
     }
 

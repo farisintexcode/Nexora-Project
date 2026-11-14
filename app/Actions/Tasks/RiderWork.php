@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Assignments\ArchiveFinishedBatch;
 use App\Models\CollectionActivity;
 use App\Models\FollowUp;
 use App\Models\PropertyInspection;
@@ -199,7 +200,14 @@ class RiderWork
             }
             $task->submitted_at = now();
             $this->change($actor, $task, 'submitted', 'submitted', 'pending', $submission->id);
-            $this->notifyVerifiers($actor, $task, $submission);
+            if (CompletionChecklist::needsVerification($review['snapshot'])) {
+                $this->notifyVerifiers($actor, $task, $submission);
+
+                return $submission;
+            }
+            $task->completed_at = now();
+            $this->change($actor, $task, 'auto_verified', 'completed', 'approved', $submission->id);
+            app(ArchiveFinishedBatch::class)->handle($actor, $task->assignment_batch_id);
 
             return $submission;
         }, 3);

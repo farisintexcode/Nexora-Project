@@ -48,10 +48,10 @@ function reviewFixture(?User $reviewer = null): array
     TaskAllocation::factory()->create(['task_id' => $task->id, 'collector_id' => $rider->staff_id, 'assigned_by' => $reviewer->id]);
     app(RiderWork::class)->start($rider, $task, 0);
     $visit = app(RiderWork::class)->visit($rider, $task, $task->refresh()->lock_version, [
-        'purpose' => 'site_visit', 'business_applicable' => false, 'availability' => 'available', 'visit_status' => 'operating', 'contact_result' => 'customer_contacted', 'outcome' => 'successful_visit', 'site_address' => 'Synthetic review site', 'visit_remarks' => 'Synthetic submitted visit', 'collection_remarks' => 'No cash receipt',
+        'purpose' => 'payment_verification', 'business_applicable' => false, 'availability' => 'available', 'visit_status' => 'operating', 'contact_result' => 'customer_contacted', 'outcome' => 'successful_visit', 'site_address' => 'Synthetic review site', 'visit_remarks' => 'Synthetic submitted visit', 'collection_remarks' => 'No cash receipt',
     ], (string) Str::uuid7());
     // Explicit synthetic clean metadata: scanner/storage behavior is exercised by RiderExecutionTest.
-    $document = Document::factory()->create(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $rider->id, 'document_type_code' => 'proof_image', 'image_category_code' => 'premises', 'scan_status' => 'clean', 'mime_type' => 'image/jpeg']);
+    $document = Document::factory()->create(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $rider->id, 'document_type_code' => 'proof_image', 'image_category_code' => 'payment_evidence', 'scan_status' => 'clean', 'mime_type' => 'image/jpeg']);
     $review = app(CompletionChecklist::class)->review($task->refresh(), $rider);
     $submission = app(RiderWork::class)->submit($rider, $task, $task->lock_version, (string) Str::uuid7(), $review['digest']);
 
@@ -239,7 +239,7 @@ test('permission and signature changes invalidate a pending preview without deci
 
 test('review uses frozen policy instead of later master data and rejects drafts or competing reviewers', function (): void {
     [$reviewer,$rider,$task,$submission] = reviewFixture();
-    $policy = ReferenceValue::query()->where('category', 'visit_purpose')->where('code', 'site_visit')->firstOrFail();
+    $policy = ReferenceValue::query()->where('category', 'visit_purpose')->where('code', 'payment_verification')->firstOrFail();
     $policy->is_active = false;
     $policy->save();
     $first = verificationPreview($reviewer, $submission);
@@ -270,9 +270,9 @@ test('return resubmission approval appends a superseding cycle without changing 
     $oldReview = $first->review()->firstOrFail();
     app(RiderWork::class)->start($rider, $task, $task->refresh()->lock_version);
     $visit = app(RiderWork::class)->visit($rider, $task, $task->refresh()->lock_version, [
-        'purpose' => 'site_visit', 'business_applicable' => false, 'availability' => 'available', 'visit_status' => 'operating', 'contact_result' => 'customer_contacted', 'outcome' => 'successful_visit', 'site_address' => 'Synthetic corrected site', 'visit_remarks' => 'Corrected site description',
+        'purpose' => 'payment_verification', 'business_applicable' => false, 'availability' => 'available', 'visit_status' => 'operating', 'contact_result' => 'customer_contacted', 'outcome' => 'successful_visit', 'site_address' => 'Synthetic corrected site', 'visit_remarks' => 'Corrected site description',
     ], (string) Str::uuid7());
-    Document::factory()->create(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $rider->id, 'document_type_code' => 'proof_image', 'image_category_code' => 'premises', 'scan_status' => 'clean', 'mime_type' => 'image/jpeg']);
+    Document::factory()->create(['owner_type' => 'task', 'owner_id' => $task->id, 'activity_id' => $visit->id, 'uploaded_by' => $rider->id, 'document_type_code' => 'proof_image', 'image_category_code' => 'payment_evidence', 'scan_status' => 'clean', 'mime_type' => 'image/jpeg']);
     $check = app(CompletionChecklist::class)->review($task->refresh(), $rider);
     $second = app(RiderWork::class)->submit($rider, $task, $task->lock_version, (string) Str::uuid7(), $check['digest']);
     app(ReviewSubmission::class)->confirm($reviewer, verificationPreview($reviewer, $second));
