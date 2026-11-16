@@ -59,7 +59,7 @@ class Show extends Component
 
     public function render(SubmissionEvidence $evidence, ReviewSubmission $review): View
     {
-        $submission = TaskSubmission::query()->with(['task.batch', 'task.account.property', 'task.customer', 'submitter', 'review.reviewer', 'documents.document'])->where('public_id', $this->submissionId)->firstOrFail();
+        $submission = TaskSubmission::query()->with(['task.batch', 'task.account.property', 'task.customer', 'submitter', 'review.reviewer', 'autoVerification', 'documents.document'])->where('public_id', $this->submissionId)->firstOrFail();
         abort_unless(Auth::user()->isActive(), 404);
         Gate::authorize('view', $submission);
         $snapshot = $submission->completion_snapshot_ciphertext;
@@ -80,7 +80,7 @@ class Show extends Component
             'submission' => $submission, 'snapshot' => $snapshot, 'payment' => $review->paymentClaim($submission), 'issues' => $evidence->issues($submission), 'referenceLabel' => $label, 'formatTime' => $formatTime,
             'previous' => (clone $pending)->where('id', '<', $submission->id)->orderByDesc('id')->first(),
             'next' => (clone $pending)->where('id', '>', $submission->id)->orderBy('id')->first(),
-            'history' => $submission->task->submissions()->with('review.reviewer')->latest('submission_version')->limit(20)->get(),
+            'history' => $submission->task->submissions()->with(['review.reviewer', 'autoVerification'])->latest('submission_version')->limit(20)->get(),
             'back' => route('admin.verification.index', session('verification_filters.'.Auth::id(), [])),
         ]);
     }

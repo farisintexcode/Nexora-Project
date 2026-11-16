@@ -107,10 +107,11 @@ class Index extends Component
     public function render(): View
     {
         Gate::authorize('viewAny', TaskSubmission::class);
-        $query = TaskSubmission::query()->with(['task.batch', 'task.customer', 'submitter', 'review']);
+        $query = TaskSubmission::query()->with(['task.batch', 'task.customer', 'submitter', 'review', 'autoVerification']);
         match ($this->status) {
             'pending' => $query->whereDoesntHave('review')->whereHas('task', fn ($q) => $q->where('work_status', 'submitted')->where('review_status', 'pending')),
-            'approved','returned' => $query->whereHas('review', fn ($q) => $q->where('decision', $this->status)),
+            'approved' => $query->where(fn ($q) => $q->whereHas('review', fn ($q) => $q->where('decision', 'approved'))->orWhereHas('autoVerification')),
+            'returned' => $query->whereHas('review', fn ($q) => $q->where('decision', 'returned')),
             'all' => null,
             default => $query->whereRaw('false'),
         };

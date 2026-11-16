@@ -14,7 +14,7 @@
         @elseif(in_array($operation, ['visit_date','reminder']))
             <x-input name="value" :label="$operation === 'visit_date' ? 'Actual visit time (MYT)' : 'Reminder due (MYT)'" type="datetime-local" wire:model.live="value" class="min-w-0 max-w-full" />
         @else
-            <p class="rounded-xl bg-brand-soft p-3 text-sm">Eligible tasks will become Pending Verification. Only independent Admin approval makes them Completed.</p>
+            <p class="rounded-xl bg-brand-soft p-3 text-sm">Tasks with a payment become Pending Verification until an Admin approves them. Other tasks are completed automatically.</p>
         @endif
         @if($operation === 'visit_date')<p class="text-xs leading-6 text-ink-500">Actual visits may be today or yesterday in MYT. This creates a new visit draft. Earlier proof is retained in history; the new draft needs its own proof before submission.</p>@endif
         @if($operation === 'dr_code')<p class="text-xs leading-6 text-ink-500">DR01 is a payment claim, not a receipt. It needs the amount paid, entered on the task, and Payment Evidence before submission. DR02 needs a due follow-up.</p>@endif

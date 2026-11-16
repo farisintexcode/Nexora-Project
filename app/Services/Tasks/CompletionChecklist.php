@@ -135,6 +135,19 @@ class CompletionChecklist
         return ['issues' => $issues, 'snapshot' => $snapshot, 'digest' => hash_hmac('sha256', json_encode($snapshot, JSON_THROW_ON_ERROR), config('app.key')), 'visit' => $visit, 'documents' => $documents];
     }
 
+    /**
+     * Whether a frozen submission involves payment and so waits for Admin verification: a payment claim, a payment
+     * verification visit or a Payment Evidence photo. Every other submission is verified automatically.
+     *
+     * @param  array<string, mixed>  $snapshot
+     */
+    public static function needsVerification(array $snapshot): bool
+    {
+        return (bool) ($snapshot['payment']['claimed'] ?? false)
+            || ($snapshot['purpose'] ?? null) === 'payment_verification'
+            || collect($snapshot['proof'] ?? [])->contains(fn (array $proof): bool => ($proof['category'] ?? null) === 'payment_evidence');
+    }
+
     /** A typed amount counts as a claim even if the Rider forgot the outcome, so it can never skip the proof and review. */
     private function claimsPayment(CollectionActivity $visit, ?PropertyInspection $inspection): bool
     {

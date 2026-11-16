@@ -33,6 +33,24 @@ class Review extends Component
 
     public string $rowState = '';
 
+    /** Accepted rows the Admin unticked in Row preview. Every accepted row is ticked by default. */
+    public array $excludedRows = [];
+
+    public function toggleRow(string $rowId): void
+    {
+        $this->excludedRows = in_array($rowId, $this->excludedRows, true)
+            ? array_values(array_diff($this->excludedRows, [$rowId]))
+            : [...$this->excludedRows, $rowId];
+    }
+
+    /** Ticks every accepted row, or unticks them all when every one is already ticked. */
+    public function toggleAllRows(): void
+    {
+        $this->excludedRows = $this->excludedRows === []
+            ? $this->batch()->rows()->where('state', 'accepted')->pluck('public_id')->all()
+            : [];
+    }
+
     public function mount(ImportBatch $import): void
     {
         $this->importId = $import->public_id;
@@ -65,6 +83,7 @@ class Review extends Component
     {
         $batch = $this->batch();
         $workflow->preview(Auth::user(), $batch, $this->selections);
+        $this->excludedRows = [];
         $this->hydrateMapping($batch->refresh());
         $this->tab = 'rows';
         $this->resetPage();
@@ -79,7 +98,8 @@ class Review extends Component
                 throw ValidationException::withMessages(['confirmation' => 'The selected mapping changed. Validate and review a fresh preview before confirming.']);
             }
         }
-        $workflow->confirm(Auth::user(), $batch, $this->digest);
+        $workflow->confirm(Auth::user(), $batch, $this->digest, $this->excludedRows);
+        $this->excludedRows = [];
         if (config('queue.default') === 'sync') {
             $workflow->process($batch->id);
             $batch->refresh();
@@ -135,6 +155,6 @@ class Review extends Component
             }
         }
 
-        return view('livewire.admin.imports.review', ['samples' => $samples, 'batch' => $batch, 'mappings' => $batch->mappings()->orderBy('source_column_index')->get(), 'fields' => ImportField::query()->whereIn('id', $batch->template->schema_definition['field_ids'])->get(), 'rows' => $rows, 'audits' => Auth::user()->can('audit.view') ? AuditLog::query()->with('actor')->where('module', 'M04')->where('entity_id', $batch->public_id)->latest('id')->limit(30)->get() : collect()]);
+        return view('livewire.admin.imports.review', ['samples' => $samples, 'batch' => $batch, 'mappings' => $batch->mappings()->orderBy('source_column_index')->get(), 'fields' => ImportField::query()->whereIn('id', $batch->template->schema_definition['field_ids'])->get(), 'rows' => $rows, 'audits' => AuditLog::query()->with('actor')->where('module', 'M04')->where('entity_id', $batch->public_id)->latest('id')->limit(30)->get()]);
     }
 }

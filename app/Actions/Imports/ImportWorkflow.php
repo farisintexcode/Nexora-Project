@@ -52,9 +52,10 @@ class ImportWorkflow
             throw ValidationException::withMessages(['file' => 'Configure private file storage before uploading workbooks.']);
         }
         $object = 'imports/quarantine/'.Str::uuid7().'.encrypted';
+        $fileName = Str::limit(preg_replace('/[^\pL\pN._ -]/u', '_', basename(str_replace('\\', '/', $file->getClientOriginalName()))), 255, '');
         $stored = false;
         try {
-            return DB::transaction(function () use ($actor, $input, $file, $template, $hash, $key, $disk, $bucket, $object, &$stored): ImportBatch {
+            return DB::transaction(function () use ($actor, $input, $file, $template, $hash, $key, $disk, $bucket, $object, $fileName, &$stored): ImportBatch {
                 Gate::forUser($actor->fresh())->authorize('create', ImportBatch::class);
                 while ($existing = ImportBatch::withTrashed()->where('idempotency_key', $key)->first()) {
                     if (! $existing->trashed() && ! in_array($existing->status, ['failed', 'cancelled'], true)) {
@@ -62,6 +63,9 @@ class ImportWorkflow
                     }
                     // A failed, cancelled or deleted attempt gets a separate review on re-upload; previous attempts stay immutable.
                     $key = hash('sha256', $key.'|review-after|'.$existing->public_id);
+                }
+                if ($this->fileNameTaken($input['kind'], $fileName)) {
+                    throw ValidationException::withMessages(['file' => "An Excel file named {$fileName} was already uploaded. Rename the file before uploading it again."]);
                 }
                 if ($input['assignment_batch_id'] ?? null) {
                     $parent = AssignmentBatch::query()->lockForUpdate()->findOrFail($input['assignment_batch_id']);
@@ -74,7 +78,7 @@ class ImportWorkflow
                 }
                 $stored = true;
                 $document = new Document;
-                $document->forceFill(['owner_type' => 'import', 'owner_id' => $batch->id, 'uploaded_by' => $actor->id, 'disk' => $disk, 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => Str::limit(preg_replace('/[^\pL\pN._ -]/u', '_', basename(str_replace('\\', '/', $file->getClientOriginalName()))), 255, ''), 'mime_type' => 'application/octet-stream', 'size_bytes' => $file->getSize(), 'sha256' => $hash, 'document_type_code' => 'workbook', 'scan_status' => 'pending'])->save();
+                $document->forceFill(['owner_type' => 'import', 'owner_id' => $batch->id, 'uploaded_by' => $actor->id, 'disk' => $disk, 'bucket' => $bucket, 'object_key' => $object, 'original_filename' => $fileName, 'mime_type' => 'application/octet-stream', 'size_bytes' => $file->getSize(), 'sha256' => $hash, 'document_type_code' => 'workbook', 'scan_status' => 'pending'])->save();
                 $batch->source_document_id = $document->id;
                 $batch->save();
                 $this->event($batch, 'scan');
@@ -88,6 +92,17 @@ class ImportWorkflow
             }
             throw $error;
         }
+    }
+
+    /**
+     * Whether an Excel file with this name, ignoring case, was already uploaded to any assignment. Failed and cancelled
+     * uploads do not count, so they can be uploaded again.
+     */
+    private function fileNameTaken(string $kind, string $fileName): bool
+    {
+        return ImportBatch::query()->where('kind', $kind)->whereNotIn('status', ['failed', 'cancelled'])
+            ->whereHas('source', fn ($query) => $query->whereRaw('lower(original_filename) = ?', [mb_strtolower($fileName)]))
+            ->exists();
     }
 
     public function source(ImportBatch $batch, callable $callback, bool $clean = true): mixed
@@ -417,9 +432,12 @@ class ImportWorkflow
         });
     }
 
-    public function confirm(User $actor, ImportBatch $original, string $digest): void
+    /**
+     * @param  array<int, string>  $excludedRows  public ids of accepted rows the Admin unticked; they are rejected instead of imported
+     */
+    public function confirm(User $actor, ImportBatch $original, string $digest, array $excludedRows = []): void
     {
-        $this->locked($original->id, function (ImportBatch $batch) use ($actor, $digest): void {
+        $this->locked($original->id, function (ImportBatch $batch) use ($actor, $digest, $excludedRows): void {
             Gate::forUser($actor->fresh())->authorize('confirm', $batch);
             if ($batch->confirmed_at) {
                 return;
@@ -430,6 +448,17 @@ class ImportWorkflow
             if (! $this->scanCleared($batch->source?->scan_status)) {
                 throw ValidationException::withMessages(['confirmation' => 'The source must have a clean scan before confirmation.']);
             }
+            $excluded = $excludedRows === [] ? collect() : $batch->rows()->where('state', 'accepted')->whereIn('public_id', array_filter($excludedRows, fn ($id) => is_string($id) && Str::isUuid($id)))->get();
+            if ($excluded->count() >= $batch->accepted_count) {
+                throw ValidationException::withMessages(['confirmation' => 'Tick at least one accepted row to import.']);
+            }
+            foreach ($excluded as $row) {
+                $row->state = 'rejected';
+                $row->validation_errors = [['field' => 'row', 'code' => 'excluded_by_admin']];
+                $row->save();
+            }
+            $batch->accepted_count -= $excluded->count();
+            $batch->rejected_count += $excluded->count();
             $batch->forceFill(['confirmed_by' => $actor->id, 'confirmed_at' => now(), 'status' => 'processing', 'started_at' => now()])->save();
             $this->event($batch, 'commit');
             $this->audit->record($actor, 'import_confirmed', $batch->public_id, ['status' => 'processing'], module: 'M04', entityType: 'import');

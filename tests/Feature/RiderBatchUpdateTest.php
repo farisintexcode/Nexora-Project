@@ -114,7 +114,7 @@ test('a signed preview cannot be tampered with or reused after expiry', function
     expect(PropertyInspection::query()->count())->toBe(0);
 })->with(['expiry', 'value']);
 
-test('batch submission respects clean proof and creates Pending Verification only', function (): void {
+test('batch submission respects clean proof and completes tasks without a payment automatically', function (): void {
     [$actor, $batch, $tasks] = batchFlowFixture();
     $updates = app(RiderBatchUpdate::class);
     $input = batchFlowInput($tasks, ['operation' => 'submit', 'value' => '']);
@@ -125,11 +125,11 @@ test('batch submission respects clean proof and creates Pending Verification onl
         batchFlowProof($actor, $task);
     }
     $ready = $updates->preview($actor, $batch, $input);
-    expect($ready['rows'][0]['summary']['remarks']['visit'])->toBe('Synthetic field observation')
+    expect($ready['rows'][0]['summary']['remarks']['visit'])->toBe('Synthetic field observation')->and($ready['rows'][0]['after'])->toBe('Completed')
         ->and(array_keys($ready['rows'][0]['proof'][0]))->toBe(['reference', 'label', 'category', 'status']);
     expect($updates->apply($actor, $ready))->toBe(2);
     foreach ($tasks as $task) {
-        expect($task->refresh()->work_status)->toBe('submitted')->and($task->review_status)->toBe('pending');
+        expect($task->refresh()->work_status)->toBe('completed')->and($task->review_status)->toBe('approved');
     }
     expect(fn () => $updates->apply($actor, $updates->preview($actor, $batch, batchFlowInput($tasks))))->toThrow(ValidationException::class);
 });
