@@ -42,7 +42,37 @@
     @elseif($activeTab === 'activity')
     <section class="surface p-6"><h2 class="text-lg font-semibold">Personnel activity</h2><p class="mt-2 text-xs text-ink-500">Audit excludes phone/address values, passwords and activation tokens. Times shown in {{ config('dcms.business_timezone') }}.</p><div class="mt-6 grid gap-5">@forelse($activity as $event)<article class="flex items-start gap-3 border-b border-ink-100 pb-5"><span class="icon-tile !size-9"><x-icon name="activity" class="size-4" /></span><div class="min-w-0"><h3 class="text-sm font-semibold">{{ str_replace('_',' ',ucfirst($event->action)) }}</h3><p class="mt-1 text-xs text-ink-500">{{ $event->actor?->name ?? 'System' }} · {{ $event->occurred_at->timezone(config('dcms.business_timezone'))->format('d M Y H:i') }}</p>@if($event->reason)<p class="mt-3 text-xs leading-6">Reason: {{ $event->reason }}</p>@endif<p class="mt-2 text-[11px] text-ink-500">Fields: {{ implode(', ', $event->new_values_redacted['changed_fields'] ?? []) }}</p></div></article>@empty<x-empty-state title="No personnel changes recorded" message="Audited changes will appear here as this staff record is maintained." icon="activity" />@endforelse</div>{{ $activity->links() }}</section>
     @elseif($activeTab === 'attendance')
-    <section class="surface grid gap-4 p-6"><h2 class="text-lg font-semibold">Attendance history</h2><p class="text-sm text-ink-600">Schedules, raw and effective punches, and independent corrections are available in the scoped attendance workspace.</p>@if(app(\App\Services\Attendance\AttendanceAccess::class)->visible(auth()->user(),$staff->id))<a class="btn btn-secondary w-fit" href="{{ route('admin.attendance.index',['rider'=>$staff->public_id]) }}">View Rider attendance</a>@else<p class="text-sm text-ink-500">Attendance requires attendance.view_all.</p>@endif</section>
+    @php($clockTime = fn ($value) => $value ? $value->timezone(config('dcms.business_timezone'))->format('h:i A') : '—')
+    <section class="grid gap-4">
+        <div class="surface grid gap-4 p-6">
+            <div><h2 class="text-lg font-semibold">Attendance history</h2><p class="mt-1 text-xs text-ink-500">Clock-in and clock-out times for this Rider · times shown in {{ config('dcms.business_timezone') }}. Approved leave days are listed with their leave type.</p></div>
+            <div class="grid items-end gap-4 sm:grid-cols-3">
+                <x-input name="attendance-from" type="date" label="Start date" wire:model.live="from" max="{{ $until }}" />
+                <x-input name="attendance-until" type="date" label="End date" wire:model.live="until" min="{{ $from }}" />
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary min-h-11" wire:click="resetAttendanceDates">This month</button>
+                    <button type="button" class="btn btn-secondary min-h-11 py-2" wire:click="resetAttendanceDates">Reset</button>
+                </div>
+            </div>
+        </div>
+        @if($attendance->isEmpty())
+            <x-empty-state title="No attendance in this date range" message="Choose another start or end date to see this Rider's clock-in and clock-out times." icon="clock" />
+        @else
+            <div class="surface overflow-x-auto"><table class="data-table"><caption class="sr-only">Attendance history for {{ $staff->full_name }}</caption><thead><tr>@foreach(['Day', 'Date', 'Clock in', 'Clock out', 'Status'] as $heading)<th scope="col">{{ $heading }}</th>@endforeach</tr></thead>
+            <tbody>@foreach($attendance as $day)<tr wire:key="staff-attendance-{{ $day['date']->toDateString() }}">
+                <td>{{ $day['date']->format('l') }}</td>
+                <td>{{ $day['date']->format('d M Y') }}</td>
+                @if($day['status'] === 'leave')
+                    <td class="text-ink-500">On leave</td><td class="text-ink-500">On leave</td>
+                @else
+                    <td class="tabular-nums">{{ $clockTime($day['clock_in']) }}</td>
+                    <td class="tabular-nums">{{ $clockTime($day['clock_out']) }}</td>
+                @endif
+                <td><x-badge :tone="$day['tone']">{{ $day['label'] }}</x-badge></td>
+            </tr>@endforeach</tbody></table></div>
+            {{ $attendance->links() }}
+        @endif
+    </section>
     @elseif(! $canViewTasks)
     <x-empty-state title="Task access required" message="Task history and Rider performance require the tasks.view and tasks.monitor permissions." icon="shield" />
     @elseif($activeTab === 'performance')

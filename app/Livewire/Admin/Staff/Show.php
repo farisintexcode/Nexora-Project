@@ -9,8 +9,11 @@ use App\Models\Staff;
 use App\Models\Task;
 use App\Services\Attendance\AttendanceAccess;
 use App\Services\Staff\StaffAssignments;
+use App\Services\Staff\StaffAttendanceHistory;
 use App\Services\Staff\StaffTasks;
 use App\Services\Tasks\WorkVolume;
+use Carbon\CarbonImmutable;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -43,6 +46,12 @@ class Show extends Component
     #[Url]
     public string $range = '14';
 
+    #[Url]
+    public string $from = '';
+
+    #[Url]
+    public string $until = '';
+
     public string $invitationRole = '';
 
     public string $unlockReason = '';
@@ -60,12 +69,33 @@ class Show extends Component
         if ($this->invitationRole === '' && count($choices) === 1) {
             $this->invitationRole = $choices[0];
         }
+        $this->from = $this->validDate($this->from)?->toDateString() ?? $this->today()->startOfMonth()->toDateString();
+        $this->until = $this->validDate($this->until)?->toDateString() ?? $this->today()->toDateString();
     }
 
     public function updatedTab(): void
     {
         $this->resetPage();
         $this->resetPage('tasksPage');
+        $this->resetPage('attendancePage');
+    }
+
+    public function updatedFrom(): void
+    {
+        $this->resetPage('attendancePage');
+    }
+
+    public function updatedUntil(): void
+    {
+        $this->resetPage('attendancePage');
+    }
+
+    /** Return the attendance date filter to the current month. */
+    public function resetAttendanceDates(): void
+    {
+        $this->from = $this->today()->startOfMonth()->toDateString();
+        $this->until = $this->today()->toDateString();
+        $this->resetPage('attendancePage');
     }
 
     public function updatedPeriod(): void
@@ -146,7 +176,40 @@ class Show extends Component
             'performance' => $canViewTasks && in_array($tab, ['assigned', 'completed', 'performance'], true) ? $tasks->performance($staff) : null,
             'trend' => $canViewTasks && $tab === 'performance' ? $tasks->trend($staff, $trendPeriod, $trendRange) : null,
             'trendPeriod' => $trendPeriod, 'trendRange' => $trendRange,
-        ]);
+            'attendance' => $tab === 'attendance' ? $this->attendanceHistory($staff) : null,        ]);
+    }
+
+    /**
+     * The rider's clock-in days and approved leave days between the chosen start and end dates, newest first.
+     * A start date after the end date is treated as the same range in reverse.
+     *
+     * @return LengthAwarePaginator<int, array{date: CarbonImmutable, clock_in: ?CarbonImmutable, clock_out: ?CarbonImmutable, status: string, label: string, tone: string}>
+     */
+    private function attendanceHistory(Staff $staff): LengthAwarePaginator
+    {
+        $start = $this->validDate($this->from) ?? $this->today()->startOfMonth();
+        $end = $this->validDate($this->until) ?? $this->today();
+        if ($start->greaterThan($end)) {
+            [$start, $end] = [$end, $start];
+        }
+        $days = app(StaffAttendanceHistory::class)->days($staff, $start, $end);
+        $page = $this->getPage('attendancePage');
+
+        return new LengthAwarePaginator($days->forPage($page, 15)->values(), $days->count(), 15, $page, ['path' => LengthAwarePaginator::resolveCurrentPath(), 'pageName' => 'attendancePage']);
+    }
+
+    private function today(): CarbonImmutable
+    {
+        return now()->timezone(config('dcms.business_timezone'))->toImmutable()->startOfDay();
+    }
+
+    private function validDate(string $value): ?CarbonImmutable
+    {
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) || ! checkdate((int) substr($value, 5, 2), (int) substr($value, 8, 2), (int) substr($value, 0, 4))) {
+            return null;
+        }
+
+        return CarbonImmutable::parse($value, config('dcms.business_timezone'))->startOfDay();
     }
 
     /**

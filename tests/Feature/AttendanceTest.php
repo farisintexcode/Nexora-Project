@@ -87,9 +87,9 @@ test('pinned duration and lateness rules retain actual times at approved boundar
     $punch = $clock->punch($rider, 'out', (string) Str::uuid7(), $punch->public_id, 0);
     expect($punch->status)->toBe($status)->and($punch->worked_minutes)->toBe($worked)->and($punch->is_late)->toBe($late)->and($punch->late_minutes)->toBe($lateMinutes);
 })->with([
-    'inclusive grace' => ['09:15:00', '18:00:00', 'present', 465, false, 0],
-    'one minute late' => ['09:16:00', '18:00:00', 'present', 464, true, 16],
-    'subsecond outside grace' => ['09:15:00.000001', '18:00:00', 'present', 464, true, 15],
+    'inclusive grace' => ['09:30:00', '18:00:00', 'present', 450, false, 0],
+    'one minute late' => ['09:31:00', '18:00:00', 'present', 449, true, 31],
+    'subsecond outside grace' => ['09:30:00.000001', '18:00:00', 'present', 449, true, 30],
     'present threshold' => ['09:00:00', '17:00:00', 'present', 420, false, 0],
     'below present' => ['09:00:00', '16:59:00', 'half_day', 419, false, 0],
     'half day threshold' => ['09:00:00', '14:00:00', 'half_day', 240, false, 0],
@@ -232,7 +232,7 @@ test('database constraints refuse racing duplicate shifts and deletion of origin
     expect(fn () => DB::transaction(fn () => AttendanceSchedule::factory()->create(['policy_id' => $schedule->policy_id, 'scheduled_end_at' => null])))->toThrow(QueryException::class);
 });
 
-test('today board groups riders by clock state and the month calendar marks Malaysian holidays', function (): void {
+test('calendar opens on today grouping riders by clock state and steps day by day through Malaysian holidays', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-19 10:00', 'Asia/Kuala_Lumpur'));
     [$admin,$rider,$schedule] = attendanceFixture();
     $waiting = User::factory()->for(Staff::factory()->state(['first_name' => 'Waiting', 'last_name' => 'Rider']))->create();
@@ -240,15 +240,65 @@ test('today board groups riders by clock state and the month calendar marks Mala
     app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
     PublicHoliday::factory()->create(['holiday_date' => '2026-10-20', 'name' => 'Deepavali']);
 
-    Livewire::actingAs($admin)->test(AttendanceIndex::class)->assertSet('view', 'today')
-        ->assertViewHas('groups', fn (array $groups): bool => $groups['working']->pluck('rider_name')->all() === [$rider->staff->full_name] && $groups['waiting']->pluck('rider_name')->all() === ['Waiting Rider'])
-        ->assertSee("Today's work")->assertSee('Not in yet')
-        ->call('shiftDay', 1)->assertSee('Public holiday · Deepavali')
-        ->set('view', 'calendar')->assertSee('October 2026')->assertSee('Deepavali')
+    Livewire::actingAs($admin)->test(AttendanceIndex::class)->assertSet('view', 'calendar')
+        ->assertViewHas('selectedGroups', fn (array $groups): bool => $groups['working']->pluck('rider_name')->all() === [$rider->staff->full_name] && $groups['waiting']->pluck('rider_name')->all() === ['Waiting Rider'])
+        ->assertSee("Today's activity")->assertSee('Not in yet')->assertSee('October 2026')->assertSee('Leave requested')
+        ->assertDontSee('Open full day board')->assertDontSee('Month calendar')
         ->assertViewHas('days', fn ($days): bool => $days->get('2026-10-19')->map(fn ($entry) => [$entry->rider_name, $entry->state])->all() === [[$rider->staff->full_name, 'working']])
-        ->assertSee($rider->staff->full_name)->assertSee('Leave requested')
-        ->call('showDay', '2026-10-19')->assertSet('view', 'today')->assertSet('day', '2026-10-19');
+        ->assertDontSee('Previous day')
+        ->call('selectDay', '2026-10-20')->assertSet('day', '2026-10-20')->assertSee('Public holiday · Deepavali')
+        ->call('selectDay', '2026-11-01')->assertSet('day', '2026-11-01')->assertSet('month', '2026-11');
+
+    $this->actingAs($admin)->get(route('admin.attendance.index', ['view' => 'today', 'day' => '2026-10-20']))->assertOk()
+        ->assertSee('Activity on')->assertSee('20 October 2026')->assertSee('Deepavali');
     $this->actingAs($admin)->get(route('admin.attendance.index', ['view' => 'records']))->assertOk()->assertSee('Download CSV');
+});
+
+test('month calendar shows the chosen day details beside the calendar without leaving it', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 10:00', 'Asia/Kuala_Lumpur'));
+    [$admin,$rider] = attendanceFixture();
+    app(ClockAttendance::class)->punch($rider, 'in', (string) Str::uuid7());
+    PublicHoliday::factory()->create(['holiday_date' => '2026-10-20', 'name' => 'Deepavali']);
+
+    $calendar = Livewire::actingAs($admin)->test(AttendanceIndex::class)->set('view', 'calendar')
+        ->assertViewHas('selectedDay', fn (CarbonImmutable $day): bool => $day->toDateString() === '2026-10-19')
+        ->assertSeeInOrder(["Today's activity", 'Monday', '19 October 2026', 'Clocked in', $rider->staff->full_name, '10:00 AM', 'October 2026', 'Mon', 'Sun']);
+
+    $calendar->call('selectDay', '2026-10-20')->assertSet('view', 'calendar')->assertSet('day', '2026-10-20')
+        ->assertSee('Activity on')->assertSee('20 October 2026')->assertSee('Deepavali')->assertSee('Go to today')
+        ->assertViewHas('selectedGroups', fn (array $groups): bool => $groups['working']->isEmpty());
+
+    $calendar->call('shiftMonth', 1)->assertSet('month', '2026-11')->assertSet('day', '')
+        ->assertViewHas('selectedDay', fn (CarbonImmutable $day): bool => $day->toDateString() === '2026-11-01')
+        ->call('selectMonth', '2026-12')->assertSet('month', '2026-12')->assertSee('December 2026')
+        ->call('selectMonth', 'not-a-month')->assertSet('month', '2026-12')
+        ->call('selectDay', '2026-10-19')->assertSet('month', '2026-10')->assertSee('19 October 2026');
+});
+
+test('calendar day table pages 25 riders at a time and filters by status and search with problems first', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 12:00', 'Asia/Kuala_Lumpur'));
+    [$admin,$late,$schedule] = attendanceFixture();
+    foreach (range(1, 26) as $number) {
+        $staff = Staff::factory()->create(['is_rider' => true, 'first_name' => 'Rider', 'last_name' => sprintf('%02d', $number), 'staff_no' => sprintf('BULK%02d', $number)]);
+        Attendance::factory()->create(['rider_id' => $staff->id, 'service_date' => '2026-10-19', 'raw_clock_in_at' => now()->subHours(3), 'effective_clock_in_at' => now()->subHours(3)]);
+    }
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 09:45', 'Asia/Kuala_Lumpur'));
+    app(ClockAttendance::class)->punch($late, 'in', (string) Str::uuid7());
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 12:00', 'Asia/Kuala_Lumpur'));
+    $waiting = User::factory()->for(Staff::factory()->state(['first_name' => 'Waiting', 'last_name' => 'Rider', 'staff_no' => 'WAIT01']))->create();
+    AttendanceSchedule::factory()->create(['rider_id' => $waiting->staff_id, 'policy_id' => $schedule->policy_id, 'authorized_by' => $admin->id, 'scheduled_start_at' => $schedule->scheduled_start_at, 'scheduled_end_at' => $schedule->scheduled_end_at]);
+
+    $table = Livewire::actingAs($admin)->test(AttendanceIndex::class)
+        ->assertViewHas('dayRows', fn ($rows): bool => $rows->total() === 28 && $rows->count() === 25
+            && $rows->first()->rider_name === 'Waiting Rider' && $rows->get(1)->rider_name === $late->staff->full_name && $rows->get(1)->is_late)
+        ->assertSee('Showing 1–25 of 28')->assertSee('Not in yet')->assertSee('Late 45m');
+
+    $table->call('setPage', 2, 'dayPage')->assertViewHas('dayRows', fn ($rows): bool => $rows->count() === 3)
+        ->call('showGroup', 'waiting')->assertSet('dayGroup', 'waiting')
+        ->assertViewHas('dayRows', fn ($rows): bool => $rows->currentPage() === 1 && $rows->pluck('rider_name')->all() === ['Waiting Rider'])
+        ->call('showGroup', 'waiting')->assertSet('dayGroup', 'all')
+        ->set('daySearch', 'bulk1')->assertViewHas('dayRows', fn ($rows): bool => $rows->pluck('staff_no')->all() === ['BULK10', 'BULK11', 'BULK12', 'BULK13', 'BULK14', 'BULK15', 'BULK16', 'BULK17', 'BULK18', 'BULK19'])
+        ->set('daySearch', 'nobody here')->assertSee('No riders match');
 });
 
 test('malformed attendance filters return usable validation instead of database errors', function (): void {

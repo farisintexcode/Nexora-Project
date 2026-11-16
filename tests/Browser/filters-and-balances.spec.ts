@@ -16,17 +16,18 @@ test('compact Admin filters expand clear and fit mobile and dark mode', async ({
     for (const [path, advanced] of [['/admin/attendance?view=records', 'Rider name or staff number'], ['/admin/leave', 'Rider Name or Employee ID'], ['/admin/staff', 'Personnel']]) {
         await page.goto(path);
         const toggle = page.getByRole('button', { name: /^Filters/ });
+        const resetLabel = path === '/admin/staff' ? 'Reset' : 'Clear filters';
         await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        if (path === '/admin/staff') {
+            await expect(page.getByRole('button', { name: 'Reset', exact: true })).toBeHidden();
+            await expect(page.getByRole('button', { name: 'Apply filters', exact: true })).toBeHidden();
+        }
         await toggle.click();
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await expect(page.getByLabel(advanced, { exact: true })).toBeVisible();
-        if (path === '/admin/staff') {
-            await expect(page.getByRole('button', { name: 'Apply filters', exact: true })).toHaveCount(0);
-        } else {
-            await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
-        }
-        await expect(page.getByRole('button', { name: 'Clear filters', exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+        await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+        await expect(page.getByRole('button', { name: resetLabel, exact: true })).toBeVisible();
+        await page.getByRole('button', { name: resetLabel, exact: true }).click();
         for (const width of [320, 768, 1280]) {
             await page.setViewportSize({ width, height: 820 });
             await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);

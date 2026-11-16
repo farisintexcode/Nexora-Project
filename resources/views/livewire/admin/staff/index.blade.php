@@ -1,7 +1,7 @@
 <section class="hr-page grid gap-6" wire:poll.30s>
     <x-feedback />
     <x-page-header title="Staff Management" eyebrow="Human Resources" description="Employment records, linked accounts and access status."><x-slot:actions><a class="btn btn-primary" href="{{ route('admin.staff.create') }}"><x-icon name="plus" class="size-4" />{{ auth()->user()->addsRidersOnly() ? 'Add New Rider' : 'Add New Staff' }}</a></x-slot:actions></x-page-header>
-    <x-filter-bar name="staff" :count="(int)($query !== '') + (int)($role !== '') + (int)($status !== 'active') + (int)($accountStatus !== '')">
+    <x-filter-bar name="staff" reset-label="Reset" actions-with-filters :count="(int)($query !== '') + (int)($role !== '') + (int)($status !== 'active') + (int)($accountStatus !== '')">
         <x-input name="query" label="Search staff" wire:model.live.debounce.400ms="query" maxlength="200" placeholder="Staff ID, name or email" />
         <x-select name="role" label="System Role" wire:model.live="role"><option value="">All roles</option>@foreach(config('dcms.staff_roles') as $role)@if($role !== 'System Admin' || auth()->user()->can('roles.manage'))<option value="{{ $role }}">{{ $role }}</option>@endif @endforeach</x-select>
         <x-select name="status" label="Staff Status" wire:model.live="status"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></x-select>
