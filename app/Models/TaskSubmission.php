@@ -42,4 +42,20 @@ class TaskSubmission extends Model
     {
         return $this->hasOne(TaskReview::class, 'submission_id');
     }
+
+    /** The history event recorded when the system completed this submission because it involved no payment. */
+    public function autoVerification(): HasOne
+    {
+        return $this->hasOne(TaskStatusHistory::class, 'submission_id')->where('event_code', 'auto_verified');
+    }
+
+    /** Verification status for display: the Admin decision, Completed when verified automatically, or pending. */
+    public function verificationLabel(): string
+    {
+        return match (true) {
+            $this->review !== null => ucfirst($this->review->decision),
+            $this->autoVerification !== null => 'Completed',
+            default => 'Pending verification',
+        };
+    }
 }

@@ -55,7 +55,7 @@ function withBalance(array $rows): array
 {
     return array_map(fn (array $row, int $index): array => [...$row, $index === 0 ? 'outstanding_balance' : '100.00'], $rows, array_keys($rows));
 }
-function importFile(array $rows, string $format = 'xlsx'): UploadedFile
+function importFile(array $rows, string $format = 'xlsx', string $name = 'synthetic'): UploadedFile
 {
     $book = new Spreadsheet;
     $book->getActiveSheet()->setTitle('Intake');
@@ -63,13 +63,13 @@ function importFile(array $rows, string $format = 'xlsx'): UploadedFile
     $path = tempnam(sys_get_temp_dir(), 'import-fixture-');
     ($format === 'xls' ? new Xls($book) : new Xlsx($book))->save($path);
     $book->disconnectWorksheets();
-    $file = new UploadedFile($path, 'synthetic.'.$format, null, null, true);
+    $file = new UploadedFile($path, $name.'.'.$format, null, null, true);
 
     return $file;
 }
-function stagedImport(User $actor, array $rows, string $kind = 'assignment_batch', string $format = 'xlsx'): ImportBatch
+function stagedImport(User $actor, array $rows, string $kind = 'assignment_batch', string $format = 'xlsx', string $name = 'synthetic'): ImportBatch
 {
-    $file = importFile($rows, $format);
+    $file = importFile($rows, $format, $name);
     try {
         $batch = app(ImportWorkflow::class)->upload($actor, ['kind' => $kind, 'template_id' => ImportTemplate::query()->where('kind', $kind)->firstOrFail()->id], $file);
     } finally {
@@ -86,9 +86,9 @@ function mappedSelections(ImportBatch $batch): array
 {
     return $batch->mappings()->get()->mapWithKeys(fn ($mapping) => [$mapping->id => ['field_id' => $mapping->field_id ? (string) $mapping->field_id : 'ignore', 'transform' => 'exact']])->all();
 }
-function readyImport(User $actor, array $rows, string $kind = 'assignment_batch'): ImportBatch
+function readyImport(User $actor, array $rows, string $kind = 'assignment_batch', string $name = 'synthetic'): ImportBatch
 {
-    $batch = stagedImport($actor, $rows, $kind);
+    $batch = stagedImport($actor, $rows, $kind, name: $name);
     app(ImportWorkflow::class)->preview($actor, $batch, mappedSelections($batch));
 
     return $batch->refresh();
@@ -122,7 +122,7 @@ test('batch imports use existing validations preserve identifiers and cannot com
     $target = AssignmentBatch::query()->firstOrFail();
     expect($target->external_reference)->toBe('000001');
     $rows[1][1] = 'Updated batch';
-    $update = readyImport($actor, $rows, 'assignment_batch');
+    $update = readyImport($actor, $rows, 'assignment_batch', 'synthetic-update');
     $target->name = 'Concurrent edit';
     $target->lock_version++;
     $target->save();
@@ -578,7 +578,7 @@ test('review actions use the app dialog instead of a browser confirm', function 
     app(ImportWorkflow::class)->preview($actor, $batch, mappedSelections($batch));
 
     Livewire::actingAs($actor)->test(Review::class, ['import' => $batch->refresh()])
-        ->assertSee('Confirm accepted rows?')
+        ->assertSee('Confirm ticked rows?')
         ->assertSee('Cancel this import?')
         ->assertDontSeeHtml('wire:confirm');
 });
@@ -859,4 +859,46 @@ test('the customer import type is gone', function (): void {
 test('date fields reject values that are not real calendar dates', function (): void {
     $batch = readyImport(staffManager(), [['external_reference', 'name', 'type_code', 'start_date', 'due_date'], ['000001', 'Synthetic Batch', 'domestic_dr', '2026-02-31', '2026-10-31']], 'assignment_batch');
     expect($batch->rows()->sole()->validation_errors)->toEqual([['field' => 'start_date', 'code' => 'invalid_date']]);
+});
+
+test('an excel file name can only be uploaded once across all assignments', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG001', 'A1', 'C1', 'Synthetic Person']]), 'january.xlsx')
+        ->assertHasNoErrors();
+
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG002', 'A2', 'C2', 'Other Person']]), 'JANUARY.xlsx')
+        ->assertHasErrors(['file' => 'An Excel file named JANUARY.xlsx was already uploaded. Rename the file before uploading it again.']);
+
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG002', 'A2', 'C2', 'Other Person']]), 'february.xlsx')
+        ->assertHasNoErrors();
+    expect(ImportBatch::query()->count())->toBe(2);
+});
+
+test('row preview ticks every accepted row and imports only the ticked ones', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG001', 'A1', 'C1', 'First Person'], ['FG002', 'A2', 'C2', 'Second Person']]));
+    $batch = ImportBatch::query()->sole();
+    app(ImportWorkflow::class)->preview($actor, $batch, mappedSelections($batch));
+    $second = $batch->rows()->where('row_number', 3)->value('public_id');
+
+    $page = Livewire::actingAs($actor)->test(Review::class, ['import' => $batch->refresh()])->set('tab', 'rows')
+        ->assertSee('Select all')->assertSee('Confirm 2 ticked rows')
+        ->call('toggleAllRows')->assertSee('Confirm 0 ticked rows')
+        ->call('confirm')->assertHasErrors(['confirmation' => 'Tick at least one accepted row to import.'])
+        ->call('toggleAllRows')->assertSet('excludedRows', [])
+        ->call('toggleRow', $second)->assertSee('Confirm 1 ticked row');
+    $page->call('confirm')->assertHasNoErrors()->assertSee('1 task created.');
+
+    expect($batch->refresh()->status)->toBe('completed')
+        ->and($batch->processed_count)->toBe(1)->and($batch->rejected_count)->toBe(1)
+        ->and($batch->rows()->where('public_id', $second)->value('state'))->toBe('rejected');
+    $this->assertDatabaseCount('tasks', 1);
+});
+
+test('the import audit is shown without a separate audit permission', function (): void {
+    $actor = staffManager();
+    uploadToPage($actor, withBalance([['task_id', 'account_number', 'customer_reference', 'customer_name'], ['FG001', 'A1', 'C1', 'Synthetic Person']]));
+
+    Livewire::actingAs($actor)->test(Review::class, ['import' => ImportBatch::query()->sole()])->set('tab', 'audit')
+        ->assertSee('Import audit trail')->assertSee('Import uploaded')->assertDontSee('Audit permission is required');
 });

@@ -5,6 +5,7 @@ use App\Actions\Tasks\RiderWork;
 use App\Actions\Tasks\TaskProof;
 use App\Enums\BatchStatus;
 use App\Jobs\ScanTaskProof;
+use App\Livewire\Admin\Verification\Index;
 use App\Livewire\Rider\Tasks\Show;
 use App\Models\AuditLog;
 use App\Models\CollectionActivity;
@@ -519,3 +520,42 @@ test('only submissions involving payment wait for admin verification and the res
     'payment verification visit' => [['purpose' => 'payment_verification'], ['payment_evidence'], true],
     'payment evidence photo only' => [[], ['premises', 'payment_evidence'], true],
 ]);
+
+test('task verification shows an automatically verified submission as completed without a decision form', function (): void {
+    Storage::fake('s3');
+    [$rider, $task] = executionFixture();
+    executionVisit($rider, $task);
+    cleanExecutionProof(executionProof($rider, $task));
+    $submission = executionSubmit($rider, $task);
+    $admin = staffManager();
+
+    Livewire::actingAs($admin)->test(App\Livewire\Admin\Verification\Show::class, ['submission' => $submission])
+        ->assertSee('Completed automatically')
+        ->assertDontSee('Independent verification')->assertDontSee('Approve / Verify &amp; complete', false)->assertDontSee('Pending verification');
+    Livewire::actingAs($admin)->test(Index::class)
+        ->assertDontSee($submission->completion_snapshot_ciphertext['account'])
+        ->set('status', 'approved')->assertSee($submission->completion_snapshot_ciphertext['account'])->assertSee('Completed');
+});
+
+test('the allocated task list is split into unstarted, pending verification and completed', function (): void {
+    Storage::fake('s3');
+    [$rider, $done] = executionFixture();
+    $pending = Task::factory()->create(['assignment_batch_id' => $done->assignment_batch_id]);
+    $waiting = Task::factory()->create(['assignment_batch_id' => $done->assignment_batch_id]);
+    foreach ([$pending, $waiting] as $task) {
+        TaskAllocation::factory()->create(['task_id' => $task->id, 'collector_id' => $rider->staff_id]);
+    }
+    executionVisit($rider, $done);
+    cleanExecutionProof(executionProof($rider, $done));
+    executionSubmit($rider, $done);
+    executionVisit($rider, $pending, ['purpose' => 'payment_verification']);
+    cleanExecutionProof(executionProof($rider, $pending, 'payment_evidence'));
+    executionSubmit($rider, $pending);
+    $name = fn (Task $task): string => $task->customer->display_name_ciphertext;
+
+    Livewire::actingAs($rider)->test(App\Livewire\Rider\Assignments\Show::class, ['batch' => $done->batch->public_id])
+        ->assertSee('Unstarted (1)')->assertSee('Pending verification (1)')->assertSee('Completed (1)')
+        ->assertSee($name($waiting))->assertDontSee($name($pending))->assertDontSee($name($done))
+        ->set('list', 'pending')->assertSee($name($pending))->assertDontSee($name($waiting))->assertDontSee($name($done))
+        ->set('list', 'completed')->assertSee($name($done))->assertDontSee($name($pending))->assertDontSee($name($waiting));
+});
