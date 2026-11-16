@@ -2,6 +2,8 @@
 <x-feedback />
 <x-page-header title="Assignment" eyebrow="" description="Your assignments, with a clear view of the tasks allocated to you." />
 <div class="rider-context-note"><x-icon name="shield" class="size-4" /><p>Only your current allocated tasks are shown.</p></div>
+<nav aria-label="Assignment lists" class="segment-tabs">@foreach(\App\Livewire\Rider\Assignments\Index::TABS as $key => $label)<button type="button" wire:click="$set('tab','{{ $key }}')" class="segment-tab" @if($tab === $key) aria-current="page" @endif>{{ $label }} ({{ $tabCounts[$key] }})</button>@endforeach</nav>
+@if($tab === 'archived')<p class="text-xs text-ink-500">Archived assignments are finished. You can still open them to see your tasks.</p>@endif
 <div class="rider-card-grid">
 @forelse($assignments as $assignment)
 <article class="surface rider-assignment-card" wire:key="rider-assignment-{{ $assignment->public_id }}">
@@ -11,6 +13,6 @@
     <div class="rider-assignment-meta"><span><x-icon name="calendar" class="size-4" />Due {{ $assignment->due_date->format('d M Y') }}</span><span>{{ $assignment->task_count }} of your tasks</span></div>
     <a href="{{ route('rider.assignments.show',$assignment->public_id) }}" class="btn btn-primary w-full justify-between">View Assignment<x-icon name="arrow-right" class="size-4" /></a>
 </article>
-@empty<div class="md:col-span-2"><x-empty-state title="No assignments yet" message="Your allocated work will appear here when an Admin assigns tasks to you." icon="layers" /></div>@endforelse
+@empty<div class="md:col-span-2">@if($tab === 'archived')<x-empty-state title="No archived assignments" message="Assignments move here once all their work is finished." icon="layers" />@else<x-empty-state title="No active assignments" message="Your allocated work will appear here when an Admin assigns tasks to you." icon="layers" />@endif</div>@endforelse
 </div>{{ $assignments->links() }}
 </section>

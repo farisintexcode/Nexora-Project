@@ -64,3 +64,4 @@ Ujian manual menggunakan data synthetic berasingan: cipta jenis tracked/kelayaka
 1. Di halaman **Completion review**, semak butiran dan gambar, kemudian tekan **Complete Task** di bahagian bawah.
 2. Tugas yang melibatkan bayaran (tuntutan bayaran, tujuan lawatan Payment Verification atau gambar Payment Evidence) menjadi **Pending verification** sehingga Admin mengesahkannya. Tugas lain terus menjadi **Completed** selepas dihantar.
 3. Di halaman assignment, **Your allocated tasks** dibahagikan kepada tab **Unstarted**, **Pending verification** dan **Completed**, dengan bilangan bagi setiap tab. Unstarted juga termasuk tugas yang sedang dibuat atau dikembalikan untuk pembetulan.
+4. Halaman **Assignment** dibahagikan kepada tab **Active** (lalai) dan **Archived**. Assignment yang sudah selesai berada di tab Archived dan masih boleh dibuka untuk rujukan.

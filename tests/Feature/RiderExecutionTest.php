@@ -559,3 +559,17 @@ test('the allocated task list is split into unstarted, pending verification and 
         ->set('list', 'pending')->assertSee($name($pending))->assertDontSee($name($waiting))->assertDontSee($name($done))
         ->set('list', 'completed')->assertSee($name($done))->assertDontSee($name($pending))->assertDontSee($name($waiting));
 });
+
+test('the rider assignment page separates active and archived assignments', function (): void {
+    [$rider, $task] = executionFixture();
+    $archived = Task::factory()->create();
+    TaskAllocation::factory()->create(['task_id' => $archived->id, 'collector_id' => $rider->staff_id]);
+    $task->batch->forceFill(['name' => 'Current work batch'])->save();
+    $archived->batch->forceFill(['name' => 'Finished work batch', 'status' => 'archived', 'archived_at' => now()])->save();
+
+    Livewire::actingAs($rider)->test(App\Livewire\Rider\Assignments\Index::class)
+        ->assertSee('Active')->assertSee('Archived')->assertDontSee('Active (1)')
+        ->assertSee($task->batch->name)->assertDontSee($archived->batch->name)
+        ->set('tab', 'archived')
+        ->assertSee($archived->batch->name)->assertDontSee($task->batch->name);
+});
