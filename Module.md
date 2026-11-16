@@ -283,7 +283,8 @@ flowchart TD
     Remarks --> Check
     Proof --> Check
     Check --> Submit[Submit immutable completion]
-    Submit --> Pending[Pending Verification]
+    Submit -->|No payment| Completed
+    Submit -->|Payment involved| Pending[Pending Verification]
     Pending --> Review[Admin reviews]
     Review -->|Approve| Completed[Completed]
     Review -->|Reject with remarks| Returned[Returned to Rider]
@@ -312,6 +313,7 @@ stateDiagram-v2
     unstarted --> in_progress: collector starts
     in_progress --> submitted: required evidence recorded
     submitted --> completed: supervisor approves
+    submitted --> completed: no payment, verified automatically
     submitted --> in_progress: returned with reason
     unstarted --> cancelled: authorized cancellation
     in_progress --> cancelled: authorized cancellation
@@ -687,3 +689,9 @@ This owner-approved task supersedes the 8 November exclusion of annual balances 
 Tracked types have explicit entitlement per leave year and authorized signed per-staff adjustments with reasons. Available = entitlement + adjustments - approved charged days - pending charged days. Staff locking serializes submissions and decisions; submission also locks the type. Cross-year requests validate every charge year separately. Rejection and policy-permitted pending cancellation release reservations. Approval converts reservation to usage without double deduction. Final decisions remain immutable. Past-year entitlement/adjustment writes are refused. Submitted snapshots retain entitlement facts; later current/future entitlement edits are audited. Historical applications without tracking snapshots remain non-deductible; administrators reconcile opening balances explicitly with audited adjustments. No statutory allocation, accrual, automatic carry-forward, half-day or approved withdrawal is invented.
 
 Recurring work assignments pin an approved policy to an existing Rider and effective date range. Missing canonical dates are generated under the staff lock from actual policy workdays/rest days and policy-specific configured holidays. Existing explicit dates always take priority. Missing assignments fail closed with setup guidance. Configure holidays before materialization; changing existing dates still requires independent correction. Existing overlap, private document, own access, independent review, in-app notification and approved-leave attendance contracts remain in force. No new customer/rider/request entity, role bypass, external messaging or provider activation is introduced.
+
+Task workflow update (16 November 2026): M07 verification now applies only to submissions that involve payment: a payment claim (outcome Payment Made / Payment Claimed, DR01 or a paid amount), a Payment Verification visit purpose, or a Payment Evidence photo. Every other UI51 submission is verified automatically: the immutable task_submissions version is still created and the task passes through submitted, then the system records an `auto_verified` history event and sets work_status=completed, review_status=approved and completed_at in the same transaction. No task_reviews row is written, because a review requires a reviewer other than the submitter; verifiers are not notified and the assignment archives automatically as after an Admin approval. UI26 lists these under Approved / Completed with the label Completed, and UI42 shows "Completed automatically" instead of the decision form. Rider completion messages, the batch-submit preview and help text state which outcome applies.
+
+M04 upload update (16 November 2026): a task workbook file name, ignoring case, can be uploaded only once across all assignments; failed and cancelled uploads do not count. Row preview ticks every accepted row by default with Select all; unticked rows become rejected with code `excluded_by_admin` at confirmation and are never imported, and at least one row must stay ticked. The import Audit tab is shown to anyone who can open the import, without the separate audit.view permission. M05 Assign Task lists only the Excel files of the selected assignment, requires an Excel File Name choice and adds "No Excel file" for tasks created without a file; no task choices appear until one is chosen.
+
+Rider update (16 November 2026): UI51 places Complete Task below the clean proof images. The assignment's allocated task list is split into Unstarted (including in progress and returned work), Pending verification and Completed, each with its count; the summary count Admin approved is renamed Verified because it includes automatically verified work.
