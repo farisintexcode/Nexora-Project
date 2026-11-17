@@ -790,3 +790,20 @@
     .upload-progress-bar { animation-duration: 2.4s; }
     .upload-progress-bar::after, .upload-spinner { animation: none; }
 }
+
+/* Dashboard "Needs attention" queue cards. data-state (clear | active | urgent) sets the tone of the top bar, icon and count. */
+@layer components {
+    .attention-card { --attention-tone: var(--color-ink-300); --attention-soft: var(--color-ink-100); @apply relative grid min-h-40 content-between gap-4 overflow-hidden rounded-2xl border border-ink-200 p-4 transition duration-200 hover:-translate-y-0.5 hover:border-ink-300 hover:shadow-lg focus-visible:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none; background-color: var(--surface); box-shadow: 0 1px 2px rgb(2 48 71 / 4%); }
+    .attention-card::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: var(--attention-tone); }
+    .attention-card[data-state='clear']::before { opacity: 0; }
+    .attention-card[data-state='active'] { --attention-tone: var(--color-brand-accent); --attention-soft: var(--color-brand-accent-soft); }
+    .attention-card[data-state='urgent'] { --attention-tone: var(--color-red-600); --attention-soft: var(--color-red-50); border-color: var(--color-red-200); background-image: linear-gradient(to bottom, var(--attention-soft), transparent 70%); }
+    .attention-icon { @apply grid size-10 shrink-0 place-items-center rounded-xl; background: var(--attention-soft); color: var(--attention-tone); }
+    .attention-count { @apply text-3xl leading-none font-semibold tracking-tight tabular-nums; color: var(--foreground); }
+    .attention-card[data-state='clear'] .attention-count { color: var(--color-ink-400); }
+    .attention-card[data-state='urgent'] .attention-count { color: var(--color-red-700); }
+    .attention-dot { @apply size-1.5 shrink-0 rounded-full; background: var(--attention-tone); }
+    .dark .attention-card { background-color: var(--surface-raised); }
+    .dark .attention-card[data-state='urgent'] { --attention-tone: #ff8a8a; --attention-soft: #3b1c22; border-color: #784048; }
+    .dark .attention-card[data-state='urgent'] .attention-count { color: #ffb4b4; }
+}

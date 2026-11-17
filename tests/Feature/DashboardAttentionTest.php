@@ -65,7 +65,7 @@ test('attention items with work waiting come first and missed deadlines lead and
     expect($items->take(3)->pluck('key')->all())->toBe(['overdue', 'unassigned', 'returned'])
         ->and($items->skip(3)->sum('count'))->toBe(0)
         ->and($items->firstWhere('key', 'overdue')['urgent'])->toBeTrue();
-    Livewire::actingAs($user)->test(Home::class)->assertSeeHtml('border-red-200 bg-red-50');
+    Livewire::actingAs($user)->test(Home::class)->assertSeeHtml('data-state="urgent"');
 });
 
 test('an overdue card with nothing waiting does not stand out', function (): void {
@@ -74,7 +74,7 @@ test('an overdue card with nothing waiting does not stand out', function (): voi
     $items = collect(app(AttentionQueue::class)->forUser($user));
 
     expect($items->sum('count'))->toBe(0);
-    Livewire::actingAs($user)->test(Home::class)->assertSee('All clear')->assertDontSeeHtml('border-red-200 bg-red-50');
+    Livewire::actingAs($user)->test(Home::class)->assertSee('All clear')->assertDontSeeHtml('data-state="urgent"');
 });
 
 test('admin access alone shows no attention items', function (): void {
