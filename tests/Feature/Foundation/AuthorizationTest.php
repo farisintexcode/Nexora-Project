@@ -40,14 +40,14 @@ test('Administrative holds template, letter, reopen and communication permission
     expect(User::factory()->create()->assignRole('Rider')->can('templates.approve'))->toBeFalse();
 });
 
-test('System Admin controls accounts and settings but never assignment, task, attendance or leave work', function (): void {
+test('System Admin controls accounts and settings but never assignment, task, communication, attendance or leave work', function (): void {
     $user = User::factory()->create();
     $user->assignRole('System Admin');
 
-    foreach (['riders.manage', 'users.invite', 'roles.manage', 'templates.approve', 'integrations.manage', 'audit.view', 'monitoring.view'] as $permission) {
+    foreach (['riders.manage', 'users.invite', 'riders.invite', 'roles.manage', 'integrations.manage', 'audit.view', 'monitoring.view'] as $permission) {
         expect($user->can($permission))->toBeTrue($permission);
     }
-    foreach (['assignments.view', 'imports.view', 'tasks.view', 'tasks.verify', 'attendance.view_all', 'attendance.configure', 'leave.approve', 'customers.view', 'reports.view', 'rider.access'] as $permission) {
+    foreach (['assignments.view', 'imports.view', 'tasks.view', 'tasks.verify', 'communications.view', 'templates.approve', 'attendance.view_all', 'attendance.configure', 'leave.approve', 'customers.view', 'reports.view', 'rider.access'] as $permission) {
         expect($user->can($permission))->toBeFalse($permission);
     }
     expect($user->usesSystemAdminWorkspace())->toBeTrue();

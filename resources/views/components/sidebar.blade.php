@@ -35,7 +35,7 @@
             @can('attendance.view_own')<x-sidebar-item label="My attendance" icon="clock" parent="Human Resources" :href="route('attendance.own')" :active="request()->routeIs('attendance.own')" />@endcan
         </x-sidebar-group>
         @endcanany
-        @can('monitoring.view')<x-sidebar-item label="System Health" icon="activity" :href="url('/pulse')" />@endcan
+        @can('monitoring.view')<x-sidebar-item label="System Health" tag="Upcoming" icon="activity" :href="url('/pulse')" />@endcan
         <div class="sidebar-divider" x-show="!query.trim()"></div>
         <p class="sidebar-section sidebar-label" x-show="!query.trim()">Supporting modules</p>
         @can('viewAny',\App\Models\CollectionActivity::class)<x-sidebar-item label="Call Centre" tag="Upcoming" icon="phone" :href="route('admin.calls.index')" :active="request()->routeIs('admin.calls.*')" />@endcan

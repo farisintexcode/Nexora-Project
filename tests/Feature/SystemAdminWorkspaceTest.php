@@ -34,7 +34,7 @@ test('System Admin lands on the account and settings overview instead of the ope
     Livewire::actingAs($admin)->test(Home::class)->assertRedirect(route('admin.system'));
     $this->actingAs($admin)->get(route('admin.system'))->assertOk()
         ->assertSee('Account status')->assertSee('Accounts by role')->assertSee('Staff Management')->assertSee('System Health')
-        ->assertDontSee('Manage Assignment')->assertDontSee('Task Management')->assertDontSee('Leave Management')->assertDontSee('Assignment progress');
+        ->assertDontSee('Manage Assignment')->assertDontSee('Task Management')->assertDontSee('Leave Management')->assertDontSee('Communications')->assertDontSee('Assignment progress');
 });
 
 test('System Admin reaches accounts but not assignment, task, attendance or leave work', function (): void {
@@ -43,7 +43,7 @@ test('System Admin reaches accounts but not assignment, task, attendance or leav
     foreach (['admin.staff.index', 'admin.staff.create', 'admin.system'] as $route) {
         $this->actingAs($admin)->get(route($route))->assertOk();
     }
-    foreach (['admin.assignments.index', 'admin.tasks.index', 'admin.imports.index', 'admin.verification.index', 'admin.reports.index', 'admin.attendance.index', 'admin.attendance.configuration', 'admin.leave.index', 'admin.leave.types', 'admin.calls.index'] as $route) {
+    foreach (['admin.assignments.index', 'admin.tasks.index', 'admin.imports.index', 'admin.verification.index', 'admin.reports.index', 'admin.attendance.index', 'admin.attendance.configuration', 'admin.leave.index', 'admin.leave.types', 'admin.calls.index', 'admin.communications.index'] as $route) {
         $this->actingAs($admin)->get(route($route))->assertForbidden();
     }
 });

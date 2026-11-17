@@ -39,8 +39,8 @@ return [
     'reserved_permissions' => ['communications.generate_letter', 'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override', 'roles.manage', 'scopes.manage', 'templates.approve', 'integrations.manage', 'customers.view_sensitive', 'users.invite', 'assignments.reopen'],
     /** Reserved permissions Administrative receives by default for daily operations. */
     'office_permissions' => ['templates.approve', 'communications.generate_letter', 'assignments.reopen', 'communication-permission.create', 'communication-permission.update', 'communication-permission.block', 'communication-permission.approve', 'communication-permission.override'],
-    /** System Admin controls accounts, permissions and system settings; it never works assignments, tasks, attendance or leave. */
-    'system_admin_permissions' => ['admin.access', 'riders.manage', 'users.invite', 'riders.invite', 'roles.manage', 'communications.view', 'templates.approve', 'integrations.manage', 'audit.view', 'monitoring.view'],
+    /** System Admin manages staff accounts and troubleshoots the system; it never works assignments, tasks, communications, attendance or leave. */
+    'system_admin_permissions' => ['admin.access', 'riders.manage', 'users.invite', 'riders.invite', 'roles.manage', 'integrations.manage', 'audit.view', 'monitoring.view'],
     /** Queue connection for staff invitation emails; empty uses QUEUE_CONNECTION. Lets a sync development setup still send invitations in the background. */
     'account_mail_connection' => env('ACCOUNT_MAIL_CONNECTION'),
     'queues' => ['default', 'imports', 'exports', 'email', 'whatsapp', 'webhooks', 'media'],
