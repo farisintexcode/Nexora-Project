@@ -12,6 +12,9 @@ class LeaveType extends Model
 {
     use HasFactory, HasPublicId;
 
+    /** Longest single application in calendar days: a fixed safety net, since the yearly limit is the real cap. */
+    public const MAX_REQUEST_DAYS = 93;
+
     public function requests(): HasMany
     {
         return $this->hasMany(LeaveRequest::class);
@@ -25,6 +28,6 @@ class LeaveType extends Model
 
     protected function casts(): array
     {
-        return ['tracks_balance' => 'boolean', 'is_active' => 'boolean', 'requires_document' => 'boolean', 'allow_past_dates' => 'boolean', 'allow_pending_cancel' => 'boolean', 'max_calendar_days' => 'integer', 'lock_version' => 'integer'];
+        return ['tracks_balance' => 'boolean', 'is_active' => 'boolean', 'requires_document' => 'boolean', 'allow_past_dates' => 'boolean', 'allow_pending_cancel' => 'boolean', 'max_calendar_days' => 'integer', 'days_per_year' => 'integer', 'lock_version' => 'integer'];
     }
 }

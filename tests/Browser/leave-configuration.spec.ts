@@ -16,7 +16,7 @@ test('authorized HR configures leave availability and Riders see only active typ
     await page.goto('/admin/leave/types');
     await expect(page.getByRole('heading', { name: 'Leave Types & Entitlements', exact: true })).toBeVisible();
     await page.getByLabel('Leave Type Name', { exact: true }).fill(name);
-    await page.getByLabel('Maximum Calendar Span (days)', { exact: true }).fill('7');
+    await page.getByLabel('Maximum leave days per year', { exact: false }).fill('7');
     await page.getByLabel('Allow Rider to cancel a pending application', { exact: true }).check();
     await page.getByRole('button', { name: 'Save Leave Type', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Leave type saved' })).toBeVisible();
@@ -24,10 +24,10 @@ test('authorized HR configures leave availability and Riders see only active typ
     const card = page.getByRole('article').filter({ hasText: name });
     await card.getByRole('button', { name: `Edit Type ${name}`, exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Edit Leave Type', exact: true })).toBeVisible();
-    await expect(page.getByLabel('Maximum Calendar Span (days)', { exact: true })).toHaveValue('7');
-    await page.getByLabel('Maximum Calendar Span (days)', { exact: true }).fill('3');
+    await expect(page.getByLabel('Maximum leave days per year', { exact: false })).toHaveValue('7');
+    await page.getByLabel('Maximum leave days per year', { exact: false }).fill('3');
     await page.getByRole('button', { name: 'Save Leave Type', exact: true }).click();
-    await expect(card).toContainText('3 calendar-day span');
+    await expect(card).toContainText('3 working days a year');
     await page.getByRole('button', { name: 'OK', exact: true }).click();
     await card.getByRole('button', { name: `Deactivate ${name}`, exact: true }).click();
     await expect(card).toContainText('Inactive', { timeout: 30000 });

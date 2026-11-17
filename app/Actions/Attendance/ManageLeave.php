@@ -44,8 +44,10 @@ class ManageLeave
         return DB::transaction(function () use ($actor, $data, $id, $version): LeaveType {
             $actor = $actor->fresh();
             abort_unless($this->access->configure($actor), 403);
-            $data += ['allow_past_dates' => false, 'description' => null, 'tracks_balance' => false, 'limit_unit' => 'days'];
-            $data = Validator::make($data, ['description' => ['nullable', 'string', 'max:2000'], 'tracks_balance' => ['required', 'boolean'], 'limit_unit' => ['required', 'in:days,applications'], 'name' => ['required', 'string', 'max:100'], 'max_calendar_days' => ['required', 'integer', 'between:1,93'], 'requires_document' => ['required', 'boolean'], 'allow_past_dates' => ['required', 'boolean'], 'allow_pending_cancel' => ['required', 'boolean'], 'is_active' => ['required', 'boolean']])->validate();
+            $data += ['allow_past_dates' => false, 'description' => null, 'days_per_year' => null];
+            /** Every type counts working days against one yearly limit; one application is only capped by the safety net. */
+            $data = [...$data, 'tracks_balance' => true, 'limit_unit' => 'days', 'max_calendar_days' => LeaveType::MAX_REQUEST_DAYS];
+            $data = Validator::make($data, ['description' => ['nullable', 'string', 'max:2000'], 'tracks_balance' => ['required', 'boolean'], 'limit_unit' => ['required', 'in:days'], 'name' => ['required', 'string', 'max:100'], 'max_calendar_days' => ['required', 'integer', 'between:1,'.LeaveType::MAX_REQUEST_DAYS], 'days_per_year' => ['nullable', 'integer', 'between:0,366'], 'requires_document' => ['required', 'boolean'], 'allow_past_dates' => ['required', 'boolean'], 'allow_pending_cancel' => ['required', 'boolean'], 'is_active' => ['required', 'boolean']])->validate();
             $data['name'] = trim($data['name']);
             DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', ['leave.type:'.mb_strtolower($data['name'])]);
             if ($data['name'] === '') {
@@ -286,8 +288,11 @@ class ManageLeave
     private function calendar(int $rider, array $data, LeaveType $type, bool $lock = false): array
     {
         $days = CarbonImmutable::parse($data['start_date'])->diffInDays(CarbonImmutable::parse($data['end_date'])) + 1;
-        if ($days > $type->max_calendar_days || (! $type->allow_past_dates && $data['start_date'] < now()->timezone(config('dcms.business_timezone'))->toDateString())) {
-            throw ValidationException::withMessages(['start_date' => 'The requested dates are outside this leave type’s allowed date rules or maximum calendar span.']);
+        if (! $type->allow_past_dates && $data['start_date'] < now()->timezone(config('dcms.business_timezone'))->toDateString()) {
+            throw ValidationException::withMessages(['start_date' => "{$type->name} can't start before today. Choose today or a later date."]);
+        }
+        if ($days > $type->max_calendar_days) {
+            throw ValidationException::withMessages(['start_date' => "One application can cover up to {$type->max_calendar_days} days. Split a longer leave into separate applications."]);
         }
         $this->workCalendar->ensure($rider, $data['start_date'], $data['end_date']);
         $calendar = $this->schedules($rider, $data, $lock);

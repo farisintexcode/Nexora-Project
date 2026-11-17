@@ -35,10 +35,9 @@ function balanceFixture(int $days = 3): array
     $admin->assignRole('Admin');
     $rider = User::factory()->for(Staff::factory()->create(['is_rider' => true]))->create();
     $rider->assignRole('Rider');
-    $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'max_calendar_days' => 93, 'allow_pending_cancel' => true]);
+    $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'days_per_year' => $days, 'max_calendar_days' => 93, 'allow_pending_cancel' => true]);
     $policy = app(ConfigureAttendance::class)->policy($admin, ['code' => 'balance-policy', 'rules' => array_replace(config('attendance.initial_rules'), ['workdays' => [1, 2, 3, 4, 5, 6]])]);
     app(WorkCalendar::class)->assign($admin, $rider->staff->public_id, $policy->public_id, '2026-11-09', '2027-12-31');
-    app(LeaveBalance::class)->entitlement($admin, $type, 2026, $days);
     $data = ['type' => $type->public_id, 'start_date' => '2026-11-10', 'end_date' => '2026-11-10', 'reason' => 'Synthetic leave request'];
 
     return [$admin, $rider, $type, $data, $policy];
@@ -86,24 +85,29 @@ test('two preflight reviews cannot spend the same final balance', function (): v
     expect(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2026)['available'])->toBe(0);
 });
 
-test('cross-year leave reserves each year and requires explicit entitlement in both years', function (): void {
+test('cross-year leave reserves days from each year using the same yearly limit', function (): void {
     [$admin, $rider, $type, $data] = balanceFixture();
     $data = [...$data, 'start_date' => '2026-12-31', 'end_date' => '2027-01-02'];
-    expect(fn () => app(ManageLeave::class)->preview($rider, $data))->toThrow(ValidationException::class);
-    app(LeaveBalance::class)->entitlement($admin, $type, 2027, 5);
     balanceSubmit($rider, $data);
-    expect(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2026)['pending'])->toBe(1);
-    expect(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2027))->toMatchArray(['pending' => 2, 'available' => 3]);
+    expect(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2026))->toMatchArray(['entitlement' => 3, 'pending' => 1, 'available' => 2]);
+    expect(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2027))->toMatchArray(['entitlement' => 3, 'pending' => 2, 'available' => 1]);
 });
 
-test('entitlement edits are year-specific audited and preserve submitted snapshots', function (): void {
+test('a type without maximum leave days per year cannot be applied for', function (): void {
+    [$admin, $rider, $type, $data] = balanceFixture();
+    $type->forceFill(['days_per_year' => null])->save();
+    expect(fn () => app(ManageLeave::class)->preview($rider, $data))->toThrow(ValidationException::class, 'no maximum leave days per year set');
+});
+
+test('changing the yearly limit applies to every year is audited and preserves submitted snapshots', function (): void {
     [$admin, $rider, $type, $data] = balanceFixture();
     $request = balanceSubmit($rider, $data);
-    app(LeaveBalance::class)->entitlement($admin, $type, 2026, 5);
+    app(ManageLeave::class)->configure($admin, [...$type->only(['name', 'requires_document', 'allow_past_dates', 'allow_pending_cancel', 'is_active']), 'days_per_year' => 5], $type->public_id, $type->lock_version);
+    $type->refresh();
     expect($request->fresh()->type_snapshot['balance_snapshot'][2026]['entitlement'])->toBe(3);
-    expect(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2026)['available'])->toBe(4);
-    expect(fn () => app(LeaveBalance::class)->entitlement($admin, $type, 2025, 10))->toThrow(ValidationException::class);
-    $this->assertDatabaseHas('audit_logs', ['action' => 'leave.entitlement_changed']);
+    expect(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2026)['available'])->toBe(4)
+        ->and(app(LeaveBalance::class)->forStaff($rider->staff_id, $type, 2027)['available'])->toBe(5);
+    $this->assertDatabaseHas('audit_logs', ['action' => 'leave.type_configured', 'entity_id' => $type->public_id]);
 });
 
 test('authorized adjustments are immutable and cannot remove reserved days', function (): void {
@@ -142,7 +146,7 @@ test('non-deductible types need no entitlement and do not reserve tracked days',
 
 test('admin configures tracked type and Rider sees own annual balance before applying', function (): void {
     [$admin, $rider, $type] = balanceFixture();
-    Livewire::actingAs($admin)->test(LeaveTypes::class)->call('editType', $type->public_id)->set('entitlementDays', 12)->set('description', 'Organization policy')->call('saveType')->assertHasNoErrors();
+    Livewire::actingAs($admin)->test(LeaveTypes::class)->call('editType', $type->public_id)->set('days_per_year', 12)->set('description', 'Organization policy')->call('saveType')->assertHasNoErrors();
     Livewire::actingAs($rider)->test(LeaveRequests::class)->set('type', $type->public_id)->assertViewHas('balanceYears', fn ($years) => $years[2026]['entitlement'] === 12);
     Livewire::actingAs($rider)->test(LeaveTypes::class)->assertForbidden();
 });
@@ -168,7 +172,6 @@ test('leave filters apply Rider status type and dates and clear independently of
 test('adjustment history cannot be rewritten and Riders cannot configure entitlements or adjustments', function (): void {
     [$admin, $rider, $type] = balanceFixture();
     $balances = app(LeaveBalance::class);
-    expect(fn () => $balances->entitlement($rider, $type, 2026, 99))->toThrow(HttpException::class);
     expect(fn () => $balances->adjust($rider, $rider->staff->public_id, $type, 2026, 1, 'Unauthorized'))->toThrow(HttpException::class);
     $balances->adjust($admin, $rider->staff->public_id, $type, 2026, 1, 'Authorized exception');
     expect(fn () => DB::transaction(fn () => DB::table('leave_balance_adjustments')->update(['days' => 99])))->toThrow(QueryException::class);
@@ -196,8 +199,7 @@ test('all four leave status filters return only their matching records and total
 
 test('application limited leave counts each request once however many working days it covers', function (): void {
     [$admin, $rider] = balanceFixture();
-    $medical = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'limit_unit' => 'applications', 'max_calendar_days' => 93, 'allow_pending_cancel' => true]);
-    app(LeaveBalance::class)->entitlement($admin, $medical, 2026, 2);
+    $medical = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'limit_unit' => 'applications', 'days_per_year' => 2, 'max_calendar_days' => 93, 'allow_pending_cancel' => true]);
     $apply = fn (string $from, string $until): LeaveRequest => balanceSubmit($rider, ['type' => $medical->public_id, 'start_date' => $from, 'end_date' => $until, 'reason' => 'Synthetic medical leave']);
 
     $threeDays = $apply('2026-11-10', '2026-11-12');

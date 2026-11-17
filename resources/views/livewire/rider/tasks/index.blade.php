@@ -1,6 +1,5 @@
 <section class="rider-page" wire:poll.15s>
 <x-feedback />
-@can('tasks.submit')<a href="{{ route('rider.tasks.manage') }}" class="btn btn-secondary justify-self-start"><x-icon name="settings" class="size-4" />Manage selected tasks</a>@endcan
 <x-page-header title="My Tasks" eyebrow="" description="Find your next task, continue a visit or review your submissions." />
 <nav aria-label="Task views" class="rider-view-tabs">@foreach(['pending'=>'Pending work','all'=>'All tasks','history'=>'History'] as $value=>$label)<a href="{{ route('rider.tasks.index',array_filter(['status'=>$value,'batch'=>$batch,'due'=>$due])) }}" @if($status===$value) aria-current="page" @endif>{{ $label }}</a>@endforeach</nav>
 <form wire:submit="$refresh" class="surface rider-search-panel">

@@ -28,20 +28,22 @@ function leavePolicyAdministrator(): User
 
 function leavePolicyInput(array $overrides = []): array
 {
-    return [...['name' => 'Organization Annual Leave', 'max_calendar_days' => 10, 'requires_document' => false, 'allow_past_dates' => false, 'allow_pending_cancel' => true, 'is_active' => true], ...$overrides];
+    return [...['name' => 'Organization Annual Leave', 'days_per_year' => 10, 'requires_document' => false, 'allow_past_dates' => false, 'allow_pending_cancel' => true, 'is_active' => true], ...$overrides];
 }
 
 test('authorized administrator creates edits deactivates and reactivates a leave type', function (): void {
     $admin = leavePolicyAdministrator();
     $component = Livewire::actingAs($admin)->test(LeaveTypes::class)->assertSee('No leave types configured')
-        ->set('name', 'Organization Annual Leave')->set('max_calendar_days', 10)->set('allow_pending_cancel', true)
-        ->call('saveType')->assertHasNoErrors();
+        ->set('name', 'Organization Annual Leave')->set('allow_pending_cancel', true)
+        ->call('saveType')->assertHasErrors(['days_per_year' => 'required'])
+        ->set('days_per_year', 10)->call('saveType')->assertHasNoErrors();
     $type = LeaveType::query()->sole();
-    expect($type->configured_by)->toBe($admin->id)->and($type->is_active)->toBeTrue();
+    expect($type->configured_by)->toBe($admin->id)->and($type->is_active)->toBeTrue()
+        ->and($type->days_per_year)->toBe(10)->and($type->tracks_balance)->toBeTrue()->and($type->max_calendar_days)->toBe(LeaveType::MAX_REQUEST_DAYS);
 
-    $component->call('editType', $type->public_id)->set('max_calendar_days', 5)->call('saveType')->assertHasNoErrors()
+    $component->call('editType', $type->public_id)->assertSet('days_per_year', 10)->set('days_per_year', 5)->call('saveType')->assertHasNoErrors()
         ->call('setActive', $type->public_id, false, 1)->assertHasNoErrors();
-    expect($type->fresh()->is_active)->toBeFalse()->and($type->fresh()->max_calendar_days)->toBe(5);
+    expect($type->fresh()->is_active)->toBeFalse()->and($type->fresh()->days_per_year)->toBe(5);
     $component->call('setActive', $type->public_id, true, 2)->assertHasNoErrors();
     expect($type->fresh()->is_active)->toBeTrue();
     $this->assertDatabaseHas('audit_logs', ['action' => 'leave.type_configured', 'entity_id' => $type->public_id]);
@@ -50,11 +52,11 @@ test('authorized administrator creates edits deactivates and reactivates a leave
 test('stale availability action cannot overwrite a newer policy edit', function (): void {
     $admin = leavePolicyAdministrator();
     $type = app(ManageLeave::class)->configure($admin, leavePolicyInput());
-    app(ManageLeave::class)->configure($admin, leavePolicyInput(['max_calendar_days' => 4]), $type->public_id, 0);
+    app(ManageLeave::class)->configure($admin, leavePolicyInput(['days_per_year' => 4]), $type->public_id, 0);
 
     Livewire::actingAs($admin)->test(LeaveTypes::class)->call('setActive', $type->public_id, false, 0)->assertHasErrors('type');
 
-    expect($type->fresh()->is_active)->toBeTrue()->and($type->fresh()->max_calendar_days)->toBe(4);
+    expect($type->fresh()->is_active)->toBeTrue()->and($type->fresh()->days_per_year)->toBe(4);
 });
 
 test('configuration rejects invalid names spans duplicate names and missing rules', function (array $changes, string $field): void {
@@ -68,8 +70,8 @@ test('configuration rejects invalid names spans duplicate names and missing rule
     $this->assertDatabaseCount('leave_types', 0);
 })->with([
     'blank name' => [['name' => '   '], 'name'],
-    'zero span' => [['max_calendar_days' => 0], 'max_calendar_days'],
-    'excessive span' => [['max_calendar_days' => 94], 'max_calendar_days'],
+    'negative days per year' => [['days_per_year' => -1], 'days_per_year'],
+    'excessive days per year' => [['days_per_year' => 367], 'days_per_year'],
     'invalid document policy' => [['requires_document' => 'maybe'], 'requires_document'],
 ]);
 
@@ -115,10 +117,10 @@ test('local sample command is additive opt in and preserves edited policy rules'
     $this->artisan('dcms:seed-leave-samples', ['actor' => $admin->email, '--activate' => true])->assertSuccessful();
     $this->assertDatabaseCount('leave_types', 5);
     $type = LeaveType::query()->where('name', 'Sample Annual Leave')->sole();
-    app(ManageLeave::class)->configure($admin, leavePolicyInput(['name' => $type->name, 'max_calendar_days' => 3, 'is_active' => false]), $type->public_id, 0);
+    app(ManageLeave::class)->configure($admin, leavePolicyInput(['name' => $type->name, 'days_per_year' => 3, 'is_active' => false]), $type->public_id, 0);
     $this->artisan('dcms:seed-leave-samples', ['actor' => $admin->email, '--activate' => true])->assertSuccessful();
     $this->assertDatabaseCount('leave_types', 5);
-    expect($type->fresh()->max_calendar_days)->toBe(3)->and($type->fresh()->is_active)->toBeFalse();
+    expect($type->fresh()->days_per_year)->toBe(3)->and($type->fresh()->is_active)->toBeFalse();
 });
 
 test('sample command refuses unauthorized actors and production', function (): void {

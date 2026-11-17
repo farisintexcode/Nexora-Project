@@ -9,18 +9,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
-/** M10/UI59: yearly entitlement, immutable adjustments and canonical charged request days. */
+/** M10/UI59: the type's yearly limit, immutable adjustments and canonical charged request days. */
 class LeaveBalance
 {
     /**
      * Yearly balance in the leave type's unit: working days charged from the calendar, or applications
-     * (each pending or approved request counts once, in the year it starts).
+     * (each pending or approved request counts once, in the year it starts). The same yearly limit applies to every year.
      *
      * @return array{unit: string, entitlement: ?int, adjustments: int, used: int, pending: int, available: ?int}
      */
     public function forStaff(int $staff, LeaveType $type, int $year): array
     {
-        $entitlement = DB::table('leave_entitlements')->where('leave_type_id', $type->id)->where('leave_year', $year)->value('days');
+        $entitlement = $type->days_per_year;
         $adjustments = (int) DB::table('leave_balance_adjustments')->where('rider_id', $staff)->where('leave_type_id', $type->id)->where('leave_year', $year)->sum('days');
         $requests = DB::table('leave_requests as r')->where('r.rider_id', $staff)->where('r.leave_type_id', $type->id)
             ->whereIn('r.status', ['pending', 'approved'])->whereRaw("r.type_snapshot->>'tracks_balance' = 'true'");
@@ -52,7 +52,7 @@ class LeaveBalance
         foreach ($requested as $year => $count) {
             $balance = $this->forStaff($staff, $type, (int) $year);
             if ($balance['available'] === null) {
-                throw ValidationException::withMessages(['type' => "{$type->name} has no yearly limit set for $year yet. Ask your administrator to set it under Leave Types."]);
+                throw ValidationException::withMessages(['type' => "{$type->name} has no maximum leave days per year set yet. Ask your administrator to set it under Leave Types."]);
             }
             if ($balance['available'] < $count) {
                 $limit = $balance['entitlement'] + $balance['adjustments'];
@@ -66,18 +66,6 @@ class LeaveBalance
         return $snapshots;
     }
 
-    public function entitlement(User $actor, LeaveType $type, int $year, int $days): void
-    {
-        abort_unless(app(LeaveAccess::class)->configure($actor->fresh()), 403);
-        Validator::make(compact('year', 'days'), ['year' => ['required', 'integer', 'between:2000,2200', 'min:'.now()->timezone(config('dcms.business_timezone'))->year], 'days' => ['required', 'integer', 'between:0,366']])->validate();
-        DB::transaction(function () use ($actor, $type, $year, $days): void {
-            $type = LeaveType::query()->whereKey($type->id)->lockForUpdate()->firstOrFail();
-            $before = DB::table('leave_entitlements')->where('leave_type_id', $type->id)->where('leave_year', $year)->value('days');
-            DB::table('leave_entitlements')->upsert([['leave_type_id' => $type->id, 'leave_year' => $year, 'days' => $days, 'configured_by' => $actor->id, 'created_at' => now(), 'updated_at' => now()]], ['leave_type_id', 'leave_year'], ['days', 'configured_by', 'updated_at']);
-            app(AuditWriter::class)->record($actor, 'leave.entitlement_changed', $type->public_id, ['leave_year' => $year, 'before_days' => $before, 'days' => $days], module: 'M10', entityType: 'leave_type');
-        }, 3);
-    }
-
     public function adjust(User $actor, string $staffId, LeaveType $type, int $year, int $days, string $reason): void
     {
         abort_unless(app(LeaveAccess::class)->configure($actor->fresh()), 403);
@@ -87,7 +75,7 @@ class LeaveBalance
             $type = LeaveType::query()->whereKey($type->id)->lockForUpdate()->firstOrFail();
             $balance = $this->forStaff($staff->id, $type, $year);
             if (! $type->tracks_balance || $balance['available'] === null || $balance['available'] + $days < 0) {
-                throw ValidationException::withMessages(['adjustmentDays' => 'Configure a tracked entitlement and preserve existing reservations before adjusting.']);
+                throw ValidationException::withMessages(['adjustmentDays' => 'Set the maximum leave days per year first, and keep enough days for requests already reserved.']);
             }
             $id = DB::table('leave_balance_adjustments')->insertGetId(['rider_id' => $staff->id, 'leave_type_id' => $type->id, 'leave_year' => $year, 'days' => $days, 'reason' => encrypt(trim($reason)), 'authorized_by' => $actor->id, 'created_at' => now()]);
             app(AuditWriter::class)->record($actor, 'leave.balance_adjusted', (string) $id, ['leave_year' => $year, 'days' => $days], module: 'M10', entityType: 'leave_balance_adjustment');

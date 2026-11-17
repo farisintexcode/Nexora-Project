@@ -49,9 +49,7 @@ test('tracked leave uses recurring schedule and preserves balance after independ
     const name = `Tracked ${test.info().project.name} ${Date.now()}`;
     await page.goto('/admin/leave/types');
     await page.getByLabel('Leave Type Name', { exact: true }).fill(name);
-    await page.getByLabel('Maximum Calendar Span (days)', { exact: true }).fill('7');
-    await page.getByLabel('Deduct from tracked annual balance', { exact: true }).check();
-    await page.getByLabel('Annual Entitlement (days)', { exact: true }).fill('3');
+    await page.getByLabel('Maximum leave days per year', { exact: false }).fill('3');
     await page.getByRole('button', { name: 'Save Leave Type', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Leave type saved' })).toBeVisible();
     await page.getByRole('button', { name: 'OK', exact: true }).click();

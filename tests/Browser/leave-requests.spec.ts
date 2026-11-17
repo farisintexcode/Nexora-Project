@@ -97,7 +97,7 @@ test('Admin configures actual leave rules and records a rejection reason', async
     await page.goto('/admin/leave');
     await page.goto('/admin/leave/types');
     await page.getByLabel('Leave Type Name', { exact: true }).fill(`Synthetic Emergency ${test.info().project.name} ${Date.now()}`);
-    await page.getByLabel('Maximum Calendar Span (days)', { exact: true }).fill('7');
+    await page.getByLabel('Maximum leave days per year', { exact: false }).fill('7');
     await page.getByLabel('Allow applications for past dates', { exact: false }).check();
     await page.getByLabel('Allow Rider to cancel a pending application', { exact: true }).check();
     await page.getByRole('button', { name: 'Save Leave Type' }).click();

@@ -30,7 +30,7 @@ Klik keputusan berulang atau menggunakan halaman lama tidak mewujudkan approval 
 
 ## Hari cuti dan polisi
 
-**Total Leave Days** ialah bilangan hari bekerja yang ditentukan oleh jadual kerja diluluskan dan override tarikh. Rest days dan public holidays dikecualikan. **Maximum Calendar Span** mengehadkan jarak tarikh satu permohonan; ia bukan annual entitlement. Baki tahunan menggunakan entitlement eksplisit, pelarasan, approved usage dan pending reservations. Accrual, carry-forward automatik, payroll dan permohonan half-day tidak disokong.
+**Total Leave Days** ialah bilangan hari bekerja yang ditentukan oleh jadual kerja diluluskan dan override tarikh. Rest days dan public holidays dikecualikan. **Maximum leave days per year** ialah satu-satunya had: bilangan hari bekerja yang boleh diambil oleh Rider setiap tahun, dan nilai yang sama terpakai untuk setiap tahun secara automatik. Satu permohonan boleh sepanjang mana pun selagi muat dalam baki tahun itu (had keselamatan sistem ialah 93 hari kalendar bagi satu permohonan). Baki tahunan menggunakan had ini, pelarasan, approved usage dan pending reservations. Accrual, carry-forward automatik, payroll dan permohonan half-day tidak disokong.
 
 Nama atau peraturan Leave Type yang diubah tidak menulis semula snapshot permohonan lama. Deactivation menghalang permohonan baharu sahaja. Permohonan lama masih boleh disemak menggunakan peraturan yang telah dihantar.
 

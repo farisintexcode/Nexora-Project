@@ -73,7 +73,7 @@ class BrowserTestSeeder extends Seeder
         // M10 synthetic calendar/punch fixtures are confined to the guarded disposable E2E database.
         $attendancePolicy = app(ConfigureAttendance::class)->policy($admin, ['code' => 'browser-attendance', 'rules' => config('attendance.initial_rules')]);
         // Synthetic leave types/calendars exist only in this guarded disposable browser database.
-        app(ManageLeave::class)->configure($admin, ['name' => 'Synthetic Personal Leave', 'max_calendar_days' => 14, 'requires_document' => false, 'allow_pending_cancel' => true, 'is_active' => true]);
+        app(ManageLeave::class)->configure($admin, ['name' => 'Synthetic Personal Leave', 'days_per_year' => 30, 'requires_document' => false, 'allow_pending_cancel' => true, 'is_active' => true]);
         foreach ([3, 4, 5, 6, 7, 8] as $offset) {
             $date = now()->timezone(config('dcms.business_timezone'))->addDays($offset)->toDateString();
             app(ConfigureAttendance::class)->assign($admin, $rider->staff->public_id, $attendancePolicy->public_id, $date, $date, 'scheduled');

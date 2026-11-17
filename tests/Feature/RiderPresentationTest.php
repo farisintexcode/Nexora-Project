@@ -53,7 +53,6 @@ test('Rider screens show the assignment code with the assignment name', function
     $this->actingAs($rider)->get(route('rider.home'))->assertOk()->assertSee($label);
     $this->get(route('rider.tasks.index'))->assertOk()->assertSee($label);
     $this->get(route('rider.tasks.show', $task))->assertOk()->assertSee($label);
-    $this->get(route('rider.tasks.manage'))->assertOk()->assertSee($label);
     $this->get(route('rider.assignments.index'))->assertOk()->assertSee($code);
     $this->get(route('rider.assignments.show', $task->batch->public_id))->assertOk()->assertSee($code);
 });

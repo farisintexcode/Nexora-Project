@@ -61,7 +61,7 @@ Untuk contoh setempat sahaja, gantikan email berikut dengan pentadbir aktif yang
 php artisan dcms:seed-leave-samples system-admin@preview.example.test --no-interaction
 ```
 
-Command ini menambah lima kategori berlabel **Sample** sebagai Inactive. Tambah `--activate` hanya jika mahu menggunakannya untuk demo setempat. Sample Annual/Sick/Emergency/Unpaid/Compassionate Leave bukan polisi undang-undang atau kelayakan tahunan. Nilai 93 hari ialah had teknikal calendar span sedia ada, bukan jumlah entitlement. Command tidak mengubah polisi yang sudah wujud, tidak mencipta akaun, dan ditolak dalam production/staging. Aktifkan atau ubah sample sedia ada melalui UI, bukan dengan mengharapkan rerun command menimpa pilihan pentadbir.
+Command ini menambah lima kategori berlabel **Sample** sebagai Inactive. Tambah `--activate` hanya jika mahu menggunakannya untuk demo setempat. Sample Annual/Sick/Emergency/Unpaid/Compassionate Leave bukan polisi undang-undang atau kelayakan tahunan. Setiap sample diberi 14 hari setahun sebagai nilai demo sahaja, bukan kelayakan sebenar. Command tidak mengubah polisi yang sudah wujud, tidak mencipta akaun, dan ditolak dalam production/staging. Aktifkan atau ubah sample sedia ada melalui UI, bukan dengan mengharapkan rerun command menimpa pilihan pentadbir.
 
 ## Mailpit dan notifikasi
 

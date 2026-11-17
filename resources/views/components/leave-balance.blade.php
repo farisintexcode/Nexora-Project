@@ -16,7 +16,7 @@
     @if(! $tracked)
         <p class="mt-3 text-xs text-ink-600">You can apply without using up a balance.</p>
     @elseif($limit === null)
-        <p class="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Your administrator hasn't set the {{ $year }} limit yet, so this leave can't be applied for.</p>
+        <p class="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Your administrator hasn't set the maximum leave days per year yet, so this leave can't be applied for.</p>
     @else
         <div class="mt-3 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-ink-100" role="img" aria-label="{{ $balance['used'] }} used, {{ $balance['pending'] }} waiting approval, {{ max(0, $balance['available']) }} left of {{ $limit }}">
             @if($balance['used'])<span class="h-full bg-brand-primary" style="width: {{ $percent($balance['used']) }}%"></span>@endif

@@ -34,7 +34,6 @@ use App\Livewire\Rider\Home as RiderHome;
 use App\Livewire\Rider\LeaveRequests;
 use App\Livewire\Rider\Notifications;
 use App\Livewire\Rider\Profile;
-use App\Livewire\Rider\Tasks\Manage;
 use App\Livewire\Rider\Tasks\SubmissionHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -139,7 +138,6 @@ Route::middleware(['auth', 'auth.session'])->group(function (): void {
     Route::get('/leave/{leave}/document', LeaveDocumentController::class)->whereUuid('leave')->middleware('throttle:30,1')->name('leave.document');
     Route::livewire('/attendance', Attendance::class)->middleware('can:attendance.view_own')->name('attendance.own');
     Route::middleware(['can:use-rider-interface', 'can:tasks.view'])->prefix('rider/tasks')->name('rider.tasks.')->group(function (): void {
-        Route::livewire('/manage', Manage::class)->middleware('can:tasks.submit')->name('manage');
         Route::livewire('/', App\Livewire\Rider\Tasks\Index::class)->name('index');
         Route::livewire('/history/{submission}', SubmissionHistory::class)->whereUuid('submission')->name('history');
         Route::livewire('/{task}', App\Livewire\Rider\Tasks\Show::class)->whereUuid('task')->name('show');

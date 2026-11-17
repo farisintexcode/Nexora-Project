@@ -13,7 +13,6 @@ use App\Models\PublicHoliday;
 use App\Models\Staff;
 use App\Models\User;
 use App\Services\Attendance\AttendanceRegister;
-use App\Services\Attendance\LeaveBalance;
 use App\Services\Attendance\PublicHolidays;
 use App\Services\Attendance\WorkCalendar;
 use Carbon\CarbonImmutable;
@@ -207,8 +206,7 @@ test('leave on the automatic calendar charges only working days and shows on att
     $staff = calendarRider('selangor');
     $rider = User::factory()->for($staff)->create();
     $rider->assignRole('Rider');
-    $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'max_calendar_days' => 93]);
-    app(LeaveBalance::class)->entitlement($admin, $type, 2026, 10);
+    $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'days_per_year' => 10, 'max_calendar_days' => 93]);
     defaultPolicy($admin, '2026-11-16');
     app(PublicHolidays::class)->add($admin, '2026-12-11', 'Birthday of Sultan of Selangor', 'selangor');
     $leave = app(ManageLeave::class);

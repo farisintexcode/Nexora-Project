@@ -45,7 +45,7 @@ test('simultaneous submissions for different dates cannot overdraw one available
     $admin->assignRole('Administrative');
     $rider = User::factory()->for(Staff::factory()->create(['is_rider' => true]))->create();
     $rider->assignRole('Rider');
-    $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'max_calendar_days' => 7]);
+    $type = LeaveType::factory()->create(['configured_by' => $admin->id, 'tracks_balance' => true, 'days_per_year' => 1, 'max_calendar_days' => 7]);
     $policy = app(ConfigureAttendance::class)->policy($admin, ['code' => 'concurrent-work', 'rules' => array_replace(config('attendance.initial_rules'), ['workdays' => [1, 2, 3, 4, 5, 6, 7]])]);
     $start = now()->timezone(config('dcms.business_timezone'))->addDays(10);
     if ($start->month === 12 && $start->day === 31) {
@@ -53,9 +53,6 @@ test('simultaneous submissions for different dates cannot overdraw one available
     }
     $end = $start->copy()->addDay();
     app(WorkCalendar::class)->assign($admin, $rider->staff->public_id, $policy->public_id, $start->toDateString(), $end->toDateString());
-    foreach (array_unique([$start->year, $end->year]) as $year) {
-        app(LeaveBalance::class)->entitlement($admin, $type, $year, 1);
-    }
     $riderId = $rider->id;
     $typeId = $type->public_id;
     $firstDate = $start->toDateString();

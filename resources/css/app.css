@@ -400,9 +400,9 @@
     .rider-priority > span { @apply size-1.5 rounded-full bg-brand-accent; }
     .rider-back-link, .rider-text-link { @apply inline-flex min-h-11 items-center gap-2 text-xs font-semibold; }
     .rider-text-link { @apply mt-2; }
-    .rider-view-tabs { @apply grid grid-cols-3 gap-1 rounded-2xl bg-ink-100 p-1; }
-    .rider-view-tabs a { @apply flex min-h-11 items-center justify-center rounded-xl px-2 text-center text-xs font-semibold text-ink-500; }
-    .rider-view-tabs a[aria-current='page'] { @apply bg-white text-ink-800 shadow-sm; }
+    .rider-view-tabs { @apply grid grid-cols-3 gap-1 rounded-2xl border border-ink-200 bg-ink-50 p-1; }
+    .rider-view-tabs a { @apply flex min-h-11 items-center justify-center rounded-xl px-2 text-center text-xs font-semibold text-ink-600 transition-colors hover:bg-white hover:text-brand-dark; }
+    .rider-view-tabs a[aria-current='page'] { @apply bg-brand-primary text-white hover:bg-brand-primary hover:text-white; }
     .rider-search-panel { @apply grid min-w-0 gap-4 p-4; }
     .rider-search-row { @apply flex min-w-0 items-end gap-2; }
     .rider-filter-details { @apply border-t border-ink-100 pt-1; }
@@ -429,7 +429,10 @@
     .rider-workspace .dcms-sidebar { display: flex; }
     .dark .rider-nav-item { color: var(--color-ink-500); }
     .dark .rider-primary-nav .rider-nav-item[aria-current='page'] { color: var(--foreground); }
-    .dark .rider-view-tabs a[aria-current='page'] { background: var(--surface-raised); color: var(--foreground); }
+    .dark .rider-view-tabs { background-color: var(--surface); }
+    .dark .rider-view-tabs a { color: var(--foreground); }
+    .dark .rider-view-tabs a:hover { background-color: var(--surface-raised); color: var(--foreground); }
+    .dark .rider-view-tabs a[aria-current='page'], .dark .rider-view-tabs a[aria-current='page']:hover { background-color: var(--color-brand-accent); color: var(--color-brand-primary); }
     .dark .rider-menu-appearance .theme-toggle { background: rgb(255 255 255 / 7%); color: #fff; }
 }
 

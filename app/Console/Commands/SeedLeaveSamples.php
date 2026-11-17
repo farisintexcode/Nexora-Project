@@ -36,7 +36,7 @@ class SeedLeaveSamples extends Command
                 if (LeaveType::query()->whereRaw('lower(name) = ?', [mb_strtolower($name)])->exists()) {
                     continue;
                 }
-                $workflow->configure($actor, ['name' => $name, 'max_calendar_days' => 93, 'requires_document' => false, 'allow_past_dates' => false, 'allow_pending_cancel' => true, 'is_active' => (bool) $this->option('activate')]);
+                $workflow->configure($actor, ['name' => $name, 'days_per_year' => 14, 'requires_document' => false, 'allow_past_dates' => false, 'allow_pending_cancel' => true, 'is_active' => (bool) $this->option('activate')]);
                 $created++;
             }
 
