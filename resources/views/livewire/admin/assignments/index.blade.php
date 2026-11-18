@@ -75,12 +75,15 @@
                                 @php($isOverdue = $batch->status->value === 'active' && $batch->due_date->toDateString() < $today)
                                 <td><x-badge :tone="$isOverdue ? 'danger' : ($batch->status->value === 'active' ? 'success' : 'neutral')">{{ $isOverdue ? 'Overdue' : ucfirst($batch->status->value) }}</x-badge></td>
                                 <td class="text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                    @if($canDelete)<x-confirm-action label="Delete" variant="danger" button-class="btn-sm whitespace-nowrap" :title="'Delete '.$batch->name.'?'" message="The assignment and all of its tasks will disappear from every page. Nothing is deleted if any task is assigned to a Rider, already has work recorded, or an import is still pending." :action="'deleteBatch(\''.$batch->public_id.'\')'" confirm-label="Delete assignment" />@endif
                                     <div x-data="{ open: false }" x-on:keydown.escape="open = false">
                                         <button type="button" x-ref="trigger" class="assignment-menu-trigger" x-on:click="open = !open" x-bind:aria-expanded="open" aria-haspopup="menu" aria-label="Actions for {{ $batch->name }}"><x-icon name="more" class="size-4" /></button>
                                         <div class="assignment-menu" role="menu" x-show="open" x-cloak x-anchor.bottom-end.offset.4="$refs.trigger" x-on:click.outside="open = false">
                                             <a role="menuitem" href="{{ route('admin.assignments.edit', ['batch' => $batch->public_id]) }}">View assignment</a>
                                             @if($canViewTasks)<a role="menuitem" href="{{ route('admin.tasks.index', ['batch' => $batch->public_id]) }}">View tasks</a>@endif
                                         </div>
+                                    </div>
                                     </div>
                                 </td>
                             </tr>

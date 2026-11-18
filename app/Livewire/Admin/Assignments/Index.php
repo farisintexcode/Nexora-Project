@@ -2,11 +2,13 @@
 
 namespace App\Livewire\Admin\Assignments;
 
+use App\Actions\Assignments\DeleteAssignmentBatch;
 use App\Models\AssignmentBatch;
 use App\Models\ReferenceValue;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -126,6 +128,14 @@ class Index extends Component
         $this->rememberFilters();
     }
 
+    /** Delete one assignment and its unstarted tasks; nothing is deleted if any task already has a Rider or recorded work. */
+    public function deleteBatch(string $publicId, DeleteAssignmentBatch $assignments): void
+    {
+        abort_unless(Str::isUuid($publicId), 404);
+        $deleted = $assignments->handle(Auth::user(), $publicId);
+        session()->flash('status', 'Assignment deleted'.($deleted === 0 ? '.' : ' with its '.($deleted === 1 ? '1 task.' : "{$deleted} tasks.")));
+    }
+
     public function render(): View
     {
         Gate::authorize('viewAny', AssignmentBatch::class);
@@ -172,6 +182,7 @@ class Index extends Component
             'filterError' => $dates->fails() ? $dates->errors()->first() : null,
             'activeFilterCount' => count(array_filter(self::ADVANCED_FILTERS, fn (string $filter): bool => $this->{$filter} !== '')),
             'canViewTasks' => Auth::user()->can('tasks.view'),
+            'canDelete' => Auth::user()->can('assignments.manage'),
             'today' => $today,
         ]);
     }

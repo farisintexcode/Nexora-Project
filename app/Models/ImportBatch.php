@@ -90,7 +90,7 @@ class ImportBatch extends Model
 
     public function assignment(): BelongsTo
     {
-        return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id');
+        return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id')->withTrashed();
     }
 
     public function uploader(): BelongsTo

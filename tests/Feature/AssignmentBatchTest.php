@@ -370,3 +370,45 @@ test('assignment write and audit roll back together if audit persistence fails',
     expect(fn () => app(SaveAssignmentBatch::class)->handle($user, batchInput()))->toThrow(QueryException::class);
     $this->assertDatabaseCount('assignment_batches', 0);
 });
+
+test('admin deletes an assignment with its unstarted tasks from the register, audited and hidden but kept', function (): void {
+    $user = staffManager();
+    $batch = AssignmentBatch::factory()->create(['name' => 'Disposable package', 'external_reference' => 'REF-DEL']);
+    Task::factory()->count(2)->create(['assignment_batch_id' => $batch->id, 'debt_account_id' => DebtAccount::factory()->create()->id]);
+
+    Livewire::actingAs($user)->test(Index::class)->assertSee('Delete assignment')
+        ->call('deleteBatch', $batch->public_id)->assertHasNoErrors()->assertDontSee('Disposable package');
+
+    expect(AssignmentBatch::query()->count())->toBe(0)->and(AssignmentBatch::withTrashed()->count())->toBe(1)
+        ->and(Task::query()->count())->toBe(0)->and(Task::withTrashed()->count())->toBe(2)
+        ->and(AuditLog::query()->where('action', 'assignment_deleted')->where('entity_id', $batch->public_id)->exists())->toBeTrue();
+    $this->actingAs($user)->get(route('admin.assignments.edit', $batch))->assertNotFound();
+    app(SaveAssignmentBatch::class)->handle($user, batchInput(['external_reference' => 'REF-DEL']));
+    expect(AssignmentBatch::query()->where('external_reference', 'REF-DEL')->count())->toBe(1);
+});
+
+test('an assignment with Rider work or a pending import cannot be deleted and nothing changes', function (string $blocker): void {
+    $user = staffManager();
+    $batch = AssignmentBatch::factory()->create();
+    $task = Task::factory()->create(['assignment_batch_id' => $batch->id, 'debt_account_id' => DebtAccount::factory()->create()->id]);
+    match ($blocker) {
+        'allocated' => TaskAllocation::factory()->create(['task_id' => $task->id]),
+        'started' => $task->forceFill(['work_status' => 'submitted', 'review_status' => 'pending'])->save(),
+        'import' => ImportBatch::factory()->create(['assignment_batch_id' => $batch->id, 'status' => 'mapping']),
+    };
+
+    Livewire::actingAs($user)->test(Index::class)->call('deleteBatch', $batch->public_id)->assertHasErrors('delete');
+
+    expect(AssignmentBatch::query()->whereKey($batch->id)->exists())->toBeTrue()->and(Task::query()->whereKey($task->id)->exists())->toBeTrue()
+        ->and(AuditLog::query()->where('action', 'assignment_deleted')->exists())->toBeFalse();
+})->with(['allocated', 'started', 'import']);
+
+test('view only staff see no delete button and cannot delete an assignment', function (): void {
+    $user = staffManager();
+    $batch = AssignmentBatch::factory()->create();
+    $user->removeRole('Admin')->givePermissionTo(['admin.access', 'assignments.view']);
+
+    Livewire::actingAs($user)->test(Index::class)->assertDontSee('Delete assignment')
+        ->call('deleteBatch', $batch->public_id)->assertForbidden();
+    expect(AssignmentBatch::query()->whereKey($batch->id)->exists())->toBeTrue();
+});

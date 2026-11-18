@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class AssignmentBatch extends Model
 {
@@ -16,12 +17,13 @@ class AssignmentBatch extends Model
     use HasFactory;
 
     use HasPublicId;
+    use SoftDeletes;
 
     protected $dateFormat = 'Y-m-d H:i:s.u';
 
     protected function casts(): array
     {
-        return ['start_date' => 'date', 'due_date' => 'date', 'archived_at' => 'immutable_datetime', 'lock_version' => 'integer', 'status' => BatchStatus::class];
+        return ['start_date' => 'date', 'due_date' => 'date', 'archived_at' => 'immutable_datetime', 'deleted_at' => 'immutable_datetime', 'lock_version' => 'integer', 'status' => BatchStatus::class];
     }
 
     public function creator(): BelongsTo

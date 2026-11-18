@@ -43,7 +43,7 @@ class SaveAssignmentBatch
                 }
                 $rules = [
                     'name' => ['required', 'string', 'max:200'],
-                    'external_reference' => ['nullable', 'string', 'max:100', Rule::unique('assignment_batches')->ignore($batch->id)],
+                    'external_reference' => ['nullable', 'string', 'max:100', Rule::unique('assignment_batches')->ignore($batch->id)->withoutTrashed()],
                     'start_date' => ['required', 'date_format:Y-m-d'],
                     'due_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:start_date'],
                     'description' => ['nullable', 'string', 'max:5000'],

@@ -28,6 +28,11 @@ class AssignmentBatchPolicy
         return $this->view($user, $batch) && $user->can('assignments.manage');
     }
 
+    public function delete(User $user, AssignmentBatch $batch): bool
+    {
+        return $this->update($user, $batch);
+    }
+
     public function reopen(User $user, AssignmentBatch $batch): bool
     {
         return $this->update($user, $batch) && $user->can('assignments.reopen');

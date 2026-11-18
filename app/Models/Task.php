@@ -28,7 +28,7 @@ class Task extends Model
 
     public function batch(): BelongsTo
     {
-        return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id');
+        return $this->belongsTo(AssignmentBatch::class, 'assignment_batch_id')->withTrashed();
     }
 
     /** Excel file a manually created task was grouped with. */
